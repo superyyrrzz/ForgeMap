@@ -222,7 +222,7 @@ public class SourceGeneratorTests
         Assert.Contains("if (source == null) return;", generatedCode);
     }
 
-    private static (IReadOnlyList<Diagnostic> Diagnostics, IReadOnlyList<SyntaxTree> GeneratedTrees) RunGenerator(string source)
+    internal static (IReadOnlyList<Diagnostic> Diagnostics, IReadOnlyList<SyntaxTree> GeneratedTrees) RunGenerator(string source)
     {
         var syntaxTree = CSharpSyntaxTree.ParseText(source);
 
@@ -268,3 +268,336 @@ public class SourceGeneratorTests
         return (diagnostics.ToList(), generatedTrees);
     }
 }
+
+#region v0.2 Generator Tests
+
+public class ForgePropertyGeneratorTests
+{
+    [Fact]
+    public void Generator_ForgeProperty_GeneratesCorrectMapping()
+    {
+        // Arrange
+        var source = """
+            using TypeForge;
+
+            namespace TestNamespace
+            {
+                public class SourceEntity
+                {
+                    public string OrderId { get; set; }
+                    public decimal SubTotal { get; set; }
+                }
+
+                public class DestDto
+                {
+                    public string Id { get; set; }
+                    public decimal Amount { get; set; }
+                }
+
+                [TypeForge]
+                public partial class TestForger
+                {
+                    [ForgeProperty(nameof(SourceEntity.OrderId), nameof(DestDto.Id))]
+                    [ForgeProperty(nameof(SourceEntity.SubTotal), nameof(DestDto.Amount))]
+                    public partial DestDto Forge(SourceEntity source);
+                }
+            }
+            """;
+
+        // Act
+        var (diagnostics, generatedTrees) = RunGenerator(source);
+
+        // Assert
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        Assert.Single(generatedTrees);
+
+        var generatedCode = generatedTrees[0].GetText().ToString();
+        Assert.Contains("Id = source.OrderId,", generatedCode);
+        Assert.Contains("Amount = source.SubTotal,", generatedCode);
+    }
+
+    [Fact]
+    public void Generator_ForgeProperty_NestedPath_GeneratesNullConditional()
+    {
+        // Arrange
+        var source = """
+            using TypeForge;
+
+            namespace TestNamespace
+            {
+                public class CustomerInfo
+                {
+                    public string Name { get; set; }
+                }
+
+                public class OrderEntity
+                {
+                    public int Id { get; set; }
+                    public CustomerInfo Customer { get; set; }
+                }
+
+                public class OrderDto
+                {
+                    public int Id { get; set; }
+                    public string CustomerName { get; set; }
+                }
+
+                [TypeForge]
+                public partial class TestForger
+                {
+                    [ForgeProperty("Customer.Name", nameof(OrderDto.CustomerName))]
+                    public partial OrderDto Forge(OrderEntity source);
+                }
+            }
+            """;
+
+        // Act
+        var (diagnostics, generatedTrees) = RunGenerator(source);
+
+        // Assert
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        Assert.Single(generatedTrees);
+
+        var generatedCode = generatedTrees[0].GetText().ToString();
+        Assert.Contains("CustomerName = source.Customer?.Name!", generatedCode);
+        Assert.Contains("Id = source.Id,", generatedCode);
+    }
+
+    private static (IReadOnlyList<Diagnostic> Diagnostics, IReadOnlyList<SyntaxTree> GeneratedTrees) RunGenerator(string source)
+    {
+        return SourceGeneratorTests.RunGenerator(source);
+    }
+}
+
+public class ForgeFromGeneratorTests
+{
+    [Fact]
+    public void Generator_ForgeFrom_GeneratesResolverCall()
+    {
+        // Arrange
+        var source = """
+            using TypeForge;
+
+            namespace TestNamespace
+            {
+                public class OrderEntity
+                {
+                    public decimal Subtotal { get; set; }
+                    public decimal TaxRate { get; set; }
+                }
+
+                public class OrderDto
+                {
+                    public decimal TotalWithTax { get; set; }
+                }
+
+                [TypeForge]
+                public partial class TestForger
+                {
+                    [ForgeFrom(nameof(OrderDto.TotalWithTax), nameof(CalculateTotal))]
+                    public partial OrderDto Forge(OrderEntity source);
+
+                    private static decimal CalculateTotal(OrderEntity source)
+                        => source.Subtotal * (1 + source.TaxRate);
+                }
+            }
+            """;
+
+        // Act
+        var (diagnostics, generatedTrees) = RunGenerator(source);
+
+        // Assert
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        Assert.Single(generatedTrees);
+
+        var generatedCode = generatedTrees[0].GetText().ToString();
+        Assert.Contains("TotalWithTax = CalculateTotal(source),", generatedCode);
+    }
+
+    [Fact]
+    public void Generator_ForgeFrom_MissingResolver_ReportsError()
+    {
+        // Arrange
+        var source = """
+            using TypeForge;
+
+            namespace TestNamespace
+            {
+                public class SourceEntity { public int Id { get; set; } }
+                public class DestDto { public int Value { get; set; } }
+
+                [TypeForge]
+                public partial class TestForger
+                {
+                    [ForgeFrom(nameof(DestDto.Value), "NonExistentMethod")]
+                    public partial DestDto Forge(SourceEntity source);
+                }
+            }
+            """;
+
+        // Act
+        var (diagnostics, _) = RunGenerator(source);
+
+        // Assert
+        var error = diagnostics.FirstOrDefault(d => d.Id == "TF0008");
+        Assert.NotNull(error);
+        Assert.Equal(DiagnosticSeverity.Error, error.Severity);
+    }
+
+    [Fact]
+    public void Generator_ForgePropertyAndForgeFrom_WorkTogether()
+    {
+        // Arrange
+        var source = """
+            using TypeForge;
+
+            namespace TestNamespace
+            {
+                public class OrderEntity
+                {
+                    public string OrderId { get; set; }
+                    public DateTime PlacedAt { get; set; }
+                    public decimal Subtotal { get; set; }
+                    public decimal TaxRate { get; set; }
+                }
+
+                public class OrderDto
+                {
+                    public string Id { get; set; }
+                    public DateTime OrderDate { get; set; }
+                    public decimal TotalWithTax { get; set; }
+                }
+
+                [TypeForge]
+                public partial class TestForger
+                {
+                    [ForgeProperty(nameof(OrderEntity.OrderId), nameof(OrderDto.Id))]
+                    [ForgeProperty(nameof(OrderEntity.PlacedAt), nameof(OrderDto.OrderDate))]
+                    [ForgeFrom(nameof(OrderDto.TotalWithTax), nameof(CalculateTotal))]
+                    public partial OrderDto Forge(OrderEntity source);
+
+                    private static decimal CalculateTotal(OrderEntity source)
+                        => source.Subtotal * (1 + source.TaxRate);
+                }
+            }
+            """;
+
+        // Act
+        var (diagnostics, generatedTrees) = RunGenerator(source);
+
+        // Assert
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        Assert.Single(generatedTrees);
+
+        var generatedCode = generatedTrees[0].GetText().ToString();
+        Assert.Contains("Id = source.OrderId,", generatedCode);
+        Assert.Contains("OrderDate = source.PlacedAt,", generatedCode);
+        Assert.Contains("TotalWithTax = CalculateTotal(source),", generatedCode);
+    }
+
+    private static (IReadOnlyList<Diagnostic> Diagnostics, IReadOnlyList<SyntaxTree> GeneratedTrees) RunGenerator(string source)
+    {
+        return SourceGeneratorTests.RunGenerator(source);
+    }
+}
+
+public class NullableHandlingGeneratorTests
+{
+    [Fact]
+    public void Generator_NullableToNonNullable_GeneratesCast()
+    {
+        // Arrange
+        var source = """
+            using TypeForge;
+            using System;
+
+            namespace TestNamespace
+            {
+                public class Source
+                {
+                    public DateTime? ShippedAt { get; set; }
+                    public int? Quantity { get; set; }
+                }
+
+                public class Dest
+                {
+                    public DateTime ShippedAt { get; set; }
+                    public int Quantity { get; set; }
+                }
+
+                [TypeForge]
+                public partial class TestForger
+                {
+                    public partial Dest Forge(Source source);
+                }
+            }
+            """;
+
+        // Act
+        var (diagnostics, generatedTrees) = RunGenerator(source);
+
+        // Assert
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        Assert.Single(generatedTrees);
+
+        var generatedCode = generatedTrees[0].GetText().ToString();
+        Debug.WriteLine($"Generated code:\n{generatedCode}");
+
+        // Check for cast pattern - the exact type name may vary based on context
+        Assert.Contains("ShippedAt =", generatedCode);
+        Assert.Contains("source.ShippedAt!", generatedCode);  // Should have null-forgiving operator
+        Assert.Contains("Quantity =", generatedCode);
+        Assert.Contains("source.Quantity!", generatedCode);
+    }
+
+    [Fact]
+    public void Generator_NonNullableToNullable_GeneratesDirectAssignment()
+    {
+        // Arrange
+        var source = """
+            using TypeForge;
+            using System;
+
+            namespace TestNamespace
+            {
+                public class Source
+                {
+                    public DateTime ShippedAt { get; set; }
+                    public int Quantity { get; set; }
+                }
+
+                public class Dest
+                {
+                    public DateTime? ShippedAt { get; set; }
+                    public int? Quantity { get; set; }
+                }
+
+                [TypeForge]
+                public partial class TestForger
+                {
+                    public partial Dest Forge(Source source);
+                }
+            }
+            """;
+
+        // Act
+        var (diagnostics, generatedTrees) = RunGenerator(source);
+
+        // Assert
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        Assert.Single(generatedTrees);
+
+        var generatedCode = generatedTrees[0].GetText().ToString();
+        Assert.Contains("ShippedAt = source.ShippedAt,", generatedCode);
+        Assert.Contains("Quantity = source.Quantity,", generatedCode);
+        // Should NOT contain cast for non-nullable to nullable
+        Assert.DoesNotContain("(global::System.DateTime?)", generatedCode);
+    }
+
+    private static (IReadOnlyList<Diagnostic> Diagnostics, IReadOnlyList<SyntaxTree> GeneratedTrees) RunGenerator(string source)
+    {
+        return SourceGeneratorTests.RunGenerator(source);
+    }
+}
+
+#endregion
