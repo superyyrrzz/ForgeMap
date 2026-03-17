@@ -156,27 +156,30 @@ internal sealed class ForgeCodeEmitter
             // Check if this property has a resolver from [ForgeFrom]
             if (resolverMappings.TryGetValue(destProp.Name, out var resolverMethodName))
             {
-                // Find the source property for this destination (if mapped via [ForgeProperty])
-                IPropertySymbol? sourcePropertyForResolver = null;
+                // Find the source property path for this destination (if mapped via [ForgeProperty])
                 string? sourcePropPath = null;
+                ITypeSymbol? sourcePathLeafType = null;
 
                 if (propertyMappings.TryGetValue(destProp.Name, out sourcePropPath))
                 {
-                    // Get the first part of the path for a simple property lookup
-                    var firstPart = sourcePropPath.Contains(".") ? sourcePropPath.Split('.')[0] : sourcePropPath;
-                    sourcePropertyForResolver = sourceProperties.FirstOrDefault(sp => sp.Name == firstPart);
+                    // Resolve the leaf type for the full path (handles nested paths like "Customer.Name")
+                    sourcePathLeafType = ResolvePathLeafType(sourcePropPath, sourceType);
                 }
                 else
                 {
                     // Try to find by same name
-                    sourcePropertyForResolver = sourceProperties.FirstOrDefault(sp => sp.Name == destProp.Name);
-                    if (sourcePropertyForResolver != null)
+                    var matchingSourceProp = sourceProperties.FirstOrDefault(sp => sp.Name == destProp.Name);
+                    if (matchingSourceProp != null)
                     {
-                        sourcePropPath = sourcePropertyForResolver.Name;
+                        sourcePropPath = matchingSourceProp.Name;
+                        sourcePathLeafType = matchingSourceProp.Type;
                     }
                 }
 
-                // Find the resolver method
+                // Find the resolver method - pass leaf type for proper overload selection
+                var sourcePropertyForResolver = sourcePathLeafType != null
+                    ? sourceProperties.FirstOrDefault(sp => SymbolEqualityComparer.Default.Equals(sp.Type, sourcePathLeafType))
+                    : null;
                 var resolverMethod = FindResolverMethod(forger.Symbol, resolverMethodName, sourceType, sourcePropertyForResolver);
 
                 if (resolverMethod == null)
@@ -199,10 +202,10 @@ internal sealed class ForgeCodeEmitter
                     // Pass the full source object
                     resolverCall = $"{resolverMethodName}({sourceParam})";
                 }
-                else if (sourcePropertyForResolver != null && sourcePropPath != null &&
-                         CanAssign(sourcePropertyForResolver.Type, resolverParamType))
+                else if (sourcePropPath != null && sourcePathLeafType != null &&
+                         CanAssign(sourcePathLeafType, resolverParamType))
                 {
-                    // Pass the source property value
+                    // Pass the source property value (using leaf type for validation)
                     var sourceExpr = GenerateSourceExpression(sourceParam, sourcePropPath, sourceType);
                     resolverCall = $"{resolverMethodName}({sourceExpr})";
                 }
@@ -432,6 +435,30 @@ internal sealed class ForgeCodeEmitter
     }
 
     /// <summary>
+    /// Resolves the leaf property type for a potentially nested path.
+    /// Returns null if the path cannot be fully resolved.
+    /// </summary>
+    private ITypeSymbol? ResolvePathLeafType(string sourcePath, INamedTypeSymbol sourceType)
+    {
+        var parts = sourcePath.Split('.');
+        ITypeSymbol currentType = sourceType;
+
+        foreach (var part in parts)
+        {
+            if (currentType is not INamedTypeSymbol namedType)
+                return null;
+
+            var prop = GetMappableProperties(namedType).FirstOrDefault(p => p.Name == part);
+            if (prop == null)
+                return null;
+
+            currentType = prop.Type;
+        }
+
+        return currentType;
+    }
+
+    /// <summary>
     /// Generates the source expression for a property, handling nested paths.
     /// </summary>
     private string GenerateSourceExpression(string sourceParam, string sourcePath, INamedTypeSymbol sourceType)
@@ -491,23 +518,30 @@ internal sealed class ForgeCodeEmitter
             // Check if this property has a resolver from [ForgeFrom]
             if (resolverMappings.TryGetValue(destProp.Name, out var resolverMethodName))
             {
-                IPropertySymbol? sourcePropertyForResolver = null;
+                // Find the source property path for this destination (if mapped via [ForgeProperty])
                 string? sourcePropPath = null;
+                ITypeSymbol? sourcePathLeafType = null;
 
-                if (propertyMappings.TryGetValue(destProp.Name, out sourcePropPath))
+                if (propertyMappings.TryGetValue(destProp.Name, out sourcePropPath) && sourceNamedType != null)
                 {
-                    var firstPart = sourcePropPath.Contains(".") ? sourcePropPath.Split('.')[0] : sourcePropPath;
-                    sourcePropertyForResolver = sourceProperties.FirstOrDefault(sp => sp.Name == firstPart);
+                    // Resolve the leaf type for the full path (handles nested paths like "Customer.Name")
+                    sourcePathLeafType = ResolvePathLeafType(sourcePropPath, sourceNamedType);
                 }
                 else
                 {
-                    sourcePropertyForResolver = sourceProperties.FirstOrDefault(sp => sp.Name == destProp.Name);
-                    if (sourcePropertyForResolver != null)
+                    // Try to find by same name
+                    var matchingSourceProp = sourceProperties.FirstOrDefault(sp => sp.Name == destProp.Name);
+                    if (matchingSourceProp != null)
                     {
-                        sourcePropPath = sourcePropertyForResolver.Name;
+                        sourcePropPath = matchingSourceProp.Name;
+                        sourcePathLeafType = matchingSourceProp.Type;
                     }
                 }
 
+                // Find the resolver method - pass leaf type for proper overload selection
+                var sourcePropertyForResolver = sourcePathLeafType != null && sourceNamedType != null
+                    ? sourceProperties.FirstOrDefault(sp => SymbolEqualityComparer.Default.Equals(sp.Type, sourcePathLeafType))
+                    : null;
                 var resolverMethod = FindResolverMethod(forger.Symbol, resolverMethodName, sourceType, sourcePropertyForResolver);
 
                 if (resolverMethod == null)
@@ -527,8 +561,8 @@ internal sealed class ForgeCodeEmitter
                 {
                     resolverCall = $"{resolverMethodName}({sourceParam})";
                 }
-                else if (sourcePropertyForResolver != null && sourcePropPath != null &&
-                         CanAssign(sourcePropertyForResolver.Type, resolverParamType))
+                else if (sourcePropPath != null && sourcePathLeafType != null && sourceNamedType != null &&
+                         CanAssign(sourcePathLeafType, resolverParamType))
                 {
                     var sourceExpr = GenerateSourceExpression(sourceParam, sourcePropPath, sourceNamedType);
                     resolverCall = $"{resolverMethodName}({sourceExpr})";
@@ -547,7 +581,7 @@ internal sealed class ForgeCodeEmitter
             }
 
             // Check if this property has a mapping from [ForgeProperty]
-            if (propertyMappings.TryGetValue(destProp.Name, out var sourcePropName))
+            if (propertyMappings.TryGetValue(destProp.Name, out var sourcePropName) && sourceNamedType != null)
             {
                 var (sourceExpr, hasNullConditional) = GenerateSourceExpressionWithNullInfo(sourceParam, sourcePropName, sourceNamedType);
                 // Add null-forgiving operator if we used null-conditional and dest is non-nullable
