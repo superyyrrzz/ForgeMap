@@ -57,3 +57,6 @@ Thumbs.db
 
 # Verify snapshots that are not committed
 *.received.*
+
+# Claude Code local settings
+.claude/settings.local.json
