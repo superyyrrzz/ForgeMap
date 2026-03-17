@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Linq;
 using System.Text;
 using Microsoft.CodeAnalysis;
@@ -12,10 +13,12 @@ namespace TypeForge.Generator;
 internal sealed class ForgeCodeEmitter
 {
     private readonly Compilation _compilation;
+    private readonly INamedTypeSymbol? _ignoreAttributeSymbol;
 
     public ForgeCodeEmitter(Compilation compilation)
     {
         _compilation = compilation;
+        _ignoreAttributeSymbol = compilation.GetTypeByMetadataName("TypeForge.IgnoreAttribute");
     }
 
     public string GenerateForger(ForgerInfo forger, SourceProductionContext context)
@@ -117,6 +120,9 @@ internal sealed class ForgeCodeEmitter
         var sb = new StringBuilder();
         var sourceParam = method.Parameters[0].Name;
 
+        // Get ignored properties from [Ignore] attributes
+        var ignoredProperties = GetIgnoredProperties(method);
+
         // Method signature
         var accessibility = GetAccessibilityKeyword(method.DeclaredAccessibility);
         sb.AppendLine($"        {accessibility} partial {destinationType.ToDisplayString()} {method.Name}({sourceType.ToDisplayString()} {sourceParam})");
@@ -136,6 +142,10 @@ internal sealed class ForgeCodeEmitter
 
         foreach (var destProp in destProperties)
         {
+            // Skip ignored properties
+            if (ignoredProperties.Contains(destProp.Name))
+                continue;
+
             // Try to find matching source property by name
             var sourceProp = sourceProperties.FirstOrDefault(sp =>
                 string.Equals(sp.Name, destProp.Name, StringComparison.Ordinal));
@@ -150,6 +160,38 @@ internal sealed class ForgeCodeEmitter
         sb.AppendLine("        }");
 
         return sb.ToString();
+    }
+
+    private HashSet<string> GetIgnoredProperties(IMethodSymbol method)
+    {
+        var ignored = new HashSet<string>(StringComparer.Ordinal);
+
+        if (_ignoreAttributeSymbol == null)
+            return ignored;
+
+        foreach (var attr in method.GetAttributes())
+        {
+            if (!SymbolEqualityComparer.Default.Equals(attr.AttributeClass, _ignoreAttributeSymbol))
+                continue;
+
+            // The [Ignore] attribute takes params string[] propertyNames
+            if (attr.ConstructorArguments.Length > 0)
+            {
+                var arg = attr.ConstructorArguments[0];
+                if (arg.Kind == TypedConstantKind.Array)
+                {
+                    foreach (var item in arg.Values)
+                    {
+                        if (item.Value is string propName)
+                        {
+                            ignored.Add(propName);
+                        }
+                    }
+                }
+            }
+        }
+
+        return ignored;
     }
 
     private string GenerateForgeIntoMethod(
@@ -168,6 +210,9 @@ internal sealed class ForgeCodeEmitter
             p.GetAttributes().Any(a =>
                 a.AttributeClass?.Name == "UseExistingValueAttribute")).Name;
 
+        // Get ignored properties from [Ignore] attributes
+        var ignoredProperties = GetIgnoredProperties(method);
+
         // Method signature
         var accessibility = GetAccessibilityKeyword(method.DeclaredAccessibility);
         sb.AppendLine($"        {accessibility} partial void {method.Name}({sourceType.ToDisplayString()} {sourceParam}, {destinationType.ToDisplayString()} {destParam})");
@@ -184,6 +229,10 @@ internal sealed class ForgeCodeEmitter
 
         foreach (var destProp in destProperties)
         {
+            // Skip ignored properties
+            if (ignoredProperties.Contains(destProp.Name))
+                continue;
+
             var sourceProp = sourceProperties.FirstOrDefault(sp =>
                 string.Equals(sp.Name, destProp.Name, StringComparison.Ordinal));
 
