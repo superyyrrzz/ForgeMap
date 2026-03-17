@@ -1,0 +1,59 @@
+# Build results
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Bb]in/
+[Oo]bj/
+[Oo]ut/
+[Ll]og/
+[Ll]ogs/
+
+# Visual Studio files
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.userprefs
+
+# NuGet
+*.nupkg
+*.snupkg
+.nuget/
+packages/
+project.lock.json
+project.fragment.lock.json
+
+# Rider
+.idea/
+*.sln.iml
+
+# VS Code
+.vscode/
+
+# Test results
+[Tt]est[Rr]esult*/
+*.trx
+*.coverage
+*.coveragexml
+coverage*.json
+coverage*.xml
+coverage/
+
+# BenchmarkDotNet
+BenchmarkDotNet.Artifacts/
+
+# Build
+artifacts/
+publish/
+
+# Source generator output (for debugging)
+Generated/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Verify snapshots that are not committed
+*.received.*

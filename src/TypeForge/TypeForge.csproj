@@ -1,0 +1,42 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <LangVersion>12.0</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+
+    <Description>TypeForge is a lightweight, compile-time object transformation library for .NET. Zero-reflection, source-generator-based mapping with compile-time type safety.</Description>
+    <PackageTags>automapper;mapping;sourcegenerator;dto;transformation;object-mapper</PackageTags>
+
+    <!-- This is the main package users reference -->
+    <IsPackable>true</IsPackable>
+    <IncludeBuildOutput>true</IncludeBuildOutput>
+    <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\TypeForge.Abstractions\TypeForge.Abstractions.csproj" />
+    <ProjectReference Include="..\TypeForge.Generator\TypeForge.Generator.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+  <!-- Include the abstractions and generator as content for the NuGet package -->
+  <PropertyGroup>
+    <GetTargetPathDependsOn>$(GetTargetPathDependsOn);GetPackageContent</GetTargetPathDependsOn>
+  </PropertyGroup>
+
+  <Target Name="GetPackageContent" DependsOnTargets="ResolveProjectReferences">
+    <ItemGroup>
+      <!-- Include TypeForge.Abstractions in lib folder -->
+      <None Include="$(OutDir)TypeForge.Abstractions.dll" Pack="true" PackagePath="lib/netstandard2.0" />
+
+      <!-- Include TypeForge.Generator as an analyzer -->
+      <None Include="$(OutDir)../TypeForge.Generator/netstandard2.0/TypeForge.Generator.dll"
+            Pack="true"
+            PackagePath="analyzers/dotnet/cs" />
+    </ItemGroup>
+  </Target>
+
+</Project>
