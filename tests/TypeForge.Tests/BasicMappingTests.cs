@@ -107,8 +107,8 @@ public class NestedOrderEntity
 public class FlatOrderDto
 {
     public int Id { get; set; }
-    public string CustomerName { get; set; } = string.Empty;
-    public string CustomerEmail { get; set; } = string.Empty;
+    public string? CustomerName { get; set; }
+    public string? CustomerEmail { get; set; }
 }
 
 public class InvoiceEntity

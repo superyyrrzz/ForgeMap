@@ -543,11 +543,11 @@ public class NullableHandlingGeneratorTests
         var generatedCode = generatedTrees[0].GetText().ToString();
         Debug.WriteLine($"Generated code:\n{generatedCode}");
 
-        // Check for cast pattern - the exact type name may vary based on context
+        // Check for cast pattern - (Type)source.Property! format
         Assert.Contains("ShippedAt =", generatedCode);
-        Assert.Contains("source.ShippedAt!", generatedCode);  // Should have null-forgiving operator
+        Assert.Contains(")source.ShippedAt!", generatedCode);  // Should have cast (ending with ')') and null-forgiving operator
         Assert.Contains("Quantity =", generatedCode);
-        Assert.Contains("source.Quantity!", generatedCode);
+        Assert.Contains(")source.Quantity!", generatedCode);  // Should have cast (ending with ')') and null-forgiving operator
     }
 
     [Fact]

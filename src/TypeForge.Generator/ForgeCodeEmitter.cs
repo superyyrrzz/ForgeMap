@@ -199,7 +199,8 @@ internal sealed class ForgeCodeEmitter
                     // Pass the full source object
                     resolverCall = $"{resolverMethodName}({sourceParam})";
                 }
-                else if (sourcePropertyForResolver != null && sourcePropPath != null)
+                else if (sourcePropertyForResolver != null && sourcePropPath != null &&
+                         CanAssign(sourcePropertyForResolver.Type, resolverParamType))
                 {
                     // Pass the source property value
                     var sourceExpr = GenerateSourceExpression(sourceParam, sourcePropPath, sourceType);
@@ -526,7 +527,8 @@ internal sealed class ForgeCodeEmitter
                 {
                     resolverCall = $"{resolverMethodName}({sourceParam})";
                 }
-                else if (sourcePropertyForResolver != null && sourcePropPath != null)
+                else if (sourcePropertyForResolver != null && sourcePropPath != null &&
+                         CanAssign(sourcePropertyForResolver.Type, resolverParamType))
                 {
                     var sourceExpr = GenerateSourceExpression(sourceParam, sourcePropPath, sourceNamedType);
                     resolverCall = $"{resolverMethodName}({sourceExpr})";
