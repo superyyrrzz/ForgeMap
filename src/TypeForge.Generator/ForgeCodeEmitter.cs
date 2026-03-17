@@ -176,11 +176,8 @@ internal sealed class ForgeCodeEmitter
                     }
                 }
 
-                // Find the resolver method - pass leaf type for proper overload selection
-                var sourcePropertyForResolver = sourcePathLeafType != null
-                    ? sourceProperties.FirstOrDefault(sp => SymbolEqualityComparer.Default.Equals(sp.Type, sourcePathLeafType))
-                    : null;
-                var resolverMethod = FindResolverMethod(forger.Symbol, resolverMethodName, sourceType, sourcePropertyForResolver);
+                // Find the resolver method - pass leaf type directly for proper overload selection
+                var resolverMethod = FindResolverMethod(forger.Symbol, resolverMethodName, sourceType, sourcePathLeafType);
 
                 if (resolverMethod == null)
                 {
@@ -355,8 +352,9 @@ internal sealed class ForgeCodeEmitter
 
     /// <summary>
     /// Finds a resolver method in the forger class.
+    /// Prefers overloads that match preferredParamType (e.g., leaf type for nested paths).
     /// </summary>
-    private IMethodSymbol? FindResolverMethod(INamedTypeSymbol forgerType, string methodName, ITypeSymbol sourceType, IPropertySymbol? sourceProperty)
+    private IMethodSymbol? FindResolverMethod(INamedTypeSymbol forgerType, string methodName, ITypeSymbol sourceType, ITypeSymbol? preferredParamType)
     {
         var candidates = forgerType.GetMembers(methodName)
             .OfType<IMethodSymbol>()
@@ -366,15 +364,15 @@ internal sealed class ForgeCodeEmitter
         if (candidates.Count == 0)
             return null;
 
-        // Prefer Method(TSourceProperty) if sourceProperty is provided and there's a match
-        if (sourceProperty != null)
+        // Prefer Method(TPreferredType) if preferredParamType is provided and there's a match
+        if (preferredParamType != null)
         {
-            var propertyTypeMatch = candidates.FirstOrDefault(m =>
-                SymbolEqualityComparer.Default.Equals(m.Parameters[0].Type, sourceProperty.Type) ||
-                CanAssign(sourceProperty.Type, m.Parameters[0].Type));
+            var preferredTypeMatch = candidates.FirstOrDefault(m =>
+                SymbolEqualityComparer.Default.Equals(m.Parameters[0].Type, preferredParamType) ||
+                CanAssign(preferredParamType, m.Parameters[0].Type));
 
-            if (propertyTypeMatch != null)
-                return propertyTypeMatch;
+            if (preferredTypeMatch != null)
+                return preferredTypeMatch;
         }
 
         // Fall back to Method(TSource)
@@ -522,7 +520,7 @@ internal sealed class ForgeCodeEmitter
                 string? sourcePropPath = null;
                 ITypeSymbol? sourcePathLeafType = null;
 
-                if (propertyMappings.TryGetValue(destProp.Name, out sourcePropPath) && sourceNamedType != null)
+                if (propertyMappings.TryGetValue(destProp.Name, out sourcePropPath))
                 {
                     // Resolve the leaf type for the full path (handles nested paths like "Customer.Name")
                     sourcePathLeafType = ResolvePathLeafType(sourcePropPath, sourceNamedType);
@@ -538,11 +536,8 @@ internal sealed class ForgeCodeEmitter
                     }
                 }
 
-                // Find the resolver method - pass leaf type for proper overload selection
-                var sourcePropertyForResolver = sourcePathLeafType != null && sourceNamedType != null
-                    ? sourceProperties.FirstOrDefault(sp => SymbolEqualityComparer.Default.Equals(sp.Type, sourcePathLeafType))
-                    : null;
-                var resolverMethod = FindResolverMethod(forger.Symbol, resolverMethodName, sourceType, sourcePropertyForResolver);
+                // Find the resolver method - pass leaf type directly for proper overload selection
+                var resolverMethod = FindResolverMethod(forger.Symbol, resolverMethodName, sourceType, sourcePathLeafType);
 
                 if (resolverMethod == null)
                 {
@@ -561,7 +556,7 @@ internal sealed class ForgeCodeEmitter
                 {
                     resolverCall = $"{resolverMethodName}({sourceParam})";
                 }
-                else if (sourcePropPath != null && sourcePathLeafType != null && sourceNamedType != null &&
+                else if (sourcePropPath != null && sourcePathLeafType != null &&
                          CanAssign(sourcePathLeafType, resolverParamType))
                 {
                     var sourceExpr = GenerateSourceExpression(sourceParam, sourcePropPath, sourceNamedType);
@@ -581,7 +576,7 @@ internal sealed class ForgeCodeEmitter
             }
 
             // Check if this property has a mapping from [ForgeProperty]
-            if (propertyMappings.TryGetValue(destProp.Name, out var sourcePropName) && sourceNamedType != null)
+            if (propertyMappings.TryGetValue(destProp.Name, out var sourcePropName))
             {
                 var (sourceExpr, hasNullConditional) = GenerateSourceExpressionWithNullInfo(sourceParam, sourcePropName, sourceNamedType);
                 // Add null-forgiving operator if we used null-conditional and dest is non-nullable
