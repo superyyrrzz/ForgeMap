@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Collections.Immutable;
 using System.Linq;
 using System.Text;
 using Microsoft.CodeAnalysis;
@@ -12,12 +11,10 @@ namespace TypeForge.Generator;
 /// </summary>
 internal sealed class ForgeCodeEmitter
 {
-    private readonly Compilation _compilation;
     private readonly INamedTypeSymbol? _ignoreAttributeSymbol;
 
     public ForgeCodeEmitter(Compilation compilation)
     {
-        _compilation = compilation;
         _ignoreAttributeSymbol = compilation.GetTypeByMetadataName("TypeForge.IgnoreAttribute");
     }
 
