@@ -212,7 +212,7 @@ public partial class AppForger
     public partial ProductDtoV2 Forge(ProductEntityV2 source);
 
     /// <summary>
-    /// ForgeFrom with source property resolver (takes property value, not full source).
+    /// ForgeFrom with resolver methods that take the full source object.
     /// </summary>
     [ForgeProperty(nameof(InvoiceEntity.CompanyName), nameof(InvoiceDisplayDto.Company))]
     [ForgeFrom(nameof(InvoiceDisplayDto.DisplayNumber), nameof(FormatInvoiceNumber))]
@@ -240,7 +240,7 @@ public partial class AppForger
     // v0.2 Nullable handling
 
     /// <summary>
-    /// Nullable&lt;T&gt; to T conversion - uses .Value
+    /// Nullable&lt;T&gt; to T conversion - uses explicit cast.
     /// </summary>
     public partial OrderWithRequiredDates Forge(OrderWithNullables source);
 

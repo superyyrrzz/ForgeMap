@@ -547,8 +547,10 @@ internal sealed class ForgeCodeEmitter
             // Check if this property has a mapping from [ForgeProperty]
             if (propertyMappings.TryGetValue(destProp.Name, out var sourcePropName))
             {
-                var sourceExpr = GenerateSourceExpression(sourceParam, sourcePropName, sourceNamedType);
-                sb.AppendLine($"            {destParam}.{destProp.Name} = {sourceExpr};");
+                var (sourceExpr, hasNullConditional) = GenerateSourceExpressionWithNullInfo(sourceParam, sourcePropName, sourceNamedType);
+                // Add null-forgiving operator if we used null-conditional and dest is non-nullable
+                var nullForgiving = hasNullConditional && destProp.Type.NullableAnnotation != NullableAnnotation.Annotated ? "!" : "";
+                sb.AppendLine($"            {destParam}.{destProp.Name} = {sourceExpr}{nullForgiving};");
                 continue;
             }
 
