@@ -12,10 +12,14 @@ namespace TypeForge.Generator;
 internal sealed class ForgeCodeEmitter
 {
     private readonly INamedTypeSymbol? _ignoreAttributeSymbol;
+    private readonly INamedTypeSymbol? _forgePropertyAttributeSymbol;
+    private readonly INamedTypeSymbol? _forgeFromAttributeSymbol;
 
     public ForgeCodeEmitter(Compilation compilation)
     {
         _ignoreAttributeSymbol = compilation.GetTypeByMetadataName("TypeForge.IgnoreAttribute");
+        _forgePropertyAttributeSymbol = compilation.GetTypeByMetadataName("TypeForge.ForgePropertyAttribute");
+        _forgeFromAttributeSymbol = compilation.GetTypeByMetadataName("TypeForge.ForgeFromAttribute");
     }
 
     public string GenerateForger(ForgerInfo forger, SourceProductionContext context)
@@ -120,6 +124,12 @@ internal sealed class ForgeCodeEmitter
         // Get ignored properties from [Ignore] attributes
         var ignoredProperties = GetIgnoredProperties(method);
 
+        // Get property mappings from [ForgeProperty] attributes
+        var propertyMappings = GetPropertyMappings(method);
+
+        // Get resolver mappings from [ForgeFrom] attributes
+        var resolverMappings = GetResolverMappings(method);
+
         // Method signature
         var accessibility = GetAccessibilityKeyword(method.DeclaredAccessibility);
         sb.AppendLine($"        {accessibility} partial {destinationType.ToDisplayString()} {method.Name}({sourceType.ToDisplayString()} {sourceParam})");
@@ -143,13 +153,97 @@ internal sealed class ForgeCodeEmitter
             if (ignoredProperties.Contains(destProp.Name))
                 continue;
 
-            // Try to find matching source property by name
+            // Check if this property has a resolver from [ForgeFrom]
+            if (resolverMappings.TryGetValue(destProp.Name, out var resolverMethodName))
+            {
+                // Find the source property for this destination (if mapped via [ForgeProperty])
+                IPropertySymbol? sourcePropertyForResolver = null;
+                string? sourcePropPath = null;
+
+                if (propertyMappings.TryGetValue(destProp.Name, out sourcePropPath))
+                {
+                    // Get the first part of the path for a simple property lookup
+                    var firstPart = sourcePropPath.Contains(".") ? sourcePropPath.Split('.')[0] : sourcePropPath;
+                    sourcePropertyForResolver = sourceProperties.FirstOrDefault(sp => sp.Name == firstPart);
+                }
+                else
+                {
+                    // Try to find by same name
+                    sourcePropertyForResolver = sourceProperties.FirstOrDefault(sp => sp.Name == destProp.Name);
+                    if (sourcePropertyForResolver != null)
+                    {
+                        sourcePropPath = sourcePropertyForResolver.Name;
+                    }
+                }
+
+                // Find the resolver method
+                var resolverMethod = FindResolverMethod(forger.Symbol, resolverMethodName, sourceType, sourcePropertyForResolver);
+
+                if (resolverMethod == null)
+                {
+                    // Report diagnostic TF0008: Resolver method not found
+                    context.ReportDiagnostic(Diagnostic.Create(
+                        DiagnosticDescriptors.ResolverMethodNotFound,
+                        method.Locations.FirstOrDefault(),
+                        resolverMethodName));
+                    continue;
+                }
+
+                // Determine what to pass to the resolver
+                var resolverParamType = resolverMethod.Parameters[0].Type;
+                string resolverCall;
+
+                if (SymbolEqualityComparer.Default.Equals(resolverParamType, sourceType) ||
+                    CanAssign(sourceType, resolverParamType))
+                {
+                    // Pass the full source object
+                    resolverCall = $"{resolverMethodName}({sourceParam})";
+                }
+                else if (sourcePropertyForResolver != null && sourcePropPath != null)
+                {
+                    // Pass the source property value
+                    var sourceExpr = GenerateSourceExpression(sourceParam, sourcePropPath, sourceType);
+                    resolverCall = $"{resolverMethodName}({sourceExpr})";
+                }
+                else
+                {
+                    // Report diagnostic TF0009: Invalid resolver signature
+                    context.ReportDiagnostic(Diagnostic.Create(
+                        DiagnosticDescriptors.InvalidResolverSignature,
+                        method.Locations.FirstOrDefault(),
+                        resolverMethodName));
+                    continue;
+                }
+
+                sb.AppendLine($"                {destProp.Name} = {resolverCall},");
+                continue;
+            }
+
+            // Check if this property has a mapping from [ForgeProperty]
+            if (propertyMappings.TryGetValue(destProp.Name, out var sourcePropName))
+            {
+                var (sourceExpr, hasNullConditional) = GenerateSourceExpressionWithNullInfo(sourceParam, sourcePropName, sourceType);
+                // Add null-forgiving operator if destination is non-nullable and we have null-conditional
+                var nullForgiving = hasNullConditional && destProp.Type.NullableAnnotation != NullableAnnotation.Annotated ? "!" : "";
+                sb.AppendLine($"                {destProp.Name} = {sourceExpr}{nullForgiving},");
+                continue;
+            }
+
+            // Try to find matching source property by name (convention)
             var sourceProp = sourceProperties.FirstOrDefault(sp =>
                 string.Equals(sp.Name, destProp.Name, StringComparison.Ordinal));
 
             if (sourceProp != null && CanAssign(sourceProp.Type, destProp.Type))
             {
-                sb.AppendLine($"                {destProp.Name} = {sourceParam}.{sourceProp.Name},");
+                // Handle Nullable<T> to T conversion using explicit cast which throws if null
+                if (IsNullableToNonNullableValueType(sourceProp.Type, destProp.Type))
+                {
+                    sb.AppendLine($"                {destProp.Name} = ({destProp.Type.ToDisplayString()}){sourceParam}.{sourceProp.Name}!,");
+                }
+                else
+                {
+                    sb.AppendLine($"                {destProp.Name} = {sourceParam}.{sourceProp.Name},");
+                }
             }
         }
 
@@ -191,6 +285,159 @@ internal sealed class ForgeCodeEmitter
         return ignored;
     }
 
+    /// <summary>
+    /// Gets property mappings from [ForgeProperty] attributes.
+    /// Returns a dictionary mapping destination property name to source property path.
+    /// </summary>
+    private Dictionary<string, string> GetPropertyMappings(IMethodSymbol method)
+    {
+        var mappings = new Dictionary<string, string>(StringComparer.Ordinal);
+
+        if (_forgePropertyAttributeSymbol == null)
+            return mappings;
+
+        foreach (var attr in method.GetAttributes())
+        {
+            if (!SymbolEqualityComparer.Default.Equals(attr.AttributeClass, _forgePropertyAttributeSymbol))
+                continue;
+
+            // [ForgeProperty(sourceProperty, destinationProperty)]
+            if (attr.ConstructorArguments.Length >= 2)
+            {
+                var sourceProperty = attr.ConstructorArguments[0].Value as string;
+                var destinationProperty = attr.ConstructorArguments[1].Value as string;
+
+                if (!string.IsNullOrEmpty(sourceProperty) && !string.IsNullOrEmpty(destinationProperty))
+                {
+                    mappings[destinationProperty!] = sourceProperty!;
+                }
+            }
+        }
+
+        return mappings;
+    }
+
+    /// <summary>
+    /// Gets resolver mappings from [ForgeFrom] attributes.
+    /// Returns a dictionary mapping destination property name to resolver method name.
+    /// </summary>
+    private Dictionary<string, string> GetResolverMappings(IMethodSymbol method)
+    {
+        var resolvers = new Dictionary<string, string>(StringComparer.Ordinal);
+
+        if (_forgeFromAttributeSymbol == null)
+            return resolvers;
+
+        foreach (var attr in method.GetAttributes())
+        {
+            if (!SymbolEqualityComparer.Default.Equals(attr.AttributeClass, _forgeFromAttributeSymbol))
+                continue;
+
+            // [ForgeFrom(destinationProperty, resolverMethodName)]
+            if (attr.ConstructorArguments.Length >= 2)
+            {
+                var destinationProperty = attr.ConstructorArguments[0].Value as string;
+                var resolverMethodName = attr.ConstructorArguments[1].Value as string;
+
+                if (!string.IsNullOrEmpty(destinationProperty) && !string.IsNullOrEmpty(resolverMethodName))
+                {
+                    resolvers[destinationProperty!] = resolverMethodName!;
+                }
+            }
+        }
+
+        return resolvers;
+    }
+
+    /// <summary>
+    /// Finds a resolver method in the forger class.
+    /// </summary>
+    private IMethodSymbol? FindResolverMethod(INamedTypeSymbol forgerType, string methodName, ITypeSymbol sourceType, IPropertySymbol? sourceProperty)
+    {
+        var candidates = forgerType.GetMembers(methodName)
+            .OfType<IMethodSymbol>()
+            .Where(m => !m.ReturnsVoid && m.Parameters.Length == 1)
+            .ToList();
+
+        if (candidates.Count == 0)
+            return null;
+
+        // Prefer Method(TSourceProperty) if sourceProperty is provided and there's a match
+        if (sourceProperty != null)
+        {
+            var propertyTypeMatch = candidates.FirstOrDefault(m =>
+                SymbolEqualityComparer.Default.Equals(m.Parameters[0].Type, sourceProperty.Type) ||
+                CanAssign(sourceProperty.Type, m.Parameters[0].Type));
+
+            if (propertyTypeMatch != null)
+                return propertyTypeMatch;
+        }
+
+        // Fall back to Method(TSource)
+        var sourceTypeMatch = candidates.FirstOrDefault(m =>
+            SymbolEqualityComparer.Default.Equals(m.Parameters[0].Type, sourceType) ||
+            CanAssign(sourceType, m.Parameters[0].Type));
+
+        return sourceTypeMatch ?? candidates.FirstOrDefault();
+    }
+
+    /// <summary>
+    /// Generates the source expression for a property, handling nested paths.
+    /// Returns a tuple of (expression, hasNullConditional).
+    /// </summary>
+    private (string Expression, bool HasNullConditional) GenerateSourceExpressionWithNullInfo(string sourceParam, string sourcePath, INamedTypeSymbol sourceType)
+    {
+        if (!sourcePath.Contains("."))
+        {
+            return ($"{sourceParam}.{sourcePath}", false);
+        }
+
+        // Handle nested path (e.g., "Customer.Name")
+        var parts = sourcePath.Split('.');
+        var expression = new StringBuilder(sourceParam);
+        var currentType = sourceType;
+        var hasNullConditional = false;
+
+        for (int i = 0; i < parts.Length; i++)
+        {
+            var part = parts[i];
+            var prop = GetMappableProperties(currentType).FirstOrDefault(p => p.Name == part);
+
+            if (prop == null)
+            {
+                // Property not found, just append directly
+                expression.Append($".{part}");
+                continue;
+            }
+
+            // Add null-conditional for reference types (except the last property)
+            if (i < parts.Length - 1 && prop.Type.IsReferenceType)
+            {
+                expression.Append($".{part}?");
+                hasNullConditional = true;
+            }
+            else
+            {
+                expression.Append($".{part}");
+            }
+
+            if (prop.Type is INamedTypeSymbol namedType)
+            {
+                currentType = namedType;
+            }
+        }
+
+        return (expression.ToString(), hasNullConditional);
+    }
+
+    /// <summary>
+    /// Generates the source expression for a property, handling nested paths.
+    /// </summary>
+    private string GenerateSourceExpression(string sourceParam, string sourcePath, INamedTypeSymbol sourceType)
+    {
+        return GenerateSourceExpressionWithNullInfo(sourceParam, sourcePath, sourceType).Expression;
+    }
+
     private string GenerateForgeIntoMethod(
         IMethodSymbol method,
         ITypeSymbol sourceType,
@@ -201,6 +448,10 @@ internal sealed class ForgeCodeEmitter
         if (destinationType == null)
             return string.Empty;
 
+        var sourceNamedType = sourceType as INamedTypeSymbol;
+        if (sourceNamedType == null)
+            return string.Empty;
+
         var sb = new StringBuilder();
         var sourceParam = method.Parameters[0].Name;
         var destParam = method.Parameters.First(p =>
@@ -209,6 +460,12 @@ internal sealed class ForgeCodeEmitter
 
         // Get ignored properties from [Ignore] attributes
         var ignoredProperties = GetIgnoredProperties(method);
+
+        // Get property mappings from [ForgeProperty] attributes
+        var propertyMappings = GetPropertyMappings(method);
+
+        // Get resolver mappings from [ForgeFrom] attributes
+        var resolverMappings = GetResolverMappings(method);
 
         // Method signature
         var accessibility = GetAccessibilityKeyword(method.DeclaredAccessibility);
@@ -221,7 +478,7 @@ internal sealed class ForgeCodeEmitter
         sb.AppendLine();
 
         // Get mappable properties
-        var sourceProperties = GetMappableProperties(sourceType as INamedTypeSymbol);
+        var sourceProperties = GetMappableProperties(sourceNamedType);
         var destProperties = GetMappableProperties(destinationType).Where(p => p.SetMethod != null);
 
         foreach (var destProp in destProperties)
@@ -230,12 +487,87 @@ internal sealed class ForgeCodeEmitter
             if (ignoredProperties.Contains(destProp.Name))
                 continue;
 
+            // Check if this property has a resolver from [ForgeFrom]
+            if (resolverMappings.TryGetValue(destProp.Name, out var resolverMethodName))
+            {
+                IPropertySymbol? sourcePropertyForResolver = null;
+                string? sourcePropPath = null;
+
+                if (propertyMappings.TryGetValue(destProp.Name, out sourcePropPath))
+                {
+                    var firstPart = sourcePropPath.Contains(".") ? sourcePropPath.Split('.')[0] : sourcePropPath;
+                    sourcePropertyForResolver = sourceProperties.FirstOrDefault(sp => sp.Name == firstPart);
+                }
+                else
+                {
+                    sourcePropertyForResolver = sourceProperties.FirstOrDefault(sp => sp.Name == destProp.Name);
+                    if (sourcePropertyForResolver != null)
+                    {
+                        sourcePropPath = sourcePropertyForResolver.Name;
+                    }
+                }
+
+                var resolverMethod = FindResolverMethod(forger.Symbol, resolverMethodName, sourceType, sourcePropertyForResolver);
+
+                if (resolverMethod == null)
+                {
+                    context.ReportDiagnostic(Diagnostic.Create(
+                        DiagnosticDescriptors.ResolverMethodNotFound,
+                        method.Locations.FirstOrDefault(),
+                        resolverMethodName));
+                    continue;
+                }
+
+                var resolverParamType = resolverMethod.Parameters[0].Type;
+                string resolverCall;
+
+                if (SymbolEqualityComparer.Default.Equals(resolverParamType, sourceType) ||
+                    CanAssign(sourceType, resolverParamType))
+                {
+                    resolverCall = $"{resolverMethodName}({sourceParam})";
+                }
+                else if (sourcePropertyForResolver != null && sourcePropPath != null)
+                {
+                    var sourceExpr = GenerateSourceExpression(sourceParam, sourcePropPath, sourceNamedType);
+                    resolverCall = $"{resolverMethodName}({sourceExpr})";
+                }
+                else
+                {
+                    context.ReportDiagnostic(Diagnostic.Create(
+                        DiagnosticDescriptors.InvalidResolverSignature,
+                        method.Locations.FirstOrDefault(),
+                        resolverMethodName));
+                    continue;
+                }
+
+                sb.AppendLine($"            {destParam}.{destProp.Name} = {resolverCall};");
+                continue;
+            }
+
+            // Check if this property has a mapping from [ForgeProperty]
+            if (propertyMappings.TryGetValue(destProp.Name, out var sourcePropName))
+            {
+                var (sourceExpr, hasNullConditional) = GenerateSourceExpressionWithNullInfo(sourceParam, sourcePropName, sourceNamedType);
+                // Add null-forgiving operator if we used null-conditional and dest is non-nullable
+                var nullForgiving = hasNullConditional && destProp.Type.NullableAnnotation != NullableAnnotation.Annotated ? "!" : "";
+                sb.AppendLine($"            {destParam}.{destProp.Name} = {sourceExpr}{nullForgiving};");
+                continue;
+            }
+
             var sourceProp = sourceProperties.FirstOrDefault(sp =>
                 string.Equals(sp.Name, destProp.Name, StringComparison.Ordinal));
 
             if (sourceProp != null && CanAssign(sourceProp.Type, destProp.Type))
             {
-                sb.AppendLine($"            {destParam}.{destProp.Name} = {sourceParam}.{sourceProp.Name};");
+                // Handle Nullable<T> to T conversion using explicit cast which throws if null
+                if (IsNullableToNonNullableValueType(sourceProp.Type, destProp.Type))
+                {
+                    sb.AppendLine($"            {destParam}.{destProp.Name} = ({destProp.Type.ToDisplayString()}){sourceParam}.{sourceProp.Name}!;");
+                }
+                else
+                {
+                    sb.AppendLine($"            {destParam}.{destProp.Name} = {sourceParam}.{sourceProp.Name};");
+                }
             }
         }
 
@@ -263,7 +595,23 @@ internal sealed class ForgeCodeEmitter
         if (SymbolEqualityComparer.Default.Equals(source, dest))
             return true;
 
-        // Handle nullable to non-nullable (with potential runtime issue)
+        // Handle Nullable<T> to T (value types)
+        var sourceUnderlying = GetNullableUnderlyingType(source);
+        var destUnderlying = GetNullableUnderlyingType(dest);
+
+        if (sourceUnderlying != null && destUnderlying == null)
+        {
+            // Nullable<T> -> T - allowed but may throw at runtime
+            return SymbolEqualityComparer.Default.Equals(sourceUnderlying, dest);
+        }
+
+        if (sourceUnderlying == null && destUnderlying != null)
+        {
+            // T -> Nullable<T> - always allowed
+            return SymbolEqualityComparer.Default.Equals(source, destUnderlying);
+        }
+
+        // Handle nullable reference types
         if (source.NullableAnnotation == NullableAnnotation.Annotated &&
             dest.NullableAnnotation != NullableAnnotation.Annotated)
         {
@@ -288,6 +636,36 @@ internal sealed class ForgeCodeEmitter
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Gets the underlying type for Nullable&lt;T&gt;, or null if the type is not a nullable value type.
+    /// </summary>
+    private static ITypeSymbol? GetNullableUnderlyingType(ITypeSymbol type)
+    {
+        if (type is INamedTypeSymbol namedType &&
+            namedType.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T &&
+            namedType.TypeArguments.Length == 1)
+        {
+            return namedType.TypeArguments[0];
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Checks if source is Nullable&lt;T&gt; and dest is T.
+    /// </summary>
+    private static bool IsNullableToNonNullableValueType(ITypeSymbol source, ITypeSymbol dest)
+    {
+        var sourceUnderlying = GetNullableUnderlyingType(source);
+        if (sourceUnderlying == null)
+            return false;
+
+        var destUnderlying = GetNullableUnderlyingType(dest);
+        if (destUnderlying != null)
+            return false;
+
+        return SymbolEqualityComparer.Default.Equals(sourceUnderlying, dest);
     }
 
     private static string GetAccessibilityKeyword(Accessibility accessibility)

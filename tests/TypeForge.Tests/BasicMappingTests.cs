@@ -59,6 +59,106 @@ public class ProductDto
     public string Description { get; set; } = string.Empty; // Unmapped
 }
 
+// v0.2 Test Models
+
+public class OrderEntityV2
+{
+    public string OrderId { get; set; } = string.Empty;
+    public DateTime PlacedAt { get; set; }
+    public decimal Subtotal { get; set; }
+    public decimal TaxRate { get; set; }
+    public string CustomerName { get; set; } = string.Empty;
+}
+
+public class OrderDtoV2
+{
+    public string Id { get; set; } = string.Empty;
+    public DateTime OrderDate { get; set; }
+    public decimal TotalWithTax { get; set; }
+    public string CustomerName { get; set; } = string.Empty;
+}
+
+public class ProductEntityV2
+{
+    public int Id { get; set; }
+    public string Title { get; set; } = string.Empty;
+    public decimal UnitPrice { get; set; }
+}
+
+public class ProductDtoV2
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public decimal Price { get; set; }
+}
+
+public class CustomerInfo
+{
+    public string Name { get; set; } = string.Empty;
+    public string Email { get; set; } = string.Empty;
+}
+
+public class NestedOrderEntity
+{
+    public int Id { get; set; }
+    public CustomerInfo? Customer { get; set; }
+}
+
+public class FlatOrderDto
+{
+    public int Id { get; set; }
+    public string CustomerName { get; set; } = string.Empty;
+    public string CustomerEmail { get; set; } = string.Empty;
+}
+
+public class InvoiceEntity
+{
+    public int InvoiceNumber { get; set; }
+    public string CompanyName { get; set; } = string.Empty;
+    public DateTime InvoiceDate { get; set; }
+}
+
+public class InvoiceDisplayDto
+{
+    public string DisplayNumber { get; set; } = string.Empty;
+    public string Company { get; set; } = string.Empty;
+    public string FormattedDate { get; set; } = string.Empty;
+}
+
+// v0.2 Nullable Test Models
+
+public class OrderWithNullables
+{
+    public int Id { get; set; }
+    public DateTime? ShippedAt { get; set; }
+    public decimal? DiscountPercent { get; set; }
+    public int? Quantity { get; set; }
+}
+
+public class OrderWithRequiredDates
+{
+    public int Id { get; set; }
+    public DateTime ShippedAt { get; set; }
+    public decimal DiscountPercent { get; set; }
+    public int Quantity { get; set; }
+}
+
+public class OrderWithOptionalDates
+{
+    public int Id { get; set; }
+    public DateTime? ShippedAt { get; set; }
+    public decimal? DiscountPercent { get; set; }
+    public int? Quantity { get; set; }
+}
+
+public class SimpleOrder
+{
+    public int Id { get; set; }
+    public DateTime ShippedAt { get; set; }
+    public decimal DiscountPercent { get; set; }
+    public int Quantity { get; set; }
+}
+
 #endregion
 
 #region Forgers
@@ -93,6 +193,61 @@ public partial class AppForger
     /// </summary>
     [Ignore(nameof(UserDto.PasswordHash))]
     public partial void ForgeInto(UserEntity source, [UseExistingValue] UserDto destination);
+
+    // v0.2 Features
+
+    /// <summary>
+    /// ForgeProperty - maps source properties to differently named destination properties.
+    /// </summary>
+    [ForgeProperty(nameof(OrderEntityV2.OrderId), nameof(OrderDtoV2.Id))]
+    [ForgeProperty(nameof(OrderEntityV2.PlacedAt), nameof(OrderDtoV2.OrderDate))]
+    [ForgeFrom(nameof(OrderDtoV2.TotalWithTax), nameof(CalculateTotalWithTax))]
+    public partial OrderDtoV2 Forge(OrderEntityV2 source);
+
+    /// <summary>
+    /// Simple ForgeProperty mapping.
+    /// </summary>
+    [ForgeProperty(nameof(ProductEntityV2.Title), nameof(ProductDtoV2.Name))]
+    [ForgeProperty(nameof(ProductEntityV2.UnitPrice), nameof(ProductDtoV2.Price))]
+    public partial ProductDtoV2 Forge(ProductEntityV2 source);
+
+    /// <summary>
+    /// ForgeFrom with resolver methods that take the full source object.
+    /// </summary>
+    [ForgeProperty(nameof(InvoiceEntity.CompanyName), nameof(InvoiceDisplayDto.Company))]
+    [ForgeFrom(nameof(InvoiceDisplayDto.DisplayNumber), nameof(FormatInvoiceNumber))]
+    [ForgeFrom(nameof(InvoiceDisplayDto.FormattedDate), nameof(FormatDate))]
+    public partial InvoiceDisplayDto Forge(InvoiceEntity source);
+
+    /// <summary>
+    /// Nested path mapping with ForgeProperty.
+    /// </summary>
+    [ForgeProperty("Customer.Name", nameof(FlatOrderDto.CustomerName))]
+    [ForgeProperty("Customer.Email", nameof(FlatOrderDto.CustomerEmail))]
+    public partial FlatOrderDto Forge(NestedOrderEntity source);
+
+    // Resolver methods for ForgeFrom
+
+    private static decimal CalculateTotalWithTax(OrderEntityV2 source)
+        => source.Subtotal * (1 + source.TaxRate);
+
+    private static string FormatInvoiceNumber(InvoiceEntity source)
+        => $"INV-{source.InvoiceNumber:D6}";
+
+    private static string FormatDate(InvoiceEntity source)
+        => source.InvoiceDate.ToString("yyyy-MM-dd");
+
+    // v0.2 Nullable handling
+
+    /// <summary>
+    /// Nullable&lt;T&gt; to T conversion - uses explicit cast.
+    /// </summary>
+    public partial OrderWithRequiredDates Forge(OrderWithNullables source);
+
+    /// <summary>
+    /// T to Nullable&lt;T&gt; conversion - direct assignment
+    /// </summary>
+    public partial OrderWithOptionalDates Forge(SimpleOrder source);
 }
 
 #endregion
@@ -315,4 +470,240 @@ public class ForgeIntoTests
         existing.SecurityStamp.Should().Be("new_stamp");
     }
 }
+
+#region v0.2 Feature Tests
+
+public class ForgePropertyTests
+{
+    private readonly AppForger _forger = new();
+
+    [Fact]
+    public void ForgeProperty_ShouldMapDifferentlyNamedProperties()
+    {
+        // Arrange
+        var entity = new OrderEntityV2
+        {
+            OrderId = "ORD-12345",
+            PlacedAt = new DateTime(2024, 3, 15, 10, 30, 0),
+            Subtotal = 100.00m,
+            TaxRate = 0.08m,
+            CustomerName = "John Doe"
+        };
+
+        // Act
+        var dto = _forger.Forge(entity);
+
+        // Assert
+        dto.Should().NotBeNull();
+        dto.Id.Should().Be("ORD-12345");
+        dto.OrderDate.Should().Be(new DateTime(2024, 3, 15, 10, 30, 0));
+        dto.CustomerName.Should().Be("John Doe");
+    }
+
+    [Fact]
+    public void ForgeProperty_SimpleRename_ShouldWork()
+    {
+        // Arrange
+        var entity = new ProductEntityV2
+        {
+            Id = 42,
+            Title = "Widget Pro",
+            UnitPrice = 29.99m
+        };
+
+        // Act
+        var dto = _forger.Forge(entity);
+
+        // Assert
+        dto.Should().NotBeNull();
+        dto.Id.Should().Be(42);
+        dto.Name.Should().Be("Widget Pro");
+        dto.Price.Should().Be(29.99m);
+    }
+
+    [Fact]
+    public void ForgeProperty_NestedPath_ShouldFlattenProperties()
+    {
+        // Arrange
+        var entity = new NestedOrderEntity
+        {
+            Id = 100,
+            Customer = new CustomerInfo
+            {
+                Name = "Alice Smith",
+                Email = "alice@example.com"
+            }
+        };
+
+        // Act
+        var dto = _forger.Forge(entity);
+
+        // Assert
+        dto.Should().NotBeNull();
+        dto.Id.Should().Be(100);
+        dto.CustomerName.Should().Be("Alice Smith");
+        dto.CustomerEmail.Should().Be("alice@example.com");
+    }
+
+    [Fact]
+    public void ForgeProperty_NullNestedObject_ShouldHandleGracefully()
+    {
+        // Arrange
+        var entity = new NestedOrderEntity
+        {
+            Id = 200,
+            Customer = null
+        };
+
+        // Act
+        var dto = _forger.Forge(entity);
+
+        // Assert
+        dto.Should().NotBeNull();
+        dto.Id.Should().Be(200);
+        dto.CustomerName.Should().BeNull();
+        dto.CustomerEmail.Should().BeNull();
+    }
+}
+
+public class ForgeFromTests
+{
+    private readonly AppForger _forger = new();
+
+    [Fact]
+    public void ForgeFrom_WithSourceObject_ShouldCallResolver()
+    {
+        // Arrange
+        var entity = new OrderEntityV2
+        {
+            OrderId = "ORD-001",
+            PlacedAt = new DateTime(2024, 3, 15),
+            Subtotal = 100.00m,
+            TaxRate = 0.08m,
+            CustomerName = "Test Customer"
+        };
+
+        // Act
+        var dto = _forger.Forge(entity);
+
+        // Assert
+        dto.Should().NotBeNull();
+        dto.TotalWithTax.Should().Be(108.00m); // 100 * 1.08
+    }
+
+    [Fact]
+    public void ForgeFrom_MultipleResolvers_ShouldWorkTogether()
+    {
+        // Arrange
+        var entity = new InvoiceEntity
+        {
+            InvoiceNumber = 42,
+            CompanyName = "Acme Corp",
+            InvoiceDate = new DateTime(2024, 6, 15)
+        };
+
+        // Act
+        var dto = _forger.Forge(entity);
+
+        // Assert
+        dto.Should().NotBeNull();
+        dto.DisplayNumber.Should().Be("INV-000042");
+        dto.Company.Should().Be("Acme Corp");
+        dto.FormattedDate.Should().Be("2024-06-15");
+    }
+
+    [Fact]
+    public void ForgeFrom_CombinedWithForgeProperty_ShouldWorkCorrectly()
+    {
+        // Arrange
+        var entity = new OrderEntityV2
+        {
+            OrderId = "ORD-999",
+            PlacedAt = new DateTime(2024, 12, 25),
+            Subtotal = 200.00m,
+            TaxRate = 0.10m,
+            CustomerName = "Holiday Shopper"
+        };
+
+        // Act
+        var dto = _forger.Forge(entity);
+
+        // Assert
+        dto.Should().NotBeNull();
+        dto.Id.Should().Be("ORD-999"); // ForgeProperty
+        dto.OrderDate.Should().Be(new DateTime(2024, 12, 25)); // ForgeProperty
+        dto.TotalWithTax.Should().Be(220.00m); // ForgeFrom: 200 * 1.10
+        dto.CustomerName.Should().Be("Holiday Shopper"); // Convention mapping
+    }
+}
+
+public class NullableHandlingTests
+{
+    private readonly AppForger _forger = new();
+
+    [Fact]
+    public void NullableToNonNullable_WithValue_ShouldConvert()
+    {
+        // Arrange
+        var entity = new OrderWithNullables
+        {
+            Id = 1,
+            ShippedAt = new DateTime(2024, 6, 15),
+            DiscountPercent = 0.1m,
+            Quantity = 5
+        };
+
+        // Act
+        var dto = _forger.Forge(entity);
+
+        // Assert
+        dto.Should().NotBeNull();
+        dto.Id.Should().Be(1);
+        dto.ShippedAt.Should().Be(new DateTime(2024, 6, 15));
+        dto.DiscountPercent.Should().Be(0.1m);
+        dto.Quantity.Should().Be(5);
+    }
+
+    [Fact]
+    public void NullableToNonNullable_WithNull_ShouldThrow()
+    {
+        // Arrange
+        var entity = new OrderWithNullables
+        {
+            Id = 1,
+            ShippedAt = null,
+            DiscountPercent = null,
+            Quantity = null
+        };
+
+        // Act & Assert
+        var action = () => _forger.Forge(entity);
+        action.Should().Throw<InvalidOperationException>();
+    }
+
+    [Fact]
+    public void NonNullableToNullable_ShouldConvert()
+    {
+        // Arrange
+        var entity = new SimpleOrder
+        {
+            Id = 1,
+            ShippedAt = new DateTime(2024, 8, 20),
+            DiscountPercent = 0.25m,
+            Quantity = 10
+        };
+
+        // Act
+        var dto = _forger.Forge(entity);
+
+        // Assert
+        dto.Should().NotBeNull();
+        dto.Id.Should().Be(1);
+        dto.ShippedAt.Should().Be(new DateTime(2024, 8, 20));
+        dto.DiscountPercent.Should().Be(0.25m);
+        dto.Quantity.Should().Be(10);
+    }
+}
+
+#endregion
 
