@@ -1563,7 +1563,7 @@ public partial class HookForger
     }
 
     [ThreadStatic]
-    public static bool LogCalled;
+    internal static bool LogCalled;
 
     private static void LogOrder(OrderEntityV6 source)
     {

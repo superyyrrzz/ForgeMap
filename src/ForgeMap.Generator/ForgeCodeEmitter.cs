@@ -531,13 +531,17 @@ internal sealed class ForgeCodeEmitter
         // Check for enum forging scenarios
         var enumResult = TryGenerateEnumForgeMethod(method, sourceType, destinationType);
         if (enumResult != null)
+        {
+            ReportHooksNotSupportedIfPresent(method, context);
             return enumResult;
+        }
 
         // Check for collection mapping (List<T>, T[], IEnumerable<T>, etc.)
         var sourceElementType = GetCollectionElementType(sourceType);
         var destElementType = GetCollectionElementType(destinationType);
         if (sourceElementType != null && destElementType != null)
         {
+            ReportHooksNotSupportedIfPresent(method, context);
             return GenerateCollectionForgeMethod(method, sourceType, destinationType, sourceElementType, destElementType, forger, context);
         }
 
@@ -1502,6 +1506,25 @@ internal sealed class ForgeCodeEmitter
             method.Locations.FirstOrDefault(),
             hookMethodName));
         return false;
+    }
+
+    /// <summary>
+    /// Reports FM0018 if [BeforeForge] or [AfterForge] attributes are present on a method
+    /// that does not support hooks (enum or collection forge methods).
+    /// </summary>
+    private void ReportHooksNotSupportedIfPresent(IMethodSymbol method, SourceProductionContext context)
+    {
+        var hasHooks = (_beforeForgeAttributeSymbol != null && method.GetAttributes().Any(a =>
+            SymbolEqualityComparer.Default.Equals(a.AttributeClass, _beforeForgeAttributeSymbol))) ||
+            (_afterForgeAttributeSymbol != null && method.GetAttributes().Any(a =>
+            SymbolEqualityComparer.Default.Equals(a.AttributeClass, _afterForgeAttributeSymbol)));
+
+        if (hasHooks)
+        {
+            context.ReportDiagnostic(Diagnostic.Create(
+                DiagnosticDescriptors.HooksNotSupportedOnMethodKind,
+                method.Locations.FirstOrDefault()));
+        }
     }
 
     /// <summary>
