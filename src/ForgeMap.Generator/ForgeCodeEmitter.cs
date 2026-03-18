@@ -79,8 +79,8 @@ internal sealed class ForgeCodeEmitter
             if (!HasReverseForgeAttribute(method))
                 continue;
 
-            // Guard: [ReverseForge] requires exactly one parameter
-            if (method.Parameters.Length == 0)
+            // Guard: [ReverseForge] requires exactly one source parameter and a non-void return type
+            if (method.Parameters.Length != 1 || method.ReturnsVoid)
                 continue;
 
             // Build the reverse signature key to check if an explicit declaration exists
