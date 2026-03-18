@@ -13,6 +13,8 @@
     <IsPackable>true</IsPackable>
     <IncludeBuildOutput>true</IncludeBuildOutput>
     <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
+    <!-- NU5128: All dependencies are bundled directly in the package, no transitive deps needed -->
+    <NoWarn>$(NoWarn);NU5128</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
@@ -22,20 +24,18 @@
                       ReferenceOutputAssembly="false" />
   </ItemGroup>
 
-  <!-- Include the abstractions and generator as content for the NuGet package -->
-  <PropertyGroup>
-    <GetTargetPathDependsOn>$(GetTargetPathDependsOn);GetPackageContent</GetTargetPathDependsOn>
-  </PropertyGroup>
+  <!-- Include README and icon in the NuGet package -->
+  <ItemGroup>
+    <None Include="$(MSBuildThisFileDirectory)..\..\README.md" Pack="true" PackagePath="\" />
+    <None Include="$(MSBuildThisFileDirectory)..\..\icon.png" Pack="true" PackagePath="\" />
+  </ItemGroup>
 
-  <Target Name="GetPackageContent" DependsOnTargets="ResolveProjectReferences">
+  <!-- Bundle TypeForge.Abstractions in lib/ and TypeForge.Generator in analyzers/ -->
+  <Target Name="IncludePackageContent" BeforeTargets="GenerateNuspec">
     <ItemGroup>
-      <!-- Include TypeForge.Abstractions in lib folder -->
-      <None Include="$(OutDir)TypeForge.Abstractions.dll" Pack="true" PackagePath="lib/netstandard2.0" />
-
-      <!-- Include TypeForge.Generator as an analyzer -->
-      <None Include="$(OutDir)../TypeForge.Generator/netstandard2.0/TypeForge.Generator.dll"
-            Pack="true"
-            PackagePath="analyzers/dotnet/cs" />
+      <_PackageFiles Include="$(OutDir)TypeForge.Abstractions.dll" PackagePath="lib/netstandard2.0" />
+      <_PackageFiles Include="$(MSBuildThisFileDirectory)..\TypeForge.Generator\bin\$(Configuration)\netstandard2.0\TypeForge.Generator.dll"
+                     PackagePath="analyzers/dotnet/cs" />
     </ItemGroup>
   </Target>
 
