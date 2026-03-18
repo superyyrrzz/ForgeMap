@@ -16,6 +16,9 @@
     <Description>Source generator for TypeForge that generates type transformation code at compile time.</Description>
     <PackageTags>automapper;mapping;sourcegenerator;dto;transformation;roslyn</PackageTags>
     <DevelopmentDependency>true</DevelopmentDependency>
+
+    <!-- Only the main TypeForge package is published -->
+    <IsPackable>false</IsPackable>
   </PropertyGroup>
 
   <ItemGroup>

@@ -12,6 +12,9 @@
     <!-- Generate XML docs -->
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
+
+    <!-- Only the main TypeForge package is published -->
+    <IsPackable>false</IsPackable>
   </PropertyGroup>
 
 </Project>

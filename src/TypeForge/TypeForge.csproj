@@ -33,11 +33,15 @@
   </ItemGroup>
 
   <!-- Bundle TypeForge.Abstractions in lib/ and TypeForge.Generator in analyzers/ -->
-  <Target Name="IncludePackageContent" BeforeTargets="GenerateNuspec">
+  <PropertyGroup>
+    <TargetsForTfmSpecificBuildOutput>$(TargetsForTfmSpecificBuildOutput);IncludePackageContent</TargetsForTfmSpecificBuildOutput>
+  </PropertyGroup>
+
+  <Target Name="IncludePackageContent">
     <ItemGroup>
-      <_PackageFiles Include="$(OutDir)TypeForge.Abstractions.dll" PackagePath="lib/netstandard2.0" />
-      <_PackageFiles Include="$(MSBuildThisFileDirectory)..\TypeForge.Generator\bin\$(Configuration)\netstandard2.0\TypeForge.Generator.dll"
-                     PackagePath="analyzers/dotnet/cs" />
+      <TfmSpecificPackageFile Include="$(OutDir)TypeForge.Abstractions.dll" PackagePath="lib/netstandard2.0" />
+      <TfmSpecificPackageFile Include="$([MSBuild]::NormalizePath('$(MSBuildThisFileDirectory)', '..', 'TypeForge.Generator', 'bin', '$(Configuration)', 'netstandard2.0', 'TypeForge.Generator.dll'))"
+                              PackagePath="analyzers/dotnet/cs" />
     </ItemGroup>
   </Target>
 
