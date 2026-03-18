@@ -1323,3 +1323,282 @@ public class ReverseForgeGeneratorTests
 }
 
 #endregion
+
+#region v0.6 Generator Tests
+
+public class HookGeneratorTests
+{
+    [Fact]
+    public void Generator_BeforeForge_GeneratesCallBeforeMapping()
+    {
+        var source = """
+            using ForgeMap;
+
+            namespace TestNamespace
+            {
+                public class SourceEntity
+                {
+                    public int Id { get; set; }
+                    public string Name { get; set; }
+                }
+
+                public class DestDto
+                {
+                    public int Id { get; set; }
+                    public string Name { get; set; }
+                }
+
+                [ForgeMap]
+                public partial class TestForger
+                {
+                    [BeforeForge(nameof(Validate))]
+                    public partial DestDto Forge(SourceEntity source);
+
+                    private static void Validate(SourceEntity source) { }
+                }
+            }
+            """;
+
+        var (diagnostics, generatedTrees) = RunGenerator(source);
+
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        Assert.Single(generatedTrees);
+
+        var generatedCode = generatedTrees[0].GetText().ToString();
+
+        // Validate() should appear before property mapping
+        var validateIndex = generatedCode.IndexOf("Validate(source)");
+        var idAssignIndex = generatedCode.IndexOf("Id = source.Id");
+        Assert.True(validateIndex > 0, "BeforeForge call should be in generated code");
+        Assert.True(validateIndex < idAssignIndex, "BeforeForge should be called before property mapping");
+    }
+
+    [Fact]
+    public void Generator_AfterForge_GeneratesCallAfterMapping()
+    {
+        var source = """
+            using ForgeMap;
+
+            namespace TestNamespace
+            {
+                public class SourceEntity
+                {
+                    public int Id { get; set; }
+                    public string Name { get; set; }
+                }
+
+                public class DestDto
+                {
+                    public int Id { get; set; }
+                    public string Name { get; set; }
+                }
+
+                [ForgeMap]
+                public partial class TestForger
+                {
+                    [AfterForge(nameof(Enrich))]
+                    public partial DestDto Forge(SourceEntity source);
+
+                    private static void Enrich(SourceEntity source, DestDto dest) { }
+                }
+            }
+            """;
+
+        var (diagnostics, generatedTrees) = RunGenerator(source);
+
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        Assert.Single(generatedTrees);
+
+        var generatedCode = generatedTrees[0].GetText().ToString();
+
+        // Enrich() should appear after property mapping
+        var enrichIndex = generatedCode.IndexOf("Enrich(source, result)");
+        var idAssignIndex = generatedCode.IndexOf("Id = source.Id");
+        Assert.True(enrichIndex > 0, "AfterForge call should be in generated code");
+        Assert.True(enrichIndex > idAssignIndex, "AfterForge should be called after property mapping");
+    }
+
+    [Fact]
+    public void Generator_BeforeAndAfterForge_GeneratesCorrectOrder()
+    {
+        var source = """
+            using ForgeMap;
+
+            namespace TestNamespace
+            {
+                public class SourceEntity
+                {
+                    public int Id { get; set; }
+                    public string Name { get; set; }
+                }
+
+                public class DestDto
+                {
+                    public int Id { get; set; }
+                    public string Name { get; set; }
+                }
+
+                [ForgeMap]
+                public partial class TestForger
+                {
+                    [BeforeForge(nameof(Validate))]
+                    [AfterForge(nameof(Enrich))]
+                    public partial DestDto Forge(SourceEntity source);
+
+                    private static void Validate(SourceEntity source) { }
+                    private static void Enrich(SourceEntity source, DestDto dest) { }
+                }
+            }
+            """;
+
+        var (diagnostics, generatedTrees) = RunGenerator(source);
+
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+
+        var generatedCode = generatedTrees[0].GetText().ToString();
+
+        var nullCheckIndex = generatedCode.IndexOf("source == null");
+        var validateIndex = generatedCode.IndexOf("Validate(source)");
+        var idAssignIndex = generatedCode.IndexOf("Id = source.Id");
+        var enrichIndex = generatedCode.IndexOf("Enrich(source, result)");
+        var returnIndex = generatedCode.IndexOf("return result;");
+
+        // Verify execution order: null check → BeforeForge → mapping → AfterForge → return
+        Assert.True(nullCheckIndex < validateIndex, "Null check before BeforeForge");
+        Assert.True(validateIndex < idAssignIndex, "BeforeForge before mapping");
+        Assert.True(idAssignIndex < enrichIndex, "Mapping before AfterForge");
+        Assert.True(enrichIndex < returnIndex, "AfterForge before return");
+    }
+
+    [Fact]
+    public void Generator_HookMethodNotFound_ReportsFM0016()
+    {
+        var source = """
+            using ForgeMap;
+
+            namespace TestNamespace
+            {
+                public class SourceEntity
+                {
+                    public int Id { get; set; }
+                }
+
+                public class DestDto
+                {
+                    public int Id { get; set; }
+                }
+
+                [ForgeMap]
+                public partial class TestForger
+                {
+                    [BeforeForge("NonExistentMethod")]
+                    public partial DestDto Forge(SourceEntity source);
+                }
+            }
+            """;
+
+        var (diagnostics, _) = RunGenerator(source);
+
+        var hookError = diagnostics.FirstOrDefault(d => d.Id == "FM0016");
+        Assert.NotNull(hookError);
+        Assert.Equal(DiagnosticSeverity.Error, hookError.Severity);
+    }
+
+    [Fact]
+    public void Generator_AfterForge_InvalidSignature_ReportsFM0016()
+    {
+        var source = """
+            using ForgeMap;
+
+            namespace TestNamespace
+            {
+                public class SourceEntity
+                {
+                    public int Id { get; set; }
+                }
+
+                public class DestDto
+                {
+                    public int Id { get; set; }
+                }
+
+                [ForgeMap]
+                public partial class TestForger
+                {
+                    [AfterForge(nameof(BadHook))]
+                    public partial DestDto Forge(SourceEntity source);
+
+                    // Wrong signature: AfterForge needs (source, dest), not just (source)
+                    private static void BadHook(SourceEntity source) { }
+                }
+            }
+            """;
+
+        var (diagnostics, _) = RunGenerator(source);
+
+        var hookError = diagnostics.FirstOrDefault(d => d.Id == "FM0016");
+        Assert.NotNull(hookError);
+        Assert.Equal(DiagnosticSeverity.Error, hookError.Severity);
+    }
+
+    [Fact]
+    public void Generator_ForgeInto_WithHooks_GeneratesCorrectCode()
+    {
+        var source = """
+            using ForgeMap;
+
+            namespace TestNamespace
+            {
+                public class SourceEntity
+                {
+                    public int Id { get; set; }
+                    public string Name { get; set; }
+                }
+
+                public class DestDto
+                {
+                    public int Id { get; set; }
+                    public string Name { get; set; }
+                }
+
+                [ForgeMap]
+                public partial class TestForger
+                {
+                    [BeforeForge(nameof(Validate))]
+                    [AfterForge(nameof(Enrich))]
+                    public partial void ForgeInto(SourceEntity source, [UseExistingValue] DestDto destination);
+
+                    private static void Validate(SourceEntity source) { }
+                    private static void Enrich(SourceEntity source, DestDto dest) { }
+                }
+            }
+            """;
+
+        var (diagnostics, generatedTrees) = RunGenerator(source);
+
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+
+        var generatedCode = generatedTrees[0].GetText().ToString();
+
+        // Verify hooks are present
+        Assert.Contains("Validate(source)", generatedCode);
+        Assert.Contains("Enrich(source, destination)", generatedCode);
+
+        // Verify order: null checks → BeforeForge → mapping → AfterForge
+        var nullCheckIndex = generatedCode.IndexOf("source == null");
+        var validateIndex = generatedCode.IndexOf("Validate(source)");
+        var idAssignIndex = generatedCode.IndexOf("destination.Id = source.Id");
+        var enrichIndex = generatedCode.IndexOf("Enrich(source, destination)");
+
+        Assert.True(nullCheckIndex < validateIndex);
+        Assert.True(validateIndex < idAssignIndex);
+        Assert.True(idAssignIndex < enrichIndex);
+    }
+
+    private static (IReadOnlyList<Diagnostic> Diagnostics, IReadOnlyList<SyntaxTree> GeneratedTrees) RunGenerator(string source)
+    {
+        return SourceGeneratorTests.RunGenerator(source);
+    }
+}
+
+#endregion
