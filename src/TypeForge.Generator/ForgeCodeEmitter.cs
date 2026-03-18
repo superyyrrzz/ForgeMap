@@ -202,9 +202,11 @@ internal sealed class ForgeCodeEmitter
                 else if (sourcePropPath != null && sourcePathLeafType != null &&
                          CanAssign(sourcePathLeafType, resolverParamType))
                 {
-                    // Pass the source property value (using leaf type for validation)
-                    var sourceExpr = GenerateSourceExpression(sourceParam, sourcePropPath, sourceType);
-                    resolverCall = $"{resolverMethodName}({sourceExpr})";
+                    // Pass the source property value - use null-info to handle nullable expressions
+                    var (sourceExpr, hasNullConditional) = GenerateSourceExpressionWithNullInfo(sourceParam, sourcePropPath, sourceType);
+                    // Add null-forgiving if expression is nullable but resolver param is non-nullable
+                    var nullForgiving = hasNullConditional && resolverParamType.NullableAnnotation != NullableAnnotation.Annotated ? "!" : "";
+                    resolverCall = $"{resolverMethodName}({sourceExpr}{nullForgiving})";
                 }
                 else
                 {
@@ -559,8 +561,11 @@ internal sealed class ForgeCodeEmitter
                 else if (sourcePropPath != null && sourcePathLeafType != null &&
                          CanAssign(sourcePathLeafType, resolverParamType))
                 {
-                    var sourceExpr = GenerateSourceExpression(sourceParam, sourcePropPath, sourceNamedType);
-                    resolverCall = $"{resolverMethodName}({sourceExpr})";
+                    // Pass the source property value - use null-info to handle nullable expressions
+                    var (sourceExpr, hasNullConditional) = GenerateSourceExpressionWithNullInfo(sourceParam, sourcePropPath, sourceNamedType);
+                    // Add null-forgiving if expression is nullable but resolver param is non-nullable
+                    var nullForgiving = hasNullConditional && resolverParamType.NullableAnnotation != NullableAnnotation.Annotated ? "!" : "";
+                    resolverCall = $"{resolverMethodName}({sourceExpr}{nullForgiving})";
                 }
                 else
                 {
