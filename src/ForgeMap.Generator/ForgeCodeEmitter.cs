@@ -15,6 +15,7 @@ internal sealed class ForgeCodeEmitter
     private readonly INamedTypeSymbol? _forgePropertyAttributeSymbol;
     private readonly INamedTypeSymbol? _forgeFromAttributeSymbol;
     private readonly INamedTypeSymbol? _forgeWithAttributeSymbol;
+    private readonly INamedTypeSymbol? _reverseForgeAttributeSymbol;
 
     public ForgeCodeEmitter(Compilation compilation)
     {
@@ -22,6 +23,7 @@ internal sealed class ForgeCodeEmitter
         _forgePropertyAttributeSymbol = compilation.GetTypeByMetadataName("ForgeMap.ForgePropertyAttribute");
         _forgeFromAttributeSymbol = compilation.GetTypeByMetadataName("ForgeMap.ForgeFromAttribute");
         _forgeWithAttributeSymbol = compilation.GetTypeByMetadataName("ForgeMap.ForgeWithAttribute");
+        _reverseForgeAttributeSymbol = compilation.GetTypeByMetadataName("ForgeMap.ReverseForgeAttribute");
     }
 
     public string GenerateForger(ForgerInfo forger, SourceProductionContext context)
@@ -50,7 +52,15 @@ internal sealed class ForgeCodeEmitter
         // Find and implement partial methods
         var partialMethods = forger.Symbol.GetMembers()
             .OfType<IMethodSymbol>()
-            .Where(m => m.IsPartialDefinition && !m.ReturnsVoid || (m.IsPartialDefinition && m.ReturnsVoid && HasForgeIntoPattern(m)));
+            .Where(m => m.IsPartialDefinition && !m.ReturnsVoid || (m.IsPartialDefinition && m.ReturnsVoid && HasForgeIntoPattern(m)))
+            .ToList();
+
+        // Collect all explicitly declared partial method signatures so we know which reverse methods to skip
+        var declaredSignatures = new HashSet<string>();
+        foreach (var method in partialMethods)
+        {
+            declaredSignatures.Add(GetMethodSignatureKey(method));
+        }
 
         foreach (var method in partialMethods)
         {
@@ -58,6 +68,27 @@ internal sealed class ForgeCodeEmitter
             if (!string.IsNullOrEmpty(generatedMethod))
             {
                 sb.AppendLine(generatedMethod);
+            }
+        }
+
+        // Generate reverse methods for [ReverseForge]-annotated methods
+        foreach (var method in partialMethods)
+        {
+            if (!HasReverseForgeAttribute(method))
+                continue;
+
+            // Build the reverse signature key to check if an explicit declaration exists
+            var sourceType = method.Parameters[0].Type;
+            var destType = method.ReturnType;
+            var reverseKey = $"{method.Name}({destType.ToDisplayString()}):{sourceType.ToDisplayString()}";
+
+            if (declaredSignatures.Contains(reverseKey))
+                continue; // Explicit reverse declaration takes precedence
+
+            var reverseMethod = GenerateReverseMethod(method, forger, context);
+            if (!string.IsNullOrEmpty(reverseMethod))
+            {
+                sb.AppendLine(reverseMethod);
             }
         }
 
@@ -78,6 +109,277 @@ internal sealed class ForgeCodeEmitter
             p.GetAttributes().Any(a =>
                 a.AttributeClass?.Name == "UseExistingValueAttribute" ||
                 a.AttributeClass?.ToDisplayString() == "ForgeMap.UseExistingValueAttribute"));
+    }
+
+    private bool HasReverseForgeAttribute(IMethodSymbol method)
+    {
+        if (_reverseForgeAttributeSymbol == null)
+            return false;
+
+        return method.GetAttributes().Any(a =>
+            SymbolEqualityComparer.Default.Equals(a.AttributeClass, _reverseForgeAttributeSymbol));
+    }
+
+    private static string GetMethodSignatureKey(IMethodSymbol method)
+    {
+        var paramTypes = string.Join(",", method.Parameters.Select(p => p.Type.ToDisplayString()));
+        return $"{method.Name}({paramTypes}):{method.ReturnType.ToDisplayString()}";
+    }
+
+    /// <summary>
+    /// Generates a reverse forging method for a method annotated with [ReverseForge].
+    /// Swaps source and destination types, reverses [ForgeProperty] mappings,
+    /// and emits warnings for [ForgeFrom] and [ForgeWith] that cannot be auto-reversed.
+    /// </summary>
+    private string GenerateReverseMethod(
+        IMethodSymbol forwardMethod,
+        ForgerInfo forger,
+        SourceProductionContext context)
+    {
+        var forwardSourceType = forwardMethod.Parameters[0].Type as INamedTypeSymbol;
+        var forwardDestType = forwardMethod.ReturnType as INamedTypeSymbol;
+
+        if (forwardSourceType == null || forwardDestType == null)
+            return string.Empty;
+
+        // In reverse: source is the forward dest, dest is the forward source
+        var reverseSourceType = forwardDestType;
+        var reverseDestType = forwardSourceType;
+
+        // Get forward attributes
+        var forwardIgnored = GetIgnoredProperties(forwardMethod);
+        var forwardPropertyMappings = GetPropertyMappings(forwardMethod);
+        var forwardResolverMappings = GetResolverMappings(forwardMethod);
+        var forwardForgeWithMappings = GetForgeWithMappings(forwardMethod);
+
+        // Build reverse property mappings: swap source/dest names
+        var reversePropertyMappings = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var kvp in forwardPropertyMappings)
+        {
+            // Forward: ForgeProperty(sourceA, destB) means destB = source.A
+            // Reverse: ForgeProperty(destB, sourceA) means sourceA = source.B
+            // But only if the source prop is a simple name (not a nested path)
+            var forwardSourceProp = kvp.Value;
+            var forwardDestProp = kvp.Key;
+
+            if (!forwardSourceProp.Contains("."))
+            {
+                reversePropertyMappings[forwardSourceProp] = forwardDestProp;
+            }
+            // Nested paths can't be reversed (would need to unflatten)
+        }
+
+        // Emit FM0012 warnings for [ForgeFrom] properties
+        foreach (var kvp in forwardResolverMappings)
+        {
+            context.ReportDiagnostic(Diagnostic.Create(
+                DiagnosticDescriptors.ForgeFromCannotBeReversed,
+                forwardMethod.Locations.FirstOrDefault(),
+                kvp.Key));
+        }
+
+        // Build reverse [ForgeWith] mappings and emit FM0015 warnings where nested method lacks [ReverseForge]
+        var reverseForgeWithMappings = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var kvp in forwardForgeWithMappings)
+        {
+            var forwardDestPropName = kvp.Key;
+            var forgingMethodName = kvp.Value;
+
+            // Find the source property that maps to this dest property
+            string? reverseDestPropName = null;
+            if (forwardPropertyMappings.TryGetValue(forwardDestPropName, out var mappedSourceProp))
+            {
+                reverseDestPropName = mappedSourceProp;
+            }
+            else
+            {
+                reverseDestPropName = forwardDestPropName; // same name by convention
+            }
+
+            // Check if the nested forging method has [ReverseForge]
+            var nestedMethod = forger.Symbol.GetMembers(forgingMethodName)
+                .OfType<IMethodSymbol>()
+                .FirstOrDefault(m => m.IsPartialDefinition && !m.ReturnsVoid && m.Parameters.Length == 1);
+
+            if (nestedMethod != null && HasReverseForgeAttribute(nestedMethod))
+            {
+                reverseForgeWithMappings[reverseDestPropName!] = forgingMethodName;
+            }
+            else
+            {
+                context.ReportDiagnostic(Diagnostic.Create(
+                    DiagnosticDescriptors.ForgeWithLacksReverseForge,
+                    forwardMethod.Locations.FirstOrDefault(),
+                    forgingMethodName));
+            }
+        }
+
+        // Now generate the reverse method body using the same GenerateForgeMethod pattern
+        // but with reversed types and mappings
+        var sb = new StringBuilder();
+        var sourceParam = "source";
+
+        // Method signature
+        var accessibility = GetAccessibilityKeyword(forwardMethod.DeclaredAccessibility);
+        sb.AppendLine($"        {accessibility} {reverseDestType.ToDisplayString()} {forwardMethod.Name}({reverseSourceType.ToDisplayString()} {sourceParam})");
+        sb.AppendLine("        {");
+
+        // Null check
+        sb.AppendLine($"            if ({sourceParam} == null) return null!;");
+        sb.AppendLine();
+
+        // Get mappable properties
+        var sourceProperties = GetMappableProperties(reverseSourceType);
+        var destProperties = GetMappableProperties(reverseDestType);
+
+        // Determine constructor strategy for the reverse destination
+        var (chosenCtor, ctorParamMappings) = ResolveConstructor(
+            reverseDestType, reverseSourceType, sourceProperties, reversePropertyMappings, context, forwardMethod);
+
+        // Track which destination properties are covered by constructor parameters
+        var ctorCoveredDestProps = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (ctorParamMappings != null)
+        {
+            foreach (var mapping in ctorParamMappings)
+                ctorCoveredDestProps.Add(mapping.DestPropertyName);
+        }
+
+        // Empty resolver mappings for reverse (ForgeFrom is not reversed)
+        var emptyResolverMappings = new Dictionary<string, string>(StringComparer.Ordinal);
+        // Don't pass reverseForgeWithMappings to GeneratePropertyAssignment (it can't find the reverse
+        // partial method via FindForgingMethod since it's auto-generated). We'll handle them inline.
+        var emptyForgeWithMappings = new Dictionary<string, string>(StringComparer.Ordinal);
+
+        if (chosenCtor != null && ctorParamMappings != null && chosenCtor.Parameters.Length > 0)
+        {
+            sb.AppendLine($"            var result = new {reverseDestType.ToDisplayString()}(");
+
+            for (int i = 0; i < ctorParamMappings.Count; i++)
+            {
+                var mapping = ctorParamMappings[i];
+                var separator = i < ctorParamMappings.Count - 1 ? "," : "";
+                var expr = GenerateCtorParamExpression(
+                    mapping.SourceExpression, mapping.SourcePropertyType, mapping.DestPropertyType);
+                sb.AppendLine($"                {mapping.CtorParamName}: {expr}{separator}");
+            }
+
+            var remainingDestProps = destProperties
+                .Where(p => p.SetMethod != null && !ctorCoveredDestProps.Contains(p.Name))
+                .ToList();
+
+            var initAssignments = new List<(string Name, string Expr)>();
+            foreach (var destProp in remainingDestProps)
+            {
+                if (forwardIgnored.Contains(destProp.Name))
+                    continue;
+
+                var assignment = GenerateReversePropertyAssignment(
+                    destProp, sourceParam, reverseSourceType, sourceProperties,
+                    reversePropertyMappings, emptyResolverMappings, emptyForgeWithMappings,
+                    reverseForgeWithMappings, forwardIgnored, forger, context, forwardMethod);
+
+                if (assignment != null)
+                    initAssignments.Add((destProp.Name, assignment));
+            }
+
+            if (initAssignments.Count > 0)
+            {
+                sb.AppendLine("            )");
+                sb.AppendLine("            {");
+                foreach (var (name, expr) in initAssignments)
+                    sb.AppendLine($"                {name} = {expr},");
+                sb.AppendLine("            };");
+            }
+            else
+            {
+                sb.AppendLine("            );");
+            }
+
+            sb.AppendLine("            return result;");
+        }
+        else
+        {
+            sb.AppendLine($"            return new {reverseDestType.ToDisplayString()}");
+            sb.AppendLine("            {");
+
+            foreach (var destProp in destProperties)
+            {
+                var assignment = GenerateReversePropertyAssignment(
+                    destProp, sourceParam, reverseSourceType, sourceProperties,
+                    reversePropertyMappings, emptyResolverMappings, emptyForgeWithMappings,
+                    reverseForgeWithMappings, forwardIgnored, forger, context, forwardMethod);
+
+                if (assignment != null)
+                    sb.AppendLine($"                {destProp.Name} = {assignment},");
+            }
+
+            sb.AppendLine("            };");
+        }
+
+        sb.AppendLine("        }");
+
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Generates a property assignment for a reverse method. Handles [ForgeWith] inline
+    /// since the reverse forging methods aren't user-declared partial methods and can't be found
+    /// via FindForgingMethod. For non-ForgeWith properties, delegates to GeneratePropertyAssignment.
+    /// </summary>
+    private string? GenerateReversePropertyAssignment(
+        IPropertySymbol destProp,
+        string sourceParam,
+        INamedTypeSymbol sourceType,
+        IEnumerable<IPropertySymbol> sourceProperties,
+        Dictionary<string, string> propertyMappings,
+        Dictionary<string, string> resolverMappings,
+        Dictionary<string, string> forgeWithMappings,
+        Dictionary<string, string> reverseForgeWithMappings,
+        HashSet<string> ignoredProperties,
+        ForgerInfo forger,
+        SourceProductionContext context,
+        IMethodSymbol method)
+    {
+        // Check if this property has a reverse [ForgeWith] mapping
+        if (reverseForgeWithMappings.TryGetValue(destProp.Name, out var forgingMethodName))
+        {
+            // Find the source property manually
+            string? sourcePropName = null;
+            if (propertyMappings.TryGetValue(destProp.Name, out var mappedSource))
+                sourcePropName = mappedSource;
+            else
+            {
+                var match = sourceProperties.FirstOrDefault(sp =>
+                    string.Equals(sp.Name, destProp.Name, StringComparison.Ordinal));
+                if (match != null)
+                    sourcePropName = match.Name;
+            }
+
+            if (sourcePropName != null)
+            {
+                var sourcePropertyType = ResolvePathLeafType(sourcePropName, sourceType);
+                if (sourcePropertyType != null)
+                {
+                    var (sourceExpr, _) = GenerateSourceExpressionWithNullInfo(sourceParam, sourcePropName, sourceType);
+                    if (sourcePropertyType.IsReferenceType)
+                    {
+                        var localVarName = $"__forgeWith_{destProp.Name}";
+                        return $"{sourceExpr} is {{ }} {localVarName} ? {forgingMethodName}({localVarName}) : null!";
+                    }
+                    else
+                    {
+                        return $"{forgingMethodName}({sourceExpr})";
+                    }
+                }
+            }
+
+            return null;
+        }
+
+        // Fall through to regular property assignment
+        return GeneratePropertyAssignment(
+            destProp, sourceParam, sourceType, sourceProperties,
+            propertyMappings, resolverMappings, forgeWithMappings, ignoredProperties, forger, context, method);
     }
 
     private string GenerateMethod(IMethodSymbol method, ForgerInfo forger, SourceProductionContext context)
