@@ -28,8 +28,8 @@
 
   <!-- Include README and icon in the NuGet package -->
   <ItemGroup>
-    <None Include="$(MSBuildThisFileDirectory)..\..\README.md" Pack="true" PackagePath="\" />
-    <None Include="$(MSBuildThisFileDirectory)..\..\icon.png" Pack="true" PackagePath="\" />
+    <None Include="$(MSBuildThisFileDirectory)..\..\README.md" Pack="true" PackagePath="" />
+    <None Include="$(MSBuildThisFileDirectory)..\..\icon.png" Pack="true" PackagePath="" />
   </ItemGroup>
 
   <!-- Bundle TypeForge.Abstractions in lib/ and TypeForge.Generator in analyzers/ -->
