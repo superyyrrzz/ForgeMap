@@ -4,10 +4,10 @@ using System.Linq;
 using System.Text;
 using Microsoft.CodeAnalysis;
 
-namespace TypeForge.Generator;
+namespace ForgeMap.Generator;
 
 /// <summary>
-/// Emits generated forging code for TypeForge forger classes.
+/// Emits generated forging code for ForgeMap forger classes.
 /// </summary>
 internal sealed class ForgeCodeEmitter
 {
@@ -18,10 +18,10 @@ internal sealed class ForgeCodeEmitter
 
     public ForgeCodeEmitter(Compilation compilation)
     {
-        _ignoreAttributeSymbol = compilation.GetTypeByMetadataName("TypeForge.IgnoreAttribute");
-        _forgePropertyAttributeSymbol = compilation.GetTypeByMetadataName("TypeForge.ForgePropertyAttribute");
-        _forgeFromAttributeSymbol = compilation.GetTypeByMetadataName("TypeForge.ForgeFromAttribute");
-        _forgeWithAttributeSymbol = compilation.GetTypeByMetadataName("TypeForge.ForgeWithAttribute");
+        _ignoreAttributeSymbol = compilation.GetTypeByMetadataName("ForgeMap.IgnoreAttribute");
+        _forgePropertyAttributeSymbol = compilation.GetTypeByMetadataName("ForgeMap.ForgePropertyAttribute");
+        _forgeFromAttributeSymbol = compilation.GetTypeByMetadataName("ForgeMap.ForgeFromAttribute");
+        _forgeWithAttributeSymbol = compilation.GetTypeByMetadataName("ForgeMap.ForgeWithAttribute");
     }
 
     public string GenerateForger(ForgerInfo forger, SourceProductionContext context)
@@ -77,7 +77,7 @@ internal sealed class ForgeCodeEmitter
         return method.Parameters.Any(p =>
             p.GetAttributes().Any(a =>
                 a.AttributeClass?.Name == "UseExistingValueAttribute" ||
-                a.AttributeClass?.ToDisplayString() == "TypeForge.UseExistingValueAttribute"));
+                a.AttributeClass?.ToDisplayString() == "ForgeMap.UseExistingValueAttribute"));
     }
 
     private string GenerateMethod(IMethodSymbol method, ForgerInfo forger, SourceProductionContext context)
@@ -95,7 +95,7 @@ internal sealed class ForgeCodeEmitter
         var useExistingParam = method.Parameters.FirstOrDefault(p =>
             p.GetAttributes().Any(a =>
                 a.AttributeClass?.Name == "UseExistingValueAttribute" ||
-                a.AttributeClass?.ToDisplayString() == "TypeForge.UseExistingValueAttribute"));
+                a.AttributeClass?.ToDisplayString() == "ForgeMap.UseExistingValueAttribute"));
 
         if (useExistingParam != null)
         {
@@ -195,7 +195,7 @@ internal sealed class ForgeCodeEmitter
 
                 if (resolverMethod == null)
                 {
-                    // Report diagnostic TF0008: Resolver method not found
+                    // Report diagnostic FM0008: Resolver method not found
                     context.ReportDiagnostic(Diagnostic.Create(
                         DiagnosticDescriptors.ResolverMethodNotFound,
                         method.Locations.FirstOrDefault(),
@@ -237,7 +237,7 @@ internal sealed class ForgeCodeEmitter
                 }
                 else
                 {
-                    // Report diagnostic TF0009: Invalid resolver signature
+                    // Report diagnostic FM0009: Invalid resolver signature
                     context.ReportDiagnostic(Diagnostic.Create(
                         DiagnosticDescriptors.InvalidResolverSignature,
                         method.Locations.FirstOrDefault(),
@@ -291,7 +291,7 @@ internal sealed class ForgeCodeEmitter
                     }
                 }
 
-                // Report TF0008: method not found
+                // Report FM0008: method not found
                 context.ReportDiagnostic(Diagnostic.Create(
                     DiagnosticDescriptors.ResolverMethodNotFound,
                     method.Locations.FirstOrDefault(),

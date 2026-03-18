@@ -1,12 +1,12 @@
 using System;
 
-namespace TypeForge;
+namespace ForgeMap;
 
 /// <summary>
 /// Assembly-level defaults for all forgers in the assembly.
 /// </summary>
 [AttributeUsage(AttributeTargets.Assembly, AllowMultiple = false, Inherited = false)]
-public sealed class TypeForgeDefaultsAttribute : Attribute
+public sealed class ForgeMapDefaultsAttribute : Attribute
 {
     /// <summary>
     /// Gets or sets the default null handling mode for all forgers in the assembly.

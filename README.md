@@ -1,6 +1,6 @@
-# TypeForge
+# ForgeMap
 
-A lightweight, MIT-licensed, source-generator-based object transformation library for .NET. TypeForge generates type conversion code at compile time, providing zero-reflection runtime execution with compile-time type safety.
+A lightweight, MIT-licensed, source-generator-based object transformation library for .NET. ForgeMap generates type conversion code at compile time, providing zero-reflection runtime execution with compile-time type safety.
 
 ## Features
 
@@ -13,13 +13,13 @@ A lightweight, MIT-licensed, source-generator-based object transformation librar
 ## Installation
 
 ```bash
-dotnet add package TypeForge
+dotnet add package ForgeMap
 ```
 
 ## Quick Start
 
 ```csharp
-using TypeForge;
+using ForgeMap;
 
 // 1. Define your types
 public class OrderEntity
@@ -37,7 +37,7 @@ public class OrderDto
 }
 
 // 2. Create a forger class
-[TypeForge]
+[ForgeMap]
 public partial class AppForger
 {
     public partial OrderDto Forge(OrderEntity source);

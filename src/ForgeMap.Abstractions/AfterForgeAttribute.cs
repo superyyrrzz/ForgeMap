@@ -1,6 +1,6 @@
 using System;
 
-namespace TypeForge;
+namespace ForgeMap;
 
 /// <summary>
 /// Calls a method after forging completes for post-processing.

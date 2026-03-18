@@ -1,13 +1,13 @@
 using System;
 
-namespace TypeForge;
+namespace ForgeMap;
 
 /// <summary>
-/// Marks a partial class as a TypeForge forger.
+/// Marks a partial class as a ForgeMap forger.
 /// The source generator will implement all partial methods in this class.
 /// </summary>
 [AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = false)]
-public sealed class TypeForgeAttribute : Attribute
+public sealed class ForgeMapAttribute : Attribute
 {
     /// <summary>
     /// Gets or sets how null source objects should be handled.

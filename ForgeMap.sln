@@ -7,13 +7,13 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{9E4A2AC5-3F4
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "TypeForge.Abstractions", "src\TypeForge.Abstractions\TypeForge.Abstractions.csproj", "{B1234567-89AB-CDEF-0123-456789ABCDEF}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ForgeMap.Abstractions", "src\ForgeMap.Abstractions\ForgeMap.Abstractions.csproj", "{B1234567-89AB-CDEF-0123-456789ABCDEF}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "TypeForge.Generator", "src\TypeForge.Generator\TypeForge.Generator.csproj", "{C2345678-9ABC-DEF0-1234-567890ABCDEF}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ForgeMap.Generator", "src\ForgeMap.Generator\ForgeMap.Generator.csproj", "{C2345678-9ABC-DEF0-1234-567890ABCDEF}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "TypeForge", "src\TypeForge\TypeForge.csproj", "{D3456789-ABCD-EF01-2345-67890ABCDEF0}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ForgeMap", "src\ForgeMap\ForgeMap.csproj", "{D3456789-ABCD-EF01-2345-67890ABCDEF0}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "TypeForge.Tests", "tests\TypeForge.Tests\TypeForge.Tests.csproj", "{E4567890-BCDE-F012-3456-7890ABCDEF01}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ForgeMap.Tests", "tests\ForgeMap.Tests\ForgeMap.Tests.csproj", "{E4567890-BCDE-F012-3456-7890ABCDEF01}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

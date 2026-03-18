@@ -8,13 +8,13 @@
     <AnalysisLevel>latest</AnalysisLevel>
 
     <!-- Package metadata -->
-    <Authors>TypeForge Contributors</Authors>
-    <Company>TypeForge</Company>
+    <Authors>ForgeMap Contributors</Authors>
+    <Company>ForgeMap</Company>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
-    <PackageProjectUrl>https://github.com/superyyrrzz/typeforge</PackageProjectUrl>
-    <RepositoryUrl>https://github.com/superyyrrzz/typeforge</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/superyyrrzz/forgemap</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/superyyrrzz/forgemap</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
-    <Copyright>Copyright (c) TypeForge Contributors</Copyright>
+    <Copyright>Copyright (c) ForgeMap Contributors</Copyright>
 
     <!-- Versioning -->
     <VersionPrefix>0.3.0</VersionPrefix>

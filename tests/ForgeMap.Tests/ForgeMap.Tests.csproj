@@ -23,8 +23,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\TypeForge\TypeForge.csproj" />
-    <ProjectReference Include="..\..\src\TypeForge.Generator\TypeForge.Generator.csproj"
+    <ProjectReference Include="..\..\src\ForgeMap\ForgeMap.csproj" />
+    <ProjectReference Include="..\..\src\ForgeMap.Generator\ForgeMap.Generator.csproj"
                       OutputItemType="Analyzer"
                       ReferenceOutputAssembly="true" />
   </ItemGroup>

@@ -1,10 +1,10 @@
 using System.Collections.Generic;
 using System.Linq;
 using FluentAssertions;
-using TypeForge;
+using ForgeMap;
 using Xunit;
 
-namespace TypeForge.Tests;
+namespace ForgeMap.Tests;
 
 #region Test Models
 
@@ -195,7 +195,7 @@ public class UserWithAddressDto
 
 #region Forgers
 
-[TypeForge]
+[ForgeMap]
 public partial class AppForger
 {
     /// <summary>
