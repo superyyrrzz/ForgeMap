@@ -212,8 +212,10 @@ internal sealed class ForgeCodeEmitter
                     }
                     else
                     {
-                        // Add null-forgiving if expression is nullable but resolver param is non-nullable
-                        var nullForgiving = hasNullConditional && resolverParamType.NullableAnnotation != NullableAnnotation.Annotated ? "!" : "";
+                        // Add null-forgiving if expression is nullable (from null-conditional or nullable ref type)
+                        // but resolver param is non-nullable
+                        var isNullableExpr = hasNullConditional || sourcePathLeafType.NullableAnnotation == NullableAnnotation.Annotated;
+                        var nullForgiving = isNullableExpr && resolverParamType.NullableAnnotation != NullableAnnotation.Annotated ? "!" : "";
                         resolverCall = $"{resolverMethodName}({sourceExpr}{nullForgiving})";
                     }
                 }
@@ -363,7 +365,7 @@ internal sealed class ForgeCodeEmitter
 
     /// <summary>
     /// Finds a resolver method in the forger class.
-    /// Prefers overloads that match preferredParamType (e.g., leaf type for nested paths).
+    /// Prefers exact type matches over assignable matches for deterministic overload selection.
     /// </summary>
     private IMethodSymbol? FindResolverMethod(INamedTypeSymbol forgerType, string methodName, ITypeSymbol sourceType, ITypeSymbol? preferredParamType)
     {
@@ -375,23 +377,32 @@ internal sealed class ForgeCodeEmitter
         if (candidates.Count == 0)
             return null;
 
-        // Prefer Method(TPreferredType) if preferredParamType is provided and there's a match
+        // Prefer Method(TPreferredType) if preferredParamType is provided
         if (preferredParamType != null)
         {
-            var preferredTypeMatch = candidates.FirstOrDefault(m =>
-                SymbolEqualityComparer.Default.Equals(m.Parameters[0].Type, preferredParamType) ||
-                CanAssign(preferredParamType, m.Parameters[0].Type));
+            // First try exact match
+            var exactMatch = candidates.FirstOrDefault(m =>
+                SymbolEqualityComparer.Default.Equals(m.Parameters[0].Type, preferredParamType));
+            if (exactMatch != null)
+                return exactMatch;
 
-            if (preferredTypeMatch != null)
-                return preferredTypeMatch;
+            // Then try assignable match
+            var assignableMatch = candidates.FirstOrDefault(m =>
+                CanAssign(preferredParamType, m.Parameters[0].Type));
+            if (assignableMatch != null)
+                return assignableMatch;
         }
 
-        // Fall back to Method(TSource)
-        var sourceTypeMatch = candidates.FirstOrDefault(m =>
-            SymbolEqualityComparer.Default.Equals(m.Parameters[0].Type, sourceType) ||
+        // Fall back to Method(TSource) - prefer exact match first
+        var exactSourceMatch = candidates.FirstOrDefault(m =>
+            SymbolEqualityComparer.Default.Equals(m.Parameters[0].Type, sourceType));
+        if (exactSourceMatch != null)
+            return exactSourceMatch;
+
+        var assignableSourceMatch = candidates.FirstOrDefault(m =>
             CanAssign(sourceType, m.Parameters[0].Type));
 
-        return sourceTypeMatch ?? candidates.FirstOrDefault();
+        return assignableSourceMatch ?? candidates.FirstOrDefault();
     }
 
     /// <summary>
@@ -572,8 +583,10 @@ internal sealed class ForgeCodeEmitter
                     }
                     else
                     {
-                        // Add null-forgiving if expression is nullable but resolver param is non-nullable
-                        var nullForgiving = hasNullConditional && resolverParamType.NullableAnnotation != NullableAnnotation.Annotated ? "!" : "";
+                        // Add null-forgiving if expression is nullable (from null-conditional or nullable ref type)
+                        // but resolver param is non-nullable
+                        var isNullableExpr = hasNullConditional || sourcePathLeafType.NullableAnnotation == NullableAnnotation.Annotated;
+                        var nullForgiving = isNullableExpr && resolverParamType.NullableAnnotation != NullableAnnotation.Annotated ? "!" : "";
                         resolverCall = $"{resolverMethodName}({sourceExpr}{nullForgiving})";
                     }
                 }
