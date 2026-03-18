@@ -814,3 +814,279 @@ public class CollectionForgingGeneratorTests
 }
 
 #endregion
+
+#region v0.4 Generator Tests
+
+public class EnumForgingGeneratorTests
+{
+    [Fact]
+    public void Generator_EnumToEnum_GeneratesParseByName()
+    {
+        var source = """
+            using TypeForge;
+
+            namespace TestNamespace
+            {
+                public enum Status { Active, Inactive }
+                public enum StatusDto { Active, Inactive }
+
+                [TypeForge]
+                public partial class TestForger
+                {
+                    public partial StatusDto Forge(Status source);
+                }
+            }
+            """;
+
+        var (diagnostics, generatedTrees) = RunGenerator(source);
+
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        Assert.Single(generatedTrees);
+
+        var generatedCode = generatedTrees[0].GetText().ToString();
+        Assert.Contains("Enum.Parse", generatedCode);
+        Assert.Contains("source.ToString()", generatedCode);
+    }
+
+    [Fact]
+    public void Generator_EnumToString_GeneratesToString()
+    {
+        var source = """
+            using TypeForge;
+
+            namespace TestNamespace
+            {
+                public enum Status { Active, Inactive }
+
+                [TypeForge]
+                public partial class TestForger
+                {
+                    public partial string Forge(Status source);
+                }
+            }
+            """;
+
+        var (diagnostics, generatedTrees) = RunGenerator(source);
+
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        Assert.Single(generatedTrees);
+
+        var generatedCode = generatedTrees[0].GetText().ToString();
+        Assert.Contains("return source.ToString();", generatedCode);
+    }
+
+    [Fact]
+    public void Generator_StringToEnum_GeneratesEnumParse()
+    {
+        var source = """
+            using TypeForge;
+
+            namespace TestNamespace
+            {
+                public enum Status { Active, Inactive }
+
+                [TypeForge]
+                public partial class TestForger
+                {
+                    public partial Status Forge(string source);
+                }
+            }
+            """;
+
+        var (diagnostics, generatedTrees) = RunGenerator(source);
+
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        Assert.Single(generatedTrees);
+
+        var generatedCode = generatedTrees[0].GetText().ToString();
+        Assert.Contains("Enum.Parse", generatedCode);
+        Assert.Contains("source, true)", generatedCode);
+    }
+
+    private static (IReadOnlyList<Diagnostic> Diagnostics, IReadOnlyList<SyntaxTree> GeneratedTrees) RunGenerator(string source)
+    {
+        return SourceGeneratorTests.RunGenerator(source);
+    }
+}
+
+public class ConstructorMappingGeneratorTests
+{
+    [Fact]
+    public void Generator_RecordType_GeneratesConstructorCall()
+    {
+        var source = """
+            using TypeForge;
+            using System;
+
+            namespace TestNamespace
+            {
+                public class SourceEntity
+                {
+                    public string Id { get; set; }
+                    public string Name { get; set; }
+                }
+
+                public record DestRecord(string Id, string Name);
+
+                [TypeForge]
+                public partial class TestForger
+                {
+                    public partial DestRecord Forge(SourceEntity source);
+                }
+            }
+            """;
+
+        var (diagnostics, generatedTrees) = RunGenerator(source);
+
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        Assert.Single(generatedTrees);
+
+        var generatedCode = generatedTrees[0].GetText().ToString();
+        Assert.Contains("new TestNamespace.DestRecord(", generatedCode);
+        Assert.Contains("Id:", generatedCode);
+        Assert.Contains("Name:", generatedCode);
+    }
+
+    [Fact]
+    public void Generator_HybridType_GeneratesCtorPlusSetters()
+    {
+        var source = """
+            using TypeForge;
+
+            namespace TestNamespace
+            {
+                public class SourceEntity
+                {
+                    public int Id { get; set; }
+                    public string Name { get; set; }
+                    public decimal Total { get; set; }
+                }
+
+                public class HybridDest
+                {
+                    public HybridDest(int id) { Id = id; }
+                    public int Id { get; }
+                    public string Name { get; set; }
+                    public decimal Total { get; set; }
+                }
+
+                [TypeForge]
+                public partial class TestForger
+                {
+                    public partial HybridDest Forge(SourceEntity source);
+                }
+            }
+            """;
+
+        var (diagnostics, generatedTrees) = RunGenerator(source);
+
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        Assert.Single(generatedTrees);
+
+        var generatedCode = generatedTrees[0].GetText().ToString();
+        Assert.Contains("new TestNamespace.HybridDest(", generatedCode);
+        Assert.Contains("id:", generatedCode);
+        Assert.Contains("Name = source.Name,", generatedCode);
+        Assert.Contains("Total = source.Total,", generatedCode);
+    }
+
+    [Fact]
+    public void Generator_ConstructorParameterNotMatched_ReportsError()
+    {
+        var source = """
+            using TypeForge;
+
+            namespace TestNamespace
+            {
+                public class SourceEntity
+                {
+                    public int Id { get; set; }
+                }
+
+                public class DestWithCtor
+                {
+                    public DestWithCtor(int id, string unmatchedParam) { }
+                    public int Id { get; }
+                }
+
+                [TypeForge]
+                public partial class TestForger
+                {
+                    public partial DestWithCtor Forge(SourceEntity source);
+                }
+            }
+            """;
+
+        var (diagnostics, _) = RunGenerator(source);
+
+        var error = diagnostics.FirstOrDefault(d => d.Id == "TF0014");
+        Assert.NotNull(error);
+        Assert.Equal(DiagnosticSeverity.Error, error.Severity);
+    }
+
+    private static (IReadOnlyList<Diagnostic> Diagnostics, IReadOnlyList<SyntaxTree> GeneratedTrees) RunGenerator(string source)
+    {
+        return SourceGeneratorTests.RunGenerator(source);
+    }
+}
+
+public class AutoFlatteningGeneratorTests
+{
+    [Fact]
+    public void Generator_AutoFlatten_GeneratesNestedAccess()
+    {
+        var source = """
+            using TypeForge;
+
+            namespace TestNamespace
+            {
+                public class AddressInfo
+                {
+                    public string City { get; set; }
+                }
+
+                public class Company
+                {
+                    public string Name { get; set; }
+                    public AddressInfo Address { get; set; }
+                }
+
+                public class Employee
+                {
+                    public int Id { get; set; }
+                    public Company Company { get; set; }
+                }
+
+                public class EmployeeDto
+                {
+                    public int Id { get; set; }
+                    public string CompanyName { get; set; }
+                    public string CompanyAddressCity { get; set; }
+                }
+
+                [TypeForge]
+                public partial class TestForger
+                {
+                    public partial EmployeeDto Forge(Employee source);
+                }
+            }
+            """;
+
+        var (diagnostics, generatedTrees) = RunGenerator(source);
+
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        Assert.Single(generatedTrees);
+
+        var generatedCode = generatedTrees[0].GetText().ToString();
+        Assert.Contains("Id = source.Id,", generatedCode);
+        Assert.Contains("CompanyName =", generatedCode);
+        Assert.Contains("CompanyAddressCity =", generatedCode);
+    }
+
+    private static (IReadOnlyList<Diagnostic> Diagnostics, IReadOnlyList<SyntaxTree> GeneratedTrees) RunGenerator(string source)
+    {
+        return SourceGeneratorTests.RunGenerator(source);
+    }
+}
+
+#endregion
