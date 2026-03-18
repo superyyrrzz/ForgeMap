@@ -206,7 +206,9 @@ internal sealed class ForgeCodeEmitter
                     var (sourceExpr, hasNullConditional) = GenerateSourceExpressionWithNullInfo(sourceParam, sourcePropPath, sourceType);
 
                     // Handle Nullable<T> to T conversion with explicit cast
-                    if (IsNullableToNonNullableValueType(sourcePathLeafType, resolverParamType))
+                    // Also handle lifted value types from null-conditional (e.g., source.Customer?.Age becomes int?)
+                    var isLiftedValueType = hasNullConditional && sourcePathLeafType.IsValueType && GetNullableUnderlyingType(sourcePathLeafType) == null;
+                    if (IsNullableToNonNullableValueType(sourcePathLeafType, resolverParamType) || isLiftedValueType)
                     {
                         resolverCall = $"{resolverMethodName}(({resolverParamType.ToDisplayString()}){sourceExpr}!)";
                     }
@@ -577,7 +579,9 @@ internal sealed class ForgeCodeEmitter
                     var (sourceExpr, hasNullConditional) = GenerateSourceExpressionWithNullInfo(sourceParam, sourcePropPath, sourceNamedType);
 
                     // Handle Nullable<T> to T conversion with explicit cast
-                    if (IsNullableToNonNullableValueType(sourcePathLeafType, resolverParamType))
+                    // Also handle lifted value types from null-conditional (e.g., source.Customer?.Age becomes int?)
+                    var isLiftedValueType = hasNullConditional && sourcePathLeafType.IsValueType && GetNullableUnderlyingType(sourcePathLeafType) == null;
+                    if (IsNullableToNonNullableValueType(sourcePathLeafType, resolverParamType) || isLiftedValueType)
                     {
                         resolverCall = $"{resolverMethodName}(({resolverParamType.ToDisplayString()}){sourceExpr}!)";
                     }
