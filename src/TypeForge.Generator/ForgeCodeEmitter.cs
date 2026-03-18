@@ -204,9 +204,18 @@ internal sealed class ForgeCodeEmitter
                 {
                     // Pass the source property value - use null-info to handle nullable expressions
                     var (sourceExpr, hasNullConditional) = GenerateSourceExpressionWithNullInfo(sourceParam, sourcePropPath, sourceType);
-                    // Add null-forgiving if expression is nullable but resolver param is non-nullable
-                    var nullForgiving = hasNullConditional && resolverParamType.NullableAnnotation != NullableAnnotation.Annotated ? "!" : "";
-                    resolverCall = $"{resolverMethodName}({sourceExpr}{nullForgiving})";
+
+                    // Handle Nullable<T> to T conversion with explicit cast
+                    if (IsNullableToNonNullableValueType(sourcePathLeafType, resolverParamType))
+                    {
+                        resolverCall = $"{resolverMethodName}(({resolverParamType.ToDisplayString()}){sourceExpr}!)";
+                    }
+                    else
+                    {
+                        // Add null-forgiving if expression is nullable but resolver param is non-nullable
+                        var nullForgiving = hasNullConditional && resolverParamType.NullableAnnotation != NullableAnnotation.Annotated ? "!" : "";
+                        resolverCall = $"{resolverMethodName}({sourceExpr}{nullForgiving})";
+                    }
                 }
                 else
                 {
@@ -555,9 +564,18 @@ internal sealed class ForgeCodeEmitter
                 {
                     // Pass the source property value - use null-info to handle nullable expressions
                     var (sourceExpr, hasNullConditional) = GenerateSourceExpressionWithNullInfo(sourceParam, sourcePropPath, sourceNamedType);
-                    // Add null-forgiving if expression is nullable but resolver param is non-nullable
-                    var nullForgiving = hasNullConditional && resolverParamType.NullableAnnotation != NullableAnnotation.Annotated ? "!" : "";
-                    resolverCall = $"{resolverMethodName}({sourceExpr}{nullForgiving})";
+
+                    // Handle Nullable<T> to T conversion with explicit cast
+                    if (IsNullableToNonNullableValueType(sourcePathLeafType, resolverParamType))
+                    {
+                        resolverCall = $"{resolverMethodName}(({resolverParamType.ToDisplayString()}){sourceExpr}!)";
+                    }
+                    else
+                    {
+                        // Add null-forgiving if expression is nullable but resolver param is non-nullable
+                        var nullForgiving = hasNullConditional && resolverParamType.NullableAnnotation != NullableAnnotation.Annotated ? "!" : "";
+                        resolverCall = $"{resolverMethodName}({sourceExpr}{nullForgiving})";
+                    }
                 }
                 else
                 {
