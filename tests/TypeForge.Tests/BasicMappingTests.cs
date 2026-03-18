@@ -191,6 +191,76 @@ public class UserWithAddressDto
     public AddressDto? Address { get; set; }
 }
 
+// v0.4 Test Models - Enums
+
+public enum OrderStatus { Pending, Processing, Shipped, Delivered }
+public enum OrderStatusDto { Pending, Processing, Shipped, Delivered }
+
+// v0.4 Test Models - Constructor mapping
+
+public record OrderRecordDto(string Id, string CustomerName, DateTime OrderDate);
+
+public class ImmutableOrder
+{
+    public ImmutableOrder(int id, string name)
+    {
+        Id = id;
+        Name = name;
+    }
+
+    public int Id { get; }
+    public string Name { get; }
+}
+
+public class HybridOrder
+{
+    public HybridOrder(int id)
+    {
+        Id = id;
+    }
+
+    public int Id { get; }
+    public string Name { get; set; } = string.Empty;
+    public decimal Total { get; set; }
+}
+
+public class OrderForCtorEntity
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public decimal Total { get; set; }
+}
+
+public class OrderForRecordEntity
+{
+    public string Id { get; set; } = string.Empty;
+    public string CustomerName { get; set; } = string.Empty;
+    public DateTime OrderDate { get; set; }
+}
+
+// v0.4 Test Models - Flattening
+
+public class CompanyInfo
+{
+    public string Name { get; set; } = string.Empty;
+    public AddressEntity? Address { get; set; }
+}
+
+public class EmployeeEntity
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public CompanyInfo? Company { get; set; }
+}
+
+public class FlatEmployeeDto
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string? CompanyName { get; set; }
+    public string? CompanyAddressCity { get; set; }
+}
+
 #endregion
 
 #region Forgers
@@ -310,6 +380,67 @@ public partial class AppForger
     /// Collection forging - IEnumerable&lt;T&gt;
     /// </summary>
     public partial IEnumerable<ProductDto> Forge(IEnumerable<ProductEntity> source);
+}
+
+// v0.4 Forger - Enums
+
+[TypeForge]
+public partial class EnumForger
+{
+    /// <summary>
+    /// Enum to Enum - matched by name.
+    /// </summary>
+    public partial OrderStatusDto Forge(OrderStatus source);
+}
+
+[TypeForge]
+public partial class EnumToStringForger
+{
+    /// <summary>
+    /// Enum to string - uses .ToString().
+    /// </summary>
+    public partial string Forge(OrderStatus source);
+}
+
+[TypeForge]
+public partial class StringToEnumForger
+{
+    /// <summary>
+    /// String to Enum - uses Enum.Parse case-insensitive.
+    /// </summary>
+    public partial OrderStatus Forge(string source);
+}
+
+// v0.4 Forger - Constructor mapping
+
+[TypeForge]
+public partial class CtorForger
+{
+    /// <summary>
+    /// Record constructor mapping - all properties via constructor.
+    /// </summary>
+    public partial OrderRecordDto Forge(OrderForRecordEntity source);
+
+    /// <summary>
+    /// Immutable type with parameterized constructor only.
+    /// </summary>
+    public partial ImmutableOrder ForgeImmutable(OrderForCtorEntity source);
+
+    /// <summary>
+    /// Hybrid: constructor + property setters.
+    /// </summary>
+    public partial HybridOrder ForgeHybrid(OrderForCtorEntity source);
+}
+
+// v0.4 Forger - Automatic flattening
+
+[TypeForge]
+public partial class FlattenForger
+{
+    /// <summary>
+    /// Auto-flatten: EmployeeEntity.Company.Name → FlatEmployeeDto.CompanyName.
+    /// </summary>
+    public partial FlatEmployeeDto Forge(EmployeeEntity source);
 }
 
 #endregion
@@ -934,6 +1065,187 @@ public class CollectionForgingTests
         // Assert
         dtos.Should().NotBeNull();
         dtos.Should().BeEmpty();
+    }
+}
+
+#endregion
+
+#region v0.4 Feature Tests
+
+public class EnumForgingTests
+{
+    [Fact]
+    public void EnumToEnum_ShouldMapByName()
+    {
+        var forger = new EnumForger();
+        var result = forger.Forge(OrderStatus.Shipped);
+        result.Should().Be(OrderStatusDto.Shipped);
+    }
+
+    [Fact]
+    public void EnumToEnum_AllValues_ShouldMap()
+    {
+        var forger = new EnumForger();
+        forger.Forge(OrderStatus.Pending).Should().Be(OrderStatusDto.Pending);
+        forger.Forge(OrderStatus.Processing).Should().Be(OrderStatusDto.Processing);
+        forger.Forge(OrderStatus.Shipped).Should().Be(OrderStatusDto.Shipped);
+        forger.Forge(OrderStatus.Delivered).Should().Be(OrderStatusDto.Delivered);
+    }
+
+    [Fact]
+    public void EnumToString_ShouldReturnName()
+    {
+        var forger = new EnumToStringForger();
+        var result = forger.Forge(OrderStatus.Delivered);
+        result.Should().Be("Delivered");
+    }
+
+    [Fact]
+    public void StringToEnum_ShouldParseCaseInsensitive()
+    {
+        var forger = new StringToEnumForger();
+        forger.Forge("Pending").Should().Be(OrderStatus.Pending);
+        forger.Forge("shipped").Should().Be(OrderStatus.Shipped);
+        forger.Forge("DELIVERED").Should().Be(OrderStatus.Delivered);
+    }
+
+    [Fact]
+    public void StringToEnum_InvalidValue_ShouldThrow()
+    {
+        var forger = new StringToEnumForger();
+        var action = () => forger.Forge("NonExistent");
+        action.Should().Throw<ArgumentException>();
+    }
+}
+
+public class ConstructorMappingTests
+{
+    private readonly CtorForger _forger = new();
+
+    [Fact]
+    public void RecordConstructor_ShouldMapViaConstructor()
+    {
+        var entity = new OrderForRecordEntity
+        {
+            Id = "ORD-001",
+            CustomerName = "Alice",
+            OrderDate = new DateTime(2024, 6, 15)
+        };
+
+        var result = _forger.Forge(entity);
+
+        result.Should().NotBeNull();
+        result.Id.Should().Be("ORD-001");
+        result.CustomerName.Should().Be("Alice");
+        result.OrderDate.Should().Be(new DateTime(2024, 6, 15));
+    }
+
+    [Fact]
+    public void ImmutableType_ShouldMapViaConstructor()
+    {
+        var entity = new OrderForCtorEntity { Id = 42, Name = "Test Order", Total = 100m };
+
+        var result = _forger.ForgeImmutable(entity);
+
+        result.Should().NotBeNull();
+        result.Id.Should().Be(42);
+        result.Name.Should().Be("Test Order");
+    }
+
+    [Fact]
+    public void HybridType_ShouldMapCtorAndSetters()
+    {
+        var entity = new OrderForCtorEntity { Id = 10, Name = "Hybrid", Total = 250m };
+
+        var result = _forger.ForgeHybrid(entity);
+
+        result.Should().NotBeNull();
+        result.Id.Should().Be(10);
+        result.Name.Should().Be("Hybrid");
+        result.Total.Should().Be(250m);
+    }
+
+    [Fact]
+    public void RecordConstructor_NullSource_ShouldReturnNull()
+    {
+        OrderForRecordEntity? entity = null;
+        var result = _forger.Forge(entity!);
+        result.Should().BeNull();
+    }
+}
+
+public class AutoFlatteningTests
+{
+    private readonly FlattenForger _forger = new();
+
+    [Fact]
+    public void AutoFlatten_ShouldMapNestedProperties()
+    {
+        var entity = new EmployeeEntity
+        {
+            Id = 1,
+            Name = "Bob",
+            Company = new CompanyInfo
+            {
+                Name = "Acme Corp",
+                Address = new AddressEntity
+                {
+                    Street = "123 Main St",
+                    City = "Springfield",
+                    ZipCode = "62701"
+                }
+            }
+        };
+
+        var result = _forger.Forge(entity);
+
+        result.Should().NotBeNull();
+        result.Id.Should().Be(1);
+        result.Name.Should().Be("Bob");
+        result.CompanyName.Should().Be("Acme Corp");
+        result.CompanyAddressCity.Should().Be("Springfield");
+    }
+
+    [Fact]
+    public void AutoFlatten_NullIntermediate_ShouldReturnNull()
+    {
+        var entity = new EmployeeEntity
+        {
+            Id = 2,
+            Name = "Alice",
+            Company = null
+        };
+
+        var result = _forger.Forge(entity);
+
+        result.Should().NotBeNull();
+        result.Id.Should().Be(2);
+        result.Name.Should().Be("Alice");
+        result.CompanyName.Should().BeNull();
+        result.CompanyAddressCity.Should().BeNull();
+    }
+
+    [Fact]
+    public void AutoFlatten_NullDeepIntermediate_ShouldReturnNull()
+    {
+        var entity = new EmployeeEntity
+        {
+            Id = 3,
+            Name = "Charlie",
+            Company = new CompanyInfo
+            {
+                Name = "NoAddress Inc",
+                Address = null
+            }
+        };
+
+        var result = _forger.Forge(entity);
+
+        result.Should().NotBeNull();
+        result.Id.Should().Be(3);
+        result.Name.Should().Be("Charlie");
+        result.CompanyName.Should().Be("NoAddress Inc");
+        result.CompanyAddressCity.Should().BeNull();
     }
 }
 
