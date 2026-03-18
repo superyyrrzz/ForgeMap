@@ -458,14 +458,6 @@ internal sealed class ForgeCodeEmitter
         return currentType;
     }
 
-    /// <summary>
-    /// Generates the source expression for a property, handling nested paths.
-    /// </summary>
-    private string GenerateSourceExpression(string sourceParam, string sourcePath, INamedTypeSymbol sourceType)
-    {
-        return GenerateSourceExpressionWithNullInfo(sourceParam, sourcePath, sourceType).Expression;
-    }
-
     private string GenerateForgeIntoMethod(
         IMethodSymbol method,
         ITypeSymbol sourceType,
