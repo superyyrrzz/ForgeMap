@@ -1444,7 +1444,15 @@ internal sealed class ForgeCodeEmitter
         var exactMatch = candidates.FirstOrDefault(m =>
             SymbolEqualityComparer.Default.Equals(m.Parameters[0].Type, sourceType));
 
-        return exactMatch != null || candidates.Count == 1;
+        if (exactMatch != null || candidates.Count == 1)
+            return true;
+
+        // Multiple assignable candidates with no exact match — ambiguous
+        context.ReportDiagnostic(Diagnostic.Create(
+            DiagnosticDescriptors.HookMethodInvalid,
+            method.Locations.FirstOrDefault(),
+            hookMethodName));
+        return false;
     }
 
     /// <summary>
@@ -1485,7 +1493,15 @@ internal sealed class ForgeCodeEmitter
             SymbolEqualityComparer.Default.Equals(m.Parameters[0].Type, sourceType) &&
             SymbolEqualityComparer.Default.Equals(m.Parameters[1].Type, destType));
 
-        return exactMatch != null || candidates.Count == 1;
+        if (exactMatch != null || candidates.Count == 1)
+            return true;
+
+        // Multiple assignable candidates with no exact match — ambiguous
+        context.ReportDiagnostic(Diagnostic.Create(
+            DiagnosticDescriptors.HookMethodInvalid,
+            method.Locations.FirstOrDefault(),
+            hookMethodName));
+        return false;
     }
 
     /// <summary>
