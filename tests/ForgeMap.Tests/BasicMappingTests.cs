@@ -1,10 +1,10 @@
 using System.Collections.Generic;
 using System.Linq;
 using FluentAssertions;
-using TypeForge;
+using ForgeMap;
 using Xunit;
 
-namespace TypeForge.Tests;
+namespace ForgeMap.Tests;
 
 #region Test Models
 
@@ -265,7 +265,7 @@ public class FlatEmployeeDto
 
 #region Forgers
 
-[TypeForge]
+[ForgeMap]
 public partial class AppForger
 {
     /// <summary>
@@ -384,7 +384,7 @@ public partial class AppForger
 
 // v0.4 Forger - Enums
 
-[TypeForge]
+[ForgeMap]
 public partial class EnumForger
 {
     /// <summary>
@@ -393,7 +393,7 @@ public partial class EnumForger
     public partial OrderStatusDto Forge(OrderStatus source);
 }
 
-[TypeForge]
+[ForgeMap]
 public partial class EnumToStringForger
 {
     /// <summary>
@@ -402,7 +402,7 @@ public partial class EnumToStringForger
     public partial string Forge(OrderStatus source);
 }
 
-[TypeForge]
+[ForgeMap]
 public partial class StringToEnumForger
 {
     /// <summary>
@@ -413,7 +413,7 @@ public partial class StringToEnumForger
 
 // v0.4 Forger - Constructor mapping
 
-[TypeForge]
+[ForgeMap]
 public partial class CtorForger
 {
     /// <summary>
@@ -434,7 +434,7 @@ public partial class CtorForger
 
 // v0.4 Forger - Automatic flattening
 
-[TypeForge]
+[ForgeMap]
 public partial class FlattenForger
 {
     /// <summary>

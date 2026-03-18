@@ -13,11 +13,11 @@
     <!-- Don't include this as a direct reference in consuming projects -->
     <IncludeBuildOutput>false</IncludeBuildOutput>
 
-    <Description>Source generator for TypeForge that generates type transformation code at compile time.</Description>
+    <Description>Source generator for ForgeMap that generates type transformation code at compile time.</Description>
     <PackageTags>automapper;mapping;sourcegenerator;dto;transformation;roslyn</PackageTags>
     <DevelopmentDependency>true</DevelopmentDependency>
 
-    <!-- Only the main TypeForge package is published -->
+    <!-- Only the main ForgeMap package is published -->
     <IsPackable>false</IsPackable>
   </PropertyGroup>
 
@@ -32,7 +32,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\TypeForge.Abstractions\TypeForge.Abstractions.csproj" />
+    <ProjectReference Include="..\ForgeMap.Abstractions\ForgeMap.Abstractions.csproj" />
   </ItemGroup>
 
 </Project>

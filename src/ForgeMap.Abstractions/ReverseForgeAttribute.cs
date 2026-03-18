@@ -1,6 +1,6 @@
 using System;
 
-namespace TypeForge;
+namespace ForgeMap;
 
 /// <summary>
 /// Generates a reverse forging method automatically.

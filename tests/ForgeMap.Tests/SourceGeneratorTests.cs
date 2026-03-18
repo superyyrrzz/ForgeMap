@@ -1,10 +1,10 @@
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
-using TypeForge.Generator;
+using ForgeMap.Generator;
 using Xunit;
 using System.Diagnostics;
 
-namespace TypeForge.Tests;
+namespace ForgeMap.Tests;
 
 /// <summary>
 /// Tests that verify the source generator produces correct code.
@@ -16,7 +16,7 @@ public class SourceGeneratorTests
     {
         // Arrange
         var source = """
-            using TypeForge;
+            using ForgeMap;
 
             namespace TestNamespace
             {
@@ -32,7 +32,7 @@ public class SourceGeneratorTests
                     public string Name { get; set; }
                 }
 
-                [TypeForge]
+                [ForgeMap]
                 public partial class TestForger
                 {
                     public partial DestDto Forge(SourceEntity source);
@@ -63,7 +63,7 @@ public class SourceGeneratorTests
     {
         // Arrange
         var source = """
-            using TypeForge;
+            using ForgeMap;
 
             namespace TestNamespace
             {
@@ -81,7 +81,7 @@ public class SourceGeneratorTests
                     public string Secret { get; set; }
                 }
 
-                [TypeForge]
+                [ForgeMap]
                 public partial class TestForger
                 {
                     [Ignore(nameof(DestDto.Secret))]
@@ -108,7 +108,7 @@ public class SourceGeneratorTests
     {
         // Arrange
         var source = """
-            using TypeForge;
+            using ForgeMap;
 
             namespace TestNamespace
             {
@@ -126,7 +126,7 @@ public class SourceGeneratorTests
                     public string SecurityStamp { get; set; }
                 }
 
-                [TypeForge]
+                [ForgeMap]
                 public partial class TestForger
                 {
                     [Ignore(nameof(DestDto.PasswordHash), nameof(DestDto.SecurityStamp))]
@@ -152,11 +152,11 @@ public class SourceGeneratorTests
     {
         // Arrange
         var source = """
-            using TypeForge;
+            using ForgeMap;
 
             namespace TestNamespace
             {
-                [TypeForge]
+                [ForgeMap]
                 public class NonPartialForger
                 {
                     public partial DestDto Forge(SourceEntity source);
@@ -171,7 +171,7 @@ public class SourceGeneratorTests
         var (diagnostics, _) = RunGenerator(source);
 
         // Assert
-        var error = diagnostics.FirstOrDefault(d => d.Id == "TF0001");
+        var error = diagnostics.FirstOrDefault(d => d.Id == "FM0001");
         Assert.NotNull(error);
         Assert.Equal(DiagnosticSeverity.Error, error.Severity);
     }
@@ -181,7 +181,7 @@ public class SourceGeneratorTests
     {
         // Arrange
         var source = """
-            using TypeForge;
+            using ForgeMap;
 
             namespace TestNamespace
             {
@@ -197,7 +197,7 @@ public class SourceGeneratorTests
                     public string Name { get; set; }
                 }
 
-                [TypeForge]
+                [ForgeMap]
                 public partial class TestForger
                 {
                     public partial void ForgeInto(SourceEntity source, [UseExistingValue] DestDto destination);
@@ -226,8 +226,8 @@ public class SourceGeneratorTests
     {
         var syntaxTree = CSharpSyntaxTree.ParseText(source);
 
-        // Get references to the TypeForge.Abstractions assembly
-        var abstractionsAssembly = typeof(TypeForgeAttribute).Assembly;
+        // Get references to the ForgeMap.Abstractions assembly
+        var abstractionsAssembly = typeof(ForgeMapAttribute).Assembly;
         var references = new List<MetadataReference>
         {
             MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
@@ -257,7 +257,7 @@ public class SourceGeneratorTests
             references,
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
 
-        var generator = new TypeForgeGenerator();
+        var generator = new ForgeMapGenerator();
 
         GeneratorDriver driver = CSharpGeneratorDriver.Create(generator);
         driver = driver.RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out var diagnostics);
@@ -278,7 +278,7 @@ public class ForgePropertyGeneratorTests
     {
         // Arrange
         var source = """
-            using TypeForge;
+            using ForgeMap;
 
             namespace TestNamespace
             {
@@ -294,7 +294,7 @@ public class ForgePropertyGeneratorTests
                     public decimal Amount { get; set; }
                 }
 
-                [TypeForge]
+                [ForgeMap]
                 public partial class TestForger
                 {
                     [ForgeProperty(nameof(SourceEntity.OrderId), nameof(DestDto.Id))]
@@ -321,7 +321,7 @@ public class ForgePropertyGeneratorTests
     {
         // Arrange
         var source = """
-            using TypeForge;
+            using ForgeMap;
 
             namespace TestNamespace
             {
@@ -342,7 +342,7 @@ public class ForgePropertyGeneratorTests
                     public string CustomerName { get; set; }
                 }
 
-                [TypeForge]
+                [ForgeMap]
                 public partial class TestForger
                 {
                     [ForgeProperty("Customer.Name", nameof(OrderDto.CustomerName))]
@@ -376,7 +376,7 @@ public class ForgeFromGeneratorTests
     {
         // Arrange
         var source = """
-            using TypeForge;
+            using ForgeMap;
 
             namespace TestNamespace
             {
@@ -391,7 +391,7 @@ public class ForgeFromGeneratorTests
                     public decimal TotalWithTax { get; set; }
                 }
 
-                [TypeForge]
+                [ForgeMap]
                 public partial class TestForger
                 {
                     [ForgeFrom(nameof(OrderDto.TotalWithTax), nameof(CalculateTotal))]
@@ -419,14 +419,14 @@ public class ForgeFromGeneratorTests
     {
         // Arrange
         var source = """
-            using TypeForge;
+            using ForgeMap;
 
             namespace TestNamespace
             {
                 public class SourceEntity { public int Id { get; set; } }
                 public class DestDto { public int Value { get; set; } }
 
-                [TypeForge]
+                [ForgeMap]
                 public partial class TestForger
                 {
                     [ForgeFrom(nameof(DestDto.Value), "NonExistentMethod")]
@@ -439,7 +439,7 @@ public class ForgeFromGeneratorTests
         var (diagnostics, _) = RunGenerator(source);
 
         // Assert
-        var error = diagnostics.FirstOrDefault(d => d.Id == "TF0008");
+        var error = diagnostics.FirstOrDefault(d => d.Id == "FM0008");
         Assert.NotNull(error);
         Assert.Equal(DiagnosticSeverity.Error, error.Severity);
     }
@@ -449,7 +449,7 @@ public class ForgeFromGeneratorTests
     {
         // Arrange
         var source = """
-            using TypeForge;
+            using ForgeMap;
 
             namespace TestNamespace
             {
@@ -468,7 +468,7 @@ public class ForgeFromGeneratorTests
                     public decimal TotalWithTax { get; set; }
                 }
 
-                [TypeForge]
+                [ForgeMap]
                 public partial class TestForger
                 {
                     [ForgeProperty(nameof(OrderEntity.OrderId), nameof(OrderDto.Id))]
@@ -508,7 +508,7 @@ public class NullableHandlingGeneratorTests
     {
         // Arrange
         var source = """
-            using TypeForge;
+            using ForgeMap;
             using System;
 
             namespace TestNamespace
@@ -525,7 +525,7 @@ public class NullableHandlingGeneratorTests
                     public int Quantity { get; set; }
                 }
 
-                [TypeForge]
+                [ForgeMap]
                 public partial class TestForger
                 {
                     public partial Dest Forge(Source source);
@@ -555,7 +555,7 @@ public class NullableHandlingGeneratorTests
     {
         // Arrange
         var source = """
-            using TypeForge;
+            using ForgeMap;
             using System;
 
             namespace TestNamespace
@@ -572,7 +572,7 @@ public class NullableHandlingGeneratorTests
                     public int? Quantity { get; set; }
                 }
 
-                [TypeForge]
+                [ForgeMap]
                 public partial class TestForger
                 {
                     public partial Dest Forge(Source source);
@@ -611,7 +611,7 @@ public class ForgeWithGeneratorTests
     {
         // Arrange
         var source = """
-            using TypeForge;
+            using ForgeMap;
 
             namespace TestNamespace
             {
@@ -639,7 +639,7 @@ public class ForgeWithGeneratorTests
                     public AddressDto Address { get; set; }
                 }
 
-                [TypeForge]
+                [ForgeMap]
                 public partial class TestForger
                 {
                     public partial AddressDto Forge(AddressEntity source);
@@ -670,7 +670,7 @@ public class ForgeWithGeneratorTests
     {
         // Arrange
         var source = """
-            using TypeForge;
+            using ForgeMap;
 
             namespace TestNamespace
             {
@@ -679,7 +679,7 @@ public class ForgeWithGeneratorTests
                 public class UserEntity { public int Id { get; set; } public AddressEntity Address { get; set; } }
                 public class UserDto { public int Id { get; set; } public AddressDto Address { get; set; } }
 
-                [TypeForge]
+                [ForgeMap]
                 public partial class TestForger
                 {
                     [ForgeWith(nameof(UserDto.Address), "NonExistentMethod")]
@@ -692,7 +692,7 @@ public class ForgeWithGeneratorTests
         var (diagnostics, _) = RunGenerator(source);
 
         // Assert
-        var error = diagnostics.FirstOrDefault(d => d.Id == "TF0008");
+        var error = diagnostics.FirstOrDefault(d => d.Id == "FM0008");
         Assert.NotNull(error);
         Assert.Equal(DiagnosticSeverity.Error, error.Severity);
     }
@@ -710,7 +710,7 @@ public class CollectionForgingGeneratorTests
     {
         // Arrange
         var source = """
-            using TypeForge;
+            using ForgeMap;
             using System.Collections.Generic;
 
             namespace TestNamespace
@@ -718,7 +718,7 @@ public class CollectionForgingGeneratorTests
                 public class ItemEntity { public int Id { get; set; } }
                 public class ItemDto { public int Id { get; set; } }
 
-                [TypeForge]
+                [ForgeMap]
                 public partial class TestForger
                 {
                     public partial ItemDto Forge(ItemEntity source);
@@ -746,14 +746,14 @@ public class CollectionForgingGeneratorTests
     {
         // Arrange
         var source = """
-            using TypeForge;
+            using ForgeMap;
 
             namespace TestNamespace
             {
                 public class ItemEntity { public int Id { get; set; } }
                 public class ItemDto { public int Id { get; set; } }
 
-                [TypeForge]
+                [ForgeMap]
                 public partial class TestForger
                 {
                     public partial ItemDto Forge(ItemEntity source);
@@ -779,7 +779,7 @@ public class CollectionForgingGeneratorTests
     {
         // Arrange
         var source = """
-            using TypeForge;
+            using ForgeMap;
             using System.Collections.Generic;
 
             namespace TestNamespace
@@ -787,7 +787,7 @@ public class CollectionForgingGeneratorTests
                 public class ItemEntity { public int Id { get; set; } }
                 public class ItemDto { public int Id { get; set; } }
 
-                [TypeForge]
+                [ForgeMap]
                 public partial class TestForger
                 {
                     public partial ItemDto Forge(ItemEntity source);
@@ -823,14 +823,14 @@ public class EnumForgingGeneratorTests
     public void Generator_EnumToEnum_GeneratesParseByName()
     {
         var source = """
-            using TypeForge;
+            using ForgeMap;
 
             namespace TestNamespace
             {
                 public enum Status { Active, Inactive }
                 public enum StatusDto { Active, Inactive }
 
-                [TypeForge]
+                [ForgeMap]
                 public partial class TestForger
                 {
                     public partial StatusDto Forge(Status source);
@@ -852,13 +852,13 @@ public class EnumForgingGeneratorTests
     public void Generator_EnumToString_GeneratesToString()
     {
         var source = """
-            using TypeForge;
+            using ForgeMap;
 
             namespace TestNamespace
             {
                 public enum Status { Active, Inactive }
 
-                [TypeForge]
+                [ForgeMap]
                 public partial class TestForger
                 {
                     public partial string Forge(Status source);
@@ -879,13 +879,13 @@ public class EnumForgingGeneratorTests
     public void Generator_StringToEnum_GeneratesEnumParse()
     {
         var source = """
-            using TypeForge;
+            using ForgeMap;
 
             namespace TestNamespace
             {
                 public enum Status { Active, Inactive }
 
-                [TypeForge]
+                [ForgeMap]
                 public partial class TestForger
                 {
                     public partial Status Forge(string source);
@@ -915,7 +915,7 @@ public class ConstructorMappingGeneratorTests
     public void Generator_RecordType_GeneratesConstructorCall()
     {
         var source = """
-            using TypeForge;
+            using ForgeMap;
             using System;
 
             namespace TestNamespace
@@ -928,7 +928,7 @@ public class ConstructorMappingGeneratorTests
 
                 public record DestRecord(string Id, string Name);
 
-                [TypeForge]
+                [ForgeMap]
                 public partial class TestForger
                 {
                     public partial DestRecord Forge(SourceEntity source);
@@ -951,7 +951,7 @@ public class ConstructorMappingGeneratorTests
     public void Generator_HybridType_GeneratesCtorPlusSetters()
     {
         var source = """
-            using TypeForge;
+            using ForgeMap;
 
             namespace TestNamespace
             {
@@ -970,7 +970,7 @@ public class ConstructorMappingGeneratorTests
                     public decimal Total { get; set; }
                 }
 
-                [TypeForge]
+                [ForgeMap]
                 public partial class TestForger
                 {
                     public partial HybridDest Forge(SourceEntity source);
@@ -994,7 +994,7 @@ public class ConstructorMappingGeneratorTests
     public void Generator_ConstructorParameterNotMatched_ReportsError()
     {
         var source = """
-            using TypeForge;
+            using ForgeMap;
 
             namespace TestNamespace
             {
@@ -1009,7 +1009,7 @@ public class ConstructorMappingGeneratorTests
                     public int Id { get; }
                 }
 
-                [TypeForge]
+                [ForgeMap]
                 public partial class TestForger
                 {
                     public partial DestWithCtor Forge(SourceEntity source);
@@ -1019,7 +1019,7 @@ public class ConstructorMappingGeneratorTests
 
         var (diagnostics, _) = RunGenerator(source);
 
-        var error = diagnostics.FirstOrDefault(d => d.Id == "TF0014");
+        var error = diagnostics.FirstOrDefault(d => d.Id == "FM0014");
         Assert.NotNull(error);
         Assert.Equal(DiagnosticSeverity.Error, error.Severity);
     }
@@ -1036,7 +1036,7 @@ public class AutoFlatteningGeneratorTests
     public void Generator_AutoFlatten_GeneratesNestedAccess()
     {
         var source = """
-            using TypeForge;
+            using ForgeMap;
 
             namespace TestNamespace
             {
@@ -1064,7 +1064,7 @@ public class AutoFlatteningGeneratorTests
                     public string CompanyAddressCity { get; set; }
                 }
 
-                [TypeForge]
+                [ForgeMap]
                 public partial class TestForger
                 {
                     public partial EmployeeDto Forge(Employee source);

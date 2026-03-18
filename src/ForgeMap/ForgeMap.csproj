@@ -6,7 +6,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
 
-    <Description>TypeForge is a lightweight, compile-time object transformation library for .NET. Zero-reflection, source-generator-based mapping with compile-time type safety.</Description>
+    <Description>ForgeMap is a lightweight, compile-time object transformation library for .NET. Zero-reflection, source-generator-based mapping with compile-time type safety.</Description>
     <PackageTags>automapper;mapping;sourcegenerator;dto;transformation;object-mapper</PackageTags>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageIcon>icon.png</PackageIcon>
@@ -20,8 +20,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\TypeForge.Abstractions\TypeForge.Abstractions.csproj" />
-    <ProjectReference Include="..\TypeForge.Generator\TypeForge.Generator.csproj"
+    <ProjectReference Include="..\ForgeMap.Abstractions\ForgeMap.Abstractions.csproj" />
+    <ProjectReference Include="..\ForgeMap.Generator\ForgeMap.Generator.csproj"
                       OutputItemType="Analyzer"
                       ReferenceOutputAssembly="false" />
   </ItemGroup>
@@ -32,15 +32,15 @@
     <None Include="$(MSBuildThisFileDirectory)..\..\icon.png" Pack="true" PackagePath="" />
   </ItemGroup>
 
-  <!-- Bundle TypeForge.Abstractions in lib/ and TypeForge.Generator in analyzers/ -->
+  <!-- Bundle ForgeMap.Abstractions in lib/ and ForgeMap.Generator in analyzers/ -->
   <PropertyGroup>
     <TargetsForTfmSpecificBuildOutput>$(TargetsForTfmSpecificBuildOutput);IncludePackageContent</TargetsForTfmSpecificBuildOutput>
   </PropertyGroup>
 
   <Target Name="IncludePackageContent">
     <ItemGroup>
-      <TfmSpecificPackageFile Include="$(OutDir)TypeForge.Abstractions.dll" PackagePath="lib/netstandard2.0" />
-      <TfmSpecificPackageFile Include="$([MSBuild]::NormalizePath('$(MSBuildThisFileDirectory)', '..', 'TypeForge.Generator', 'bin', '$(Configuration)', 'netstandard2.0', 'TypeForge.Generator.dll'))"
+      <TfmSpecificPackageFile Include="$(OutDir)ForgeMap.Abstractions.dll" PackagePath="lib/netstandard2.0" />
+      <TfmSpecificPackageFile Include="$([MSBuild]::NormalizePath('$(MSBuildThisFileDirectory)', '..', 'ForgeMap.Generator', 'bin', '$(Configuration)', 'netstandard2.0', 'ForgeMap.Generator.dll'))"
                               PackagePath="analyzers/dotnet/cs" />
     </ItemGroup>
   </Target>

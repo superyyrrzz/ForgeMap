@@ -4,10 +4,10 @@ using System.Linq;
 using System.Text;
 using Microsoft.CodeAnalysis;
 
-namespace TypeForge.Generator;
+namespace ForgeMap.Generator;
 
 /// <summary>
-/// Emits generated forging code for TypeForge forger classes.
+/// Emits generated forging code for ForgeMap forger classes.
 /// </summary>
 internal sealed class ForgeCodeEmitter
 {
@@ -18,10 +18,10 @@ internal sealed class ForgeCodeEmitter
 
     public ForgeCodeEmitter(Compilation compilation)
     {
-        _ignoreAttributeSymbol = compilation.GetTypeByMetadataName("TypeForge.IgnoreAttribute");
-        _forgePropertyAttributeSymbol = compilation.GetTypeByMetadataName("TypeForge.ForgePropertyAttribute");
-        _forgeFromAttributeSymbol = compilation.GetTypeByMetadataName("TypeForge.ForgeFromAttribute");
-        _forgeWithAttributeSymbol = compilation.GetTypeByMetadataName("TypeForge.ForgeWithAttribute");
+        _ignoreAttributeSymbol = compilation.GetTypeByMetadataName("ForgeMap.IgnoreAttribute");
+        _forgePropertyAttributeSymbol = compilation.GetTypeByMetadataName("ForgeMap.ForgePropertyAttribute");
+        _forgeFromAttributeSymbol = compilation.GetTypeByMetadataName("ForgeMap.ForgeFromAttribute");
+        _forgeWithAttributeSymbol = compilation.GetTypeByMetadataName("ForgeMap.ForgeWithAttribute");
     }
 
     public string GenerateForger(ForgerInfo forger, SourceProductionContext context)
@@ -77,7 +77,7 @@ internal sealed class ForgeCodeEmitter
         return method.Parameters.Any(p =>
             p.GetAttributes().Any(a =>
                 a.AttributeClass?.Name == "UseExistingValueAttribute" ||
-                a.AttributeClass?.ToDisplayString() == "TypeForge.UseExistingValueAttribute"));
+                a.AttributeClass?.ToDisplayString() == "ForgeMap.UseExistingValueAttribute"));
     }
 
     private string GenerateMethod(IMethodSymbol method, ForgerInfo forger, SourceProductionContext context)
@@ -95,7 +95,7 @@ internal sealed class ForgeCodeEmitter
         var useExistingParam = method.Parameters.FirstOrDefault(p =>
             p.GetAttributes().Any(a =>
                 a.AttributeClass?.Name == "UseExistingValueAttribute" ||
-                a.AttributeClass?.ToDisplayString() == "TypeForge.UseExistingValueAttribute"));
+                a.AttributeClass?.ToDisplayString() == "ForgeMap.UseExistingValueAttribute"));
 
         if (useExistingParam != null)
         {
@@ -667,7 +667,7 @@ internal sealed class ForgeCodeEmitter
 
         if (scoredCtors.Count == 0)
         {
-            // No fully-matched ctor. Report TF0014 for the constructor with the most params.
+            // No fully-matched ctor. Report FM0014 for the constructor with the most params.
             var bestCtor = constructors.OrderByDescending(c => c.Parameters.Length).First();
             foreach (var param in bestCtor.Parameters)
             {

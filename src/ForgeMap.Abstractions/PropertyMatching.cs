@@ -1,4 +1,4 @@
-namespace TypeForge;
+namespace ForgeMap;
 
 /// <summary>
 /// Specifies how properties should be matched between source and destination types.

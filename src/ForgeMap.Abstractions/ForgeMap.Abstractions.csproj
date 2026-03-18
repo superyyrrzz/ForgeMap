@@ -6,14 +6,14 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
 
-    <Description>Attributes and interfaces for TypeForge, a compile-time object transformation library.</Description>
+    <Description>Attributes and interfaces for ForgeMap, a compile-time object transformation library.</Description>
     <PackageTags>automapper;mapping;sourcegenerator;dto;transformation</PackageTags>
 
     <!-- Generate XML docs -->
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
 
-    <!-- Only the main TypeForge package is published -->
+    <!-- Only the main ForgeMap package is published -->
     <IsPackable>false</IsPackable>
   </PropertyGroup>
 

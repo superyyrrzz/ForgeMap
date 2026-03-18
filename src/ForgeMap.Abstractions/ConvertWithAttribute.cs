@@ -1,10 +1,10 @@
 using System;
 
-namespace TypeForge;
+namespace ForgeMap;
 
 /// <summary>
 /// Uses a custom converter class for the forging.
-/// Available in TypeForge v1.1+.
+/// Available in ForgeMap v1.1+.
 /// </summary>
 [AttributeUsage(AttributeTargets.Method, AllowMultiple = false, Inherited = false)]
 public sealed class ConvertWithAttribute : Attribute

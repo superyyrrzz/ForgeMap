@@ -1,6 +1,6 @@
 using System;
 
-namespace TypeForge;
+namespace ForgeMap;
 
 /// <summary>
 /// Uses another forging method for a nested property.

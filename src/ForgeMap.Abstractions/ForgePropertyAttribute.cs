@@ -1,6 +1,6 @@
 using System;
 
-namespace TypeForge;
+namespace ForgeMap;
 
 /// <summary>
 /// Maps a source property to a differently-named destination property.

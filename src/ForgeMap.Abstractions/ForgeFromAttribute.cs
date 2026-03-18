@@ -1,6 +1,6 @@
 using System;
 
-namespace TypeForge;
+namespace ForgeMap;
 
 /// <summary>
 /// Maps a destination property using a custom resolver method.

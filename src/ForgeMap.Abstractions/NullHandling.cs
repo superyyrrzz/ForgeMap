@@ -1,4 +1,4 @@
-namespace TypeForge;
+namespace ForgeMap;
 
 /// <summary>
 /// Specifies how null source objects should be handled during forging.

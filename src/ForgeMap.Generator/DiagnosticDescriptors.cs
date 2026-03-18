@@ -1,24 +1,24 @@
 using Microsoft.CodeAnalysis;
 
-namespace TypeForge.Generator;
+namespace ForgeMap.Generator;
 
 /// <summary>
-/// Diagnostic descriptors for TypeForge source generator.
+/// Diagnostic descriptors for ForgeMap source generator.
 /// </summary>
 internal static class DiagnosticDescriptors
 {
-    private const string Category = "TypeForge";
+    private const string Category = "ForgeMap";
 
     public static readonly DiagnosticDescriptor ClassMustBePartial = new(
-        id: "TF0001",
+        id: "FM0001",
         title: "Forger class must be partial",
-        messageFormat: "The class '{0}' marked with [TypeForge] must be declared as partial",
+        messageFormat: "The class '{0}' marked with [ForgeMap] must be declared as partial",
         category: Category,
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true);
 
     public static readonly DiagnosticDescriptor MethodMustBePartial = new(
-        id: "TF0002",
+        id: "FM0002",
         title: "Forging method must be partial",
         messageFormat: "The forging method '{0}' must be declared as partial",
         category: Category,
@@ -26,7 +26,7 @@ internal static class DiagnosticDescriptors
         isEnabledByDefault: true);
 
     public static readonly DiagnosticDescriptor SourceTypeHasNoProperties = new(
-        id: "TF0003",
+        id: "FM0003",
         title: "Source type has no accessible properties",
         messageFormat: "The source type '{0}' has no accessible properties to forge",
         category: Category,
@@ -34,7 +34,7 @@ internal static class DiagnosticDescriptors
         isEnabledByDefault: true);
 
     public static readonly DiagnosticDescriptor DestinationTypeHasNoConstructor = new(
-        id: "TF0004",
+        id: "FM0004",
         title: "Destination type has no accessible constructor",
         messageFormat: "The destination type '{0}' has no accessible constructor",
         category: Category,
@@ -42,7 +42,7 @@ internal static class DiagnosticDescriptors
         isEnabledByDefault: true);
 
     public static readonly DiagnosticDescriptor UnmappedSourceProperty = new(
-        id: "TF0005",
+        id: "FM0005",
         title: "Unmapped source property",
         messageFormat: "The source property '{0}.{1}' is not mapped to any destination property",
         category: Category,
@@ -50,7 +50,7 @@ internal static class DiagnosticDescriptors
         isEnabledByDefault: true);
 
     public static readonly DiagnosticDescriptor UnmappedDestinationProperty = new(
-        id: "TF0006",
+        id: "FM0006",
         title: "Unmapped destination property",
         messageFormat: "The destination property '{0}.{1}' is not mapped from any source property",
         category: Category,
@@ -58,7 +58,7 @@ internal static class DiagnosticDescriptors
         isEnabledByDefault: true);
 
     public static readonly DiagnosticDescriptor NullableToNonNullableMapping = new(
-        id: "TF0007",
+        id: "FM0007",
         title: "Nullable to non-nullable mapping",
         messageFormat: "The nullable source '{0}.{1}' is mapped to non-nullable destination '{2}.{3}'",
         category: Category,
@@ -66,7 +66,7 @@ internal static class DiagnosticDescriptors
         isEnabledByDefault: true);
 
     public static readonly DiagnosticDescriptor ResolverMethodNotFound = new(
-        id: "TF0008",
+        id: "FM0008",
         title: "Resolver method not found",
         messageFormat: "The resolver method '{0}' referenced in [ForgeFrom] or [ForgeWith] was not found",
         category: Category,
@@ -74,7 +74,7 @@ internal static class DiagnosticDescriptors
         isEnabledByDefault: true);
 
     public static readonly DiagnosticDescriptor InvalidResolverSignature = new(
-        id: "TF0009",
+        id: "FM0009",
         title: "Invalid resolver method signature",
         messageFormat: "The resolver method '{0}' has an invalid signature",
         category: Category,
@@ -82,7 +82,7 @@ internal static class DiagnosticDescriptors
         isEnabledByDefault: true);
 
     public static readonly DiagnosticDescriptor CircularMappingDependency = new(
-        id: "TF0010",
+        id: "FM0010",
         title: "Circular mapping dependency detected",
         messageFormat: "A circular mapping dependency was detected: {0}",
         category: Category,
@@ -90,7 +90,7 @@ internal static class DiagnosticDescriptors
         isEnabledByDefault: true);
 
     public static readonly DiagnosticDescriptor PropertyMappedByConvention = new(
-        id: "TF0011",
+        id: "FM0011",
         title: "Property mapped by convention",
         messageFormat: "The property '{0}' was mapped by name convention",
         category: Category,
@@ -98,7 +98,7 @@ internal static class DiagnosticDescriptors
         isEnabledByDefault: false);
 
     public static readonly DiagnosticDescriptor ForgeFromCannotBeReversed = new(
-        id: "TF0012",
+        id: "FM0012",
         title: "[ForgeFrom] cannot be auto-reversed",
         messageFormat: "The [ForgeFrom] attribute on '{0}' cannot be automatically reversed; provide manual reverse mapping",
         category: Category,
@@ -106,7 +106,7 @@ internal static class DiagnosticDescriptors
         isEnabledByDefault: true);
 
     public static readonly DiagnosticDescriptor AmbiguousConstructor = new(
-        id: "TF0013",
+        id: "FM0013",
         title: "Ambiguous constructor selection",
         messageFormat: "Multiple constructors on '{0}' match equally; add or remove constructor parameters to disambiguate",
         category: Category,
@@ -114,7 +114,7 @@ internal static class DiagnosticDescriptors
         isEnabledByDefault: true);
 
     public static readonly DiagnosticDescriptor ConstructorParameterNotMatched = new(
-        id: "TF0014",
+        id: "FM0014",
         title: "Constructor parameter has no matching source",
         messageFormat: "The constructor parameter '{0}' on '{1}' has no matching source property",
         category: Category,
@@ -122,7 +122,7 @@ internal static class DiagnosticDescriptors
         isEnabledByDefault: true);
 
     public static readonly DiagnosticDescriptor ForgeWithLacksReverseForge = new(
-        id: "TF0015",
+        id: "FM0015",
         title: "[ForgeWith] nested method lacks [ReverseForge]",
         messageFormat: "The nested forging method '{0}' used in [ForgeWith] does not have [ReverseForge]; reverse mapping may be incomplete",
         category: Category,
@@ -130,7 +130,7 @@ internal static class DiagnosticDescriptors
         isEnabledByDefault: true);
 
     public static readonly DiagnosticDescriptor HookMethodInvalid = new(
-        id: "TF0016",
+        id: "FM0016",
         title: "Hook method not found or has invalid signature",
         messageFormat: "The hook method '{0}' was not found or has an invalid signature",
         category: Category,
@@ -138,7 +138,7 @@ internal static class DiagnosticDescriptors
         isEnabledByDefault: true);
 
     public static readonly DiagnosticDescriptor UseExistingValueInvalid = new(
-        id: "TF0017",
+        id: "FM0017",
         title: "[UseExistingValue] on non-reference type or method returns non-void",
         messageFormat: "[UseExistingValue] requires a reference type parameter and the method must return void",
         category: Category,

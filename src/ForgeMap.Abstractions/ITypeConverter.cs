@@ -1,4 +1,4 @@
-namespace TypeForge;
+namespace ForgeMap;
 
 /// <summary>
 /// Interface for custom type converters.
@@ -11,7 +11,7 @@ public interface ITypeConverter<in TSource, out TDestination>
     /// <summary>
     /// Converts a source object to a destination object.
     /// </summary>
-    /// <param name="source">The source object to convert. Guaranteed to be non-null when called through generated TypeForge code.</param>
+    /// <param name="source">The source object to convert. Guaranteed to be non-null when called through generated ForgeMap code.</param>
     /// <returns>The converted destination object.</returns>
     TDestination Convert(TSource source);
 }

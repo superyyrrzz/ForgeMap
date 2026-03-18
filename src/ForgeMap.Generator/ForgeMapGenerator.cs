@@ -5,20 +5,20 @@ using System.Linq;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 
-namespace TypeForge.Generator;
+namespace ForgeMap.Generator;
 
 /// <summary>
-/// Incremental source generator for TypeForge that generates type transformation code at compile time.
+/// Incremental source generator for ForgeMap that generates type transformation code at compile time.
 /// </summary>
 [Generator(LanguageNames.CSharp)]
-public sealed class TypeForgeGenerator : IIncrementalGenerator
+public sealed class ForgeMapGenerator : IIncrementalGenerator
 {
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
-        // Register syntax provider to find classes with [TypeForge] attribute
+        // Register syntax provider to find classes with [ForgeMap] attribute
         var forgerClasses = context.SyntaxProvider
             .ForAttributeWithMetadataName(
-                "TypeForge.TypeForgeAttribute",
+                "ForgeMap.ForgeMapAttribute",
                 predicate: static (node, _) => node is ClassDeclarationSyntax,
                 transform: static (context, _) => GetForgerInfo(context))
             .Where(static info => info is not null)
@@ -92,16 +92,16 @@ internal sealed class ForgerInfo
         INamedTypeSymbol symbol,
         ClassDeclarationSyntax classDeclaration,
         bool isPartial,
-        AttributeData typeForgeAttribute)
+        AttributeData forgeMapAttribute)
     {
         Symbol = symbol;
         ClassDeclaration = classDeclaration;
         IsPartial = isPartial;
-        TypeForgeAttribute = typeForgeAttribute;
+        ForgeMapAttribute = forgeMapAttribute;
     }
 
     public INamedTypeSymbol Symbol { get; }
     public ClassDeclarationSyntax ClassDeclaration { get; }
     public bool IsPartial { get; }
-    public AttributeData TypeForgeAttribute { get; }
+    public AttributeData ForgeMapAttribute { get; }
 }
