@@ -86,7 +86,7 @@ internal sealed class ForgeCodeEmitter
             // Build the reverse signature key to check if an explicit declaration exists
             var sourceType = method.Parameters[0].Type;
             var destType = method.ReturnType;
-            var reverseKey = $"{method.Name}({destType.ToDisplayString()}):{sourceType.ToDisplayString()}";
+            var reverseKey = $"{method.Name}({GetNullabilityNormalizedDisplayString(destType)}):{GetNullabilityNormalizedDisplayString(sourceType)}";
 
             if (declaredSignatures.Contains(reverseKey))
                 continue; // Explicit reverse declaration takes precedence
@@ -128,8 +128,17 @@ internal sealed class ForgeCodeEmitter
 
     private static string GetMethodSignatureKey(IMethodSymbol method)
     {
-        var paramTypes = string.Join(",", method.Parameters.Select(p => p.Type.ToDisplayString()));
-        return $"{method.Name}({paramTypes}):{method.ReturnType.ToDisplayString()}";
+        var paramTypes = string.Join(",", method.Parameters.Select(p => GetNullabilityNormalizedDisplayString(p.Type)));
+        return $"{method.Name}({paramTypes}):{GetNullabilityNormalizedDisplayString(method.ReturnType)}";
+    }
+
+    /// <summary>
+    /// Returns a display string for a type with nullable annotations stripped,
+    /// so that signature comparisons are not affected by nullability differences.
+    /// </summary>
+    private static string GetNullabilityNormalizedDisplayString(ITypeSymbol type)
+    {
+        return type.WithNullableAnnotation(NullableAnnotation.None).ToDisplayString();
     }
 
     /// <summary>
