@@ -601,3 +601,215 @@ public class NullableHandlingGeneratorTests
 }
 
 #endregion
+
+#region v0.3 Generator Tests
+
+public class ForgeWithGeneratorTests
+{
+    [Fact]
+    public void Generator_ForgeWith_GeneratesNestedForgeCall()
+    {
+        // Arrange
+        var source = """
+            using TypeForge;
+
+            namespace TestNamespace
+            {
+                public class AddressEntity
+                {
+                    public string Street { get; set; }
+                    public string City { get; set; }
+                }
+
+                public class AddressDto
+                {
+                    public string Street { get; set; }
+                    public string City { get; set; }
+                }
+
+                public class UserEntity
+                {
+                    public int Id { get; set; }
+                    public AddressEntity Address { get; set; }
+                }
+
+                public class UserDto
+                {
+                    public int Id { get; set; }
+                    public AddressDto Address { get; set; }
+                }
+
+                [TypeForge]
+                public partial class TestForger
+                {
+                    public partial AddressDto Forge(AddressEntity source);
+
+                    [ForgeWith(nameof(UserDto.Address), nameof(Forge))]
+                    public partial UserDto Forge(UserEntity source);
+                }
+            }
+            """;
+
+        // Act
+        var (diagnostics, generatedTrees) = RunGenerator(source);
+
+        // Assert
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        Assert.Single(generatedTrees);
+
+        var generatedCode = generatedTrees[0].GetText().ToString();
+        // Should contain null-guarded nested forge call
+        Assert.Contains("Address =", generatedCode);
+        Assert.Contains("Forge(source.Address)", generatedCode);
+        Assert.Contains("Id = source.Id,", generatedCode);
+    }
+
+    [Fact]
+    public void Generator_ForgeWith_MissingMethod_ReportsError()
+    {
+        // Arrange
+        var source = """
+            using TypeForge;
+
+            namespace TestNamespace
+            {
+                public class AddressEntity { public string Street { get; set; } }
+                public class AddressDto { public string Street { get; set; } }
+                public class UserEntity { public int Id { get; set; } public AddressEntity Address { get; set; } }
+                public class UserDto { public int Id { get; set; } public AddressDto Address { get; set; } }
+
+                [TypeForge]
+                public partial class TestForger
+                {
+                    [ForgeWith(nameof(UserDto.Address), "NonExistentMethod")]
+                    public partial UserDto Forge(UserEntity source);
+                }
+            }
+            """;
+
+        // Act
+        var (diagnostics, _) = RunGenerator(source);
+
+        // Assert
+        var error = diagnostics.FirstOrDefault(d => d.Id == "TF0008");
+        Assert.NotNull(error);
+        Assert.Equal(DiagnosticSeverity.Error, error.Severity);
+    }
+
+    private static (IReadOnlyList<Diagnostic> Diagnostics, IReadOnlyList<SyntaxTree> GeneratedTrees) RunGenerator(string source)
+    {
+        return SourceGeneratorTests.RunGenerator(source);
+    }
+}
+
+public class CollectionForgingGeneratorTests
+{
+    [Fact]
+    public void Generator_CollectionForge_List_GeneratesCorrectCode()
+    {
+        // Arrange
+        var source = """
+            using TypeForge;
+            using System.Collections.Generic;
+
+            namespace TestNamespace
+            {
+                public class ItemEntity { public int Id { get; set; } }
+                public class ItemDto { public int Id { get; set; } }
+
+                [TypeForge]
+                public partial class TestForger
+                {
+                    public partial ItemDto Forge(ItemEntity source);
+                    public partial List<ItemDto> Forge(List<ItemEntity> source);
+                }
+            }
+            """;
+
+        // Act
+        var (diagnostics, generatedTrees) = RunGenerator(source);
+
+        // Assert
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        Assert.Single(generatedTrees);
+
+        var generatedCode = generatedTrees[0].GetText().ToString();
+        Assert.Contains("new global::System.Collections.Generic.List<TestNamespace.ItemDto>", generatedCode);
+        Assert.Contains("foreach (var item in source)", generatedCode);
+        Assert.Contains("result.Add(Forge(item))", generatedCode);
+        Assert.Contains("if (source == null) return null!", generatedCode);
+    }
+
+    [Fact]
+    public void Generator_CollectionForge_Array_GeneratesCorrectCode()
+    {
+        // Arrange
+        var source = """
+            using TypeForge;
+
+            namespace TestNamespace
+            {
+                public class ItemEntity { public int Id { get; set; } }
+                public class ItemDto { public int Id { get; set; } }
+
+                [TypeForge]
+                public partial class TestForger
+                {
+                    public partial ItemDto Forge(ItemEntity source);
+                    public partial ItemDto[] Forge(ItemEntity[] source);
+                }
+            }
+            """;
+
+        // Act
+        var (diagnostics, generatedTrees) = RunGenerator(source);
+
+        // Assert
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        Assert.Single(generatedTrees);
+
+        var generatedCode = generatedTrees[0].GetText().ToString();
+        Assert.Contains("new TestNamespace.ItemDto[source.Length]", generatedCode);
+        Assert.Contains("result[i++] = Forge(item)", generatedCode);
+    }
+
+    [Fact]
+    public void Generator_CollectionForge_IEnumerable_GeneratesLazySelect()
+    {
+        // Arrange
+        var source = """
+            using TypeForge;
+            using System.Collections.Generic;
+
+            namespace TestNamespace
+            {
+                public class ItemEntity { public int Id { get; set; } }
+                public class ItemDto { public int Id { get; set; } }
+
+                [TypeForge]
+                public partial class TestForger
+                {
+                    public partial ItemDto Forge(ItemEntity source);
+                    public partial IEnumerable<ItemDto> Forge(IEnumerable<ItemEntity> source);
+                }
+            }
+            """;
+
+        // Act
+        var (diagnostics, generatedTrees) = RunGenerator(source);
+
+        // Assert
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        Assert.Single(generatedTrees);
+
+        var generatedCode = generatedTrees[0].GetText().ToString();
+        Assert.Contains("source.Select(item => Forge(item))", generatedCode);
+    }
+
+    private static (IReadOnlyList<Diagnostic> Diagnostics, IReadOnlyList<SyntaxTree> GeneratedTrees) RunGenerator(string source)
+    {
+        return SourceGeneratorTests.RunGenerator(source);
+    }
+}
+
+#endregion

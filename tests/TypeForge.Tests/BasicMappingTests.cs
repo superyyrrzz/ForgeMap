@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using System.Linq;
 using FluentAssertions;
 using TypeForge;
 using Xunit;
@@ -159,6 +161,36 @@ public class SimpleOrder
     public int Quantity { get; set; }
 }
 
+// v0.3 Test Models - ForgeWith (nested objects)
+
+public class AddressEntity
+{
+    public string Street { get; set; } = string.Empty;
+    public string City { get; set; } = string.Empty;
+    public string ZipCode { get; set; } = string.Empty;
+}
+
+public class AddressDto
+{
+    public string Street { get; set; } = string.Empty;
+    public string City { get; set; } = string.Empty;
+    public string ZipCode { get; set; } = string.Empty;
+}
+
+public class UserWithAddressEntity
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public AddressEntity? Address { get; set; }
+}
+
+public class UserWithAddressDto
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public AddressDto? Address { get; set; }
+}
+
 #endregion
 
 #region Forgers
@@ -248,6 +280,36 @@ public partial class AppForger
     /// T to Nullable&lt;T&gt; conversion - direct assignment
     /// </summary>
     public partial OrderWithOptionalDates Forge(SimpleOrder source);
+
+    // v0.3 Features - ForgeWith (nested objects)
+
+    /// <summary>
+    /// Element forging for nested objects.
+    /// </summary>
+    public partial AddressDto Forge(AddressEntity source);
+
+    /// <summary>
+    /// ForgeWith - uses Forge(AddressEntity) for the Address property.
+    /// </summary>
+    [ForgeWith(nameof(UserWithAddressDto.Address), nameof(Forge))]
+    public partial UserWithAddressDto Forge(UserWithAddressEntity source);
+
+    // v0.3 Features - Collection forging
+
+    /// <summary>
+    /// Collection forging - List&lt;T&gt;
+    /// </summary>
+    public partial List<ProductDto> Forge(List<ProductEntity> source);
+
+    /// <summary>
+    /// Collection forging - T[]
+    /// </summary>
+    public partial ProductDto[] Forge(ProductEntity[] source);
+
+    /// <summary>
+    /// Collection forging - IEnumerable&lt;T&gt;
+    /// </summary>
+    public partial IEnumerable<ProductDto> Forge(IEnumerable<ProductEntity> source);
 }
 
 #endregion
@@ -707,3 +769,172 @@ public class NullableHandlingTests
 
 #endregion
 
+#region v0.3 Feature Tests
+
+public class ForgeWithTests
+{
+    private readonly AppForger _forger = new();
+
+    [Fact]
+    public void ForgeWith_ShouldMapNestedObject()
+    {
+        // Arrange
+        var entity = new UserWithAddressEntity
+        {
+            Id = 1,
+            Name = "Alice",
+            Address = new AddressEntity
+            {
+                Street = "123 Main St",
+                City = "Springfield",
+                ZipCode = "62701"
+            }
+        };
+
+        // Act
+        var dto = _forger.Forge(entity);
+
+        // Assert
+        dto.Should().NotBeNull();
+        dto.Id.Should().Be(1);
+        dto.Name.Should().Be("Alice");
+        dto.Address.Should().NotBeNull();
+        dto.Address!.Street.Should().Be("123 Main St");
+        dto.Address.City.Should().Be("Springfield");
+        dto.Address.ZipCode.Should().Be("62701");
+    }
+
+    [Fact]
+    public void ForgeWith_NullNestedObject_ShouldReturnNull()
+    {
+        // Arrange
+        var entity = new UserWithAddressEntity
+        {
+            Id = 2,
+            Name = "Bob",
+            Address = null
+        };
+
+        // Act
+        var dto = _forger.Forge(entity);
+
+        // Assert
+        dto.Should().NotBeNull();
+        dto.Id.Should().Be(2);
+        dto.Name.Should().Be("Bob");
+        dto.Address.Should().BeNull();
+    }
+}
+
+public class CollectionForgingTests
+{
+    private readonly AppForger _forger = new();
+
+    [Fact]
+    public void CollectionForge_List_ShouldMapElements()
+    {
+        // Arrange
+        var entities = new List<ProductEntity>
+        {
+            new() { Id = 1, Name = "Widget", Price = 9.99m, Quantity = 10 },
+            new() { Id = 2, Name = "Gadget", Price = 19.99m, Quantity = 5 }
+        };
+
+        // Act
+        var dtos = _forger.Forge(entities);
+
+        // Assert
+        dtos.Should().NotBeNull();
+        dtos.Should().HaveCount(2);
+        dtos[0].Id.Should().Be(1);
+        dtos[0].Name.Should().Be("Widget");
+        dtos[1].Id.Should().Be(2);
+        dtos[1].Name.Should().Be("Gadget");
+    }
+
+    [Fact]
+    public void CollectionForge_Array_ShouldMapElements()
+    {
+        // Arrange
+        var entities = new[]
+        {
+            new ProductEntity { Id = 1, Name = "Item1", Price = 5.00m, Quantity = 3 },
+            new ProductEntity { Id = 2, Name = "Item2", Price = 10.00m, Quantity = 7 }
+        };
+
+        // Act
+        var dtos = _forger.Forge(entities);
+
+        // Assert
+        dtos.Should().NotBeNull();
+        dtos.Should().HaveCount(2);
+        dtos[0].Id.Should().Be(1);
+        dtos[0].Name.Should().Be("Item1");
+        dtos[1].Id.Should().Be(2);
+    }
+
+    [Fact]
+    public void CollectionForge_IEnumerable_ShouldMapElements()
+    {
+        // Arrange
+        IEnumerable<ProductEntity> entities = new List<ProductEntity>
+        {
+            new() { Id = 1, Name = "A", Price = 1.00m, Quantity = 1 },
+            new() { Id = 2, Name = "B", Price = 2.00m, Quantity = 2 },
+            new() { Id = 3, Name = "C", Price = 3.00m, Quantity = 3 }
+        };
+
+        // Act
+        var dtos = _forger.Forge(entities);
+
+        // Assert
+        dtos.Should().NotBeNull();
+        var list = dtos.ToList();
+        list.Should().HaveCount(3);
+        list[0].Name.Should().Be("A");
+        list[2].Name.Should().Be("C");
+    }
+
+    [Fact]
+    public void CollectionForge_NullSource_ShouldReturnNull()
+    {
+        // Arrange
+        List<ProductEntity>? entities = null;
+
+        // Act
+        var dtos = _forger.Forge(entities!);
+
+        // Assert
+        dtos.Should().BeNull();
+    }
+
+    [Fact]
+    public void CollectionForge_EmptyList_ShouldReturnEmptyList()
+    {
+        // Arrange
+        var entities = new List<ProductEntity>();
+
+        // Act
+        var dtos = _forger.Forge(entities);
+
+        // Assert
+        dtos.Should().NotBeNull();
+        dtos.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void CollectionForge_EmptyArray_ShouldReturnEmptyArray()
+    {
+        // Arrange
+        var entities = Array.Empty<ProductEntity>();
+
+        // Act
+        var dtos = _forger.Forge(entities);
+
+        // Assert
+        dtos.Should().NotBeNull();
+        dtos.Should().BeEmpty();
+    }
+}
+
+#endregion
