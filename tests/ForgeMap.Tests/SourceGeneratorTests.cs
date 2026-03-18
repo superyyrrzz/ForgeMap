@@ -1611,6 +1611,35 @@ public class HookGeneratorTests
         Assert.True(idAssignIndex < enrichIndex);
     }
 
+    [Fact]
+    public void Generator_HooksOnEnumForge_ReportsFM0018()
+    {
+        var source = """
+            using ForgeMap;
+
+            namespace TestNamespace
+            {
+                public enum SourceEnum { A, B }
+                public enum DestEnum { A, B }
+
+                [ForgeMap]
+                public partial class TestForger
+                {
+                    [BeforeForge(nameof(Validate))]
+                    public partial DestEnum Forge(SourceEnum source);
+
+                    private static void Validate(SourceEnum source) { }
+                }
+            }
+            """;
+
+        var (diagnostics, _) = RunGenerator(source);
+
+        var warning = diagnostics.FirstOrDefault(d => d.Id == "FM0018");
+        Assert.NotNull(warning);
+        Assert.Equal(DiagnosticSeverity.Warning, warning.Severity);
+    }
+
     private static (IReadOnlyList<Diagnostic> Diagnostics, IReadOnlyList<SyntaxTree> GeneratedTrees) RunGenerator(string source)
     {
         return SourceGeneratorTests.RunGenerator(source);
