@@ -674,12 +674,20 @@ internal sealed class ForgeCodeEmitter
             return SymbolEqualityComparer.Default.Equals(source, destUnderlying);
         }
 
-        // Handle nullable reference types
+        // Handle nullable reference types: nullable ref -> non-nullable ref
         if (source.NullableAnnotation == NullableAnnotation.Annotated &&
             dest.NullableAnnotation != NullableAnnotation.Annotated)
         {
             var underlyingSource = source.WithNullableAnnotation(NullableAnnotation.NotAnnotated);
             return SymbolEqualityComparer.Default.Equals(underlyingSource, dest);
+        }
+
+        // Handle nullable reference types: non-nullable ref -> nullable ref (always valid)
+        if (source.NullableAnnotation != NullableAnnotation.Annotated &&
+            dest.NullableAnnotation == NullableAnnotation.Annotated)
+        {
+            var underlyingDest = dest.WithNullableAnnotation(NullableAnnotation.NotAnnotated);
+            return SymbolEqualityComparer.Default.Equals(source, underlyingDest);
         }
 
         // Handle inheritance
