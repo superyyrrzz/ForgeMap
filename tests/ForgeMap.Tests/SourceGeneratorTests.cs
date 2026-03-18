@@ -1367,8 +1367,8 @@ public class HookGeneratorTests
         var generatedCode = generatedTrees[0].GetText().ToString();
 
         // Validate() should appear before property mapping
-        var validateIndex = generatedCode.IndexOf("Validate(source)");
-        var idAssignIndex = generatedCode.IndexOf("Id = source.Id");
+        var validateIndex = generatedCode.IndexOf("Validate(source)", StringComparison.Ordinal);
+        var idAssignIndex = generatedCode.IndexOf("Id = source.Id", StringComparison.Ordinal);
         Assert.True(validateIndex >= 0, "BeforeForge call should be in generated code");
         Assert.True(idAssignIndex >= 0, "Property mapping should be in generated code");
         Assert.True(validateIndex < idAssignIndex, "BeforeForge should be called before property mapping");
@@ -1413,8 +1413,8 @@ public class HookGeneratorTests
         var generatedCode = generatedTrees[0].GetText().ToString();
 
         // Enrich() should appear after property mapping
-        var enrichIndex = generatedCode.IndexOf("Enrich(source, result)");
-        var idAssignIndex = generatedCode.IndexOf("Id = source.Id");
+        var enrichIndex = generatedCode.IndexOf("Enrich(source, result)", StringComparison.Ordinal);
+        var idAssignIndex = generatedCode.IndexOf("Id = source.Id", StringComparison.Ordinal);
         Assert.True(enrichIndex >= 0, "AfterForge call should be in generated code");
         Assert.True(idAssignIndex >= 0, "Property mapping should be in generated code");
         Assert.True(enrichIndex > idAssignIndex, "AfterForge should be called after property mapping");
@@ -1459,11 +1459,11 @@ public class HookGeneratorTests
 
         var generatedCode = generatedTrees[0].GetText().ToString();
 
-        var nullCheckIndex = generatedCode.IndexOf("source == null");
-        var validateIndex = generatedCode.IndexOf("Validate(source)");
-        var idAssignIndex = generatedCode.IndexOf("Id = source.Id");
-        var enrichIndex = generatedCode.IndexOf("Enrich(source, result)");
-        var returnIndex = generatedCode.IndexOf("return result;");
+        var nullCheckIndex = generatedCode.IndexOf("source == null", StringComparison.Ordinal);
+        var validateIndex = generatedCode.IndexOf("Validate(source)", StringComparison.Ordinal);
+        var idAssignIndex = generatedCode.IndexOf("Id = source.Id", StringComparison.Ordinal);
+        var enrichIndex = generatedCode.IndexOf("Enrich(source, result)", StringComparison.Ordinal);
+        var returnIndex = generatedCode.IndexOf("return result;", StringComparison.Ordinal);
 
         // Verify all elements are present in generated code
         Assert.True(nullCheckIndex >= 0, "Null check should be in generated code");
@@ -1594,10 +1594,10 @@ public class HookGeneratorTests
         Assert.Contains("Enrich(source, destination)", generatedCode);
 
         // Verify order: null checks → BeforeForge → mapping → AfterForge
-        var nullCheckIndex = generatedCode.IndexOf("source == null");
-        var validateIndex = generatedCode.IndexOf("Validate(source)");
-        var idAssignIndex = generatedCode.IndexOf("destination.Id = source.Id");
-        var enrichIndex = generatedCode.IndexOf("Enrich(source, destination)");
+        var nullCheckIndex = generatedCode.IndexOf("source == null", StringComparison.Ordinal);
+        var validateIndex = generatedCode.IndexOf("Validate(source)", StringComparison.Ordinal);
+        var idAssignIndex = generatedCode.IndexOf("destination.Id = source.Id", StringComparison.Ordinal);
+        var enrichIndex = generatedCode.IndexOf("Enrich(source, destination)", StringComparison.Ordinal);
 
         Assert.True(nullCheckIndex >= 0, "Null check should be in generated code");
         Assert.True(validateIndex >= 0, "BeforeForge call should be in generated code");

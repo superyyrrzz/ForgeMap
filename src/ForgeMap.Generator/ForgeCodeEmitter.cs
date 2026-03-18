@@ -1425,6 +1425,8 @@ internal sealed class ForgeCodeEmitter
         var hookMethod = forger.Symbol.GetMembers(hookMethodName)
             .OfType<IMethodSymbol>()
             .FirstOrDefault(m => m.ReturnsVoid && m.Parameters.Length == 1 &&
+                m.Parameters[0].RefKind == RefKind.None &&
+                !m.Parameters[0].IsParams &&
                 (SymbolEqualityComparer.Default.Equals(m.Parameters[0].Type, sourceType) ||
                  CanAssign(sourceType, m.Parameters[0].Type)));
 
@@ -1454,6 +1456,10 @@ internal sealed class ForgeCodeEmitter
         var hookMethod = forger.Symbol.GetMembers(hookMethodName)
             .OfType<IMethodSymbol>()
             .FirstOrDefault(m => m.ReturnsVoid && m.Parameters.Length == 2 &&
+                m.Parameters[0].RefKind == RefKind.None &&
+                !m.Parameters[0].IsParams &&
+                m.Parameters[1].RefKind == RefKind.None &&
+                !m.Parameters[1].IsParams &&
                 (SymbolEqualityComparer.Default.Equals(m.Parameters[0].Type, sourceType) ||
                  CanAssign(sourceType, m.Parameters[0].Type)) &&
                 (SymbolEqualityComparer.Default.Equals(m.Parameters[1].Type, destType) ||
