@@ -142,6 +142,27 @@ internal sealed class ForgeCodeEmitter
     }
 
     /// <summary>
+    /// Returns true if the type is a class, struct, or record suitable for object-initializer-based
+    /// reverse code generation. Returns false for enums, primitives, strings, delegates, collections,
+    /// and other types that would produce invalid code like <c>return new int { };</c>.
+    /// </summary>
+    private bool IsReversibleObjectType(INamedTypeSymbol type)
+    {
+        if (type.TypeKind == TypeKind.Enum || type.TypeKind == TypeKind.Delegate)
+            return false;
+
+        // SpecialType covers all CLR primitives (int, bool, decimal, etc.), string, DateTime, etc.
+        if (type.SpecialType != SpecialType.None)
+            return false;
+
+        if (GetCollectionElementType(type) != null)
+            return false;
+
+        // Must be a class, struct, or record (TypeKind.Class or TypeKind.Struct)
+        return type.TypeKind == TypeKind.Class || type.TypeKind == TypeKind.Struct;
+    }
+
+    /// <summary>
     /// Generates a reverse forging method for a method annotated with [ReverseForge].
     /// Swaps source and destination types, reverses [ForgeProperty] mappings,
     /// and emits warnings for [ForgeFrom] and [ForgeWith] that cannot be auto-reversed.
@@ -158,11 +179,9 @@ internal sealed class ForgeCodeEmitter
             return string.Empty;
 
         // [ReverseForge] only supports class/struct/record object mappings.
-        // Enum, collection, and primitive types use specialized forward code paths
-        // that cannot be auto-reversed.
-        if (forwardSourceType.TypeKind == TypeKind.Enum || forwardDestType.TypeKind == TypeKind.Enum ||
-            forwardSourceType.SpecialType == SpecialType.System_String || forwardDestType.SpecialType == SpecialType.System_String ||
-            GetCollectionElementType(forwardSourceType) != null || GetCollectionElementType(forwardDestType) != null)
+        // Enum, collection, primitive, and delegate types use specialized forward code paths
+        // that cannot be auto-reversed (would produce invalid code like `return new int { };`).
+        if (!IsReversibleObjectType(forwardSourceType) || !IsReversibleObjectType(forwardDestType))
             return string.Empty;
 
         // In reverse: source is the forward dest, dest is the forward source
@@ -174,6 +193,31 @@ internal sealed class ForgeCodeEmitter
         var forwardPropertyMappings = GetPropertyMappings(forwardMethod);
         var forwardResolverMappings = GetResolverMappings(forwardMethod);
         var forwardForgeWithMappings = GetForgeWithMappings(forwardMethod);
+
+        // Build reverseIgnored: translate forward ignored dest names to reverse dest (= forward source) names.
+        // forwardIgnored contains forward dest property names. In reverse, the dest is the forward source type.
+        // When [ForgeProperty] renames are involved (e.g. ForgeProperty("BookTitle", "DisplayTitle")),
+        // the forward ignored name "DisplayTitle" needs to map back to "BookTitle" in the reverse dest.
+        var reverseIgnored = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var ignoredName in forwardIgnored)
+        {
+            // Check if any forward mapping maps TO this ignored dest name
+            var forwardSourceName = forwardPropertyMappings
+                .Where(kvp => string.Equals(kvp.Key, ignoredName, StringComparison.Ordinal))
+                .Select(kvp => kvp.Value)
+                .FirstOrDefault();
+
+            if (forwardSourceName != null && !forwardSourceName.Contains("."))
+            {
+                // The forward source name IS the reverse dest property name
+                reverseIgnored.Add(forwardSourceName);
+            }
+            else
+            {
+                // No rename — same property name in both directions
+                reverseIgnored.Add(ignoredName);
+            }
+        }
 
         // Build reverse property mappings: swap source/dest names
         var reversePropertyMappings = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -322,13 +366,13 @@ internal sealed class ForgeCodeEmitter
             var initAssignments = new List<(string Name, string Expr)>();
             foreach (var destProp in remainingDestProps)
             {
-                if (forwardIgnored.Contains(destProp.Name))
+                if (reverseIgnored.Contains(destProp.Name))
                     continue;
 
                 var assignment = GenerateReversePropertyAssignment(
                     destProp, sourceParam, reverseSourceType, sourceProperties,
                     reversePropertyMappings, emptyResolverMappings, emptyForgeWithMappings,
-                    reverseForgeWithMappings, forwardIgnored, forger, context, forwardMethod);
+                    reverseForgeWithMappings, reverseIgnored, forger, context, forwardMethod);
 
                 if (assignment != null)
                     initAssignments.Add((destProp.Name, assignment));
@@ -359,7 +403,7 @@ internal sealed class ForgeCodeEmitter
                 var assignment = GenerateReversePropertyAssignment(
                     destProp, sourceParam, reverseSourceType, sourceProperties,
                     reversePropertyMappings, emptyResolverMappings, emptyForgeWithMappings,
-                    reverseForgeWithMappings, forwardIgnored, forger, context, forwardMethod);
+                    reverseForgeWithMappings, reverseIgnored, forger, context, forwardMethod);
 
                 if (assignment != null)
                     sb.AppendLine($"                {destProp.Name} = {assignment},");
