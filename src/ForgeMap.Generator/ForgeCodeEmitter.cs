@@ -627,11 +627,13 @@ internal sealed class ForgeCodeEmitter
         var beforeForgeHooks = GetBeforeForgeHooks(method);
         var afterForgeHooks = GetAfterForgeHooks(method);
 
-        // Validate hooks
-        foreach (var hookName in beforeForgeHooks)
-            ValidateBeforeForgeHook(hookName, sourceType, forger, context, method);
-        foreach (var hookName in afterForgeHooks)
-            ValidateAfterForgeHook(hookName, sourceType, destinationType, forger, context, method);
+        // Validate hooks and filter to only valid ones
+        beforeForgeHooks = beforeForgeHooks
+            .Where(h => ValidateBeforeForgeHook(h, sourceType, forger, context, method))
+            .ToList();
+        afterForgeHooks = afterForgeHooks
+            .Where(h => ValidateAfterForgeHook(h, sourceType, destinationType, forger, context, method))
+            .ToList();
 
         var hasAfterForge = afterForgeHooks.Count > 0;
 
@@ -1635,11 +1637,13 @@ internal sealed class ForgeCodeEmitter
         var beforeForgeHooks = GetBeforeForgeHooks(method);
         var afterForgeHooks = GetAfterForgeHooks(method);
 
-        // Validate hooks
-        foreach (var hookName in beforeForgeHooks)
-            ValidateBeforeForgeHook(hookName, sourceType, forger, context, method);
-        foreach (var hookName in afterForgeHooks)
-            ValidateAfterForgeHook(hookName, sourceType, destinationType, forger, context, method);
+        // Validate hooks and filter to only valid ones
+        beforeForgeHooks = beforeForgeHooks
+            .Where(h => ValidateBeforeForgeHook(h, sourceType, forger, context, method))
+            .ToList();
+        afterForgeHooks = afterForgeHooks
+            .Where(h => ValidateAfterForgeHook(h, sourceType, destinationType, forger, context, method))
+            .ToList();
 
         // Method signature
         var accessibility = GetAccessibilityKeyword(method.DeclaredAccessibility);

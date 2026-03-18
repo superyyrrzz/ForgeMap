@@ -1562,7 +1562,8 @@ public partial class HookForger
         destination.DisplayName = $"Order #{source.Id} - {source.Name}";
     }
 
-    public static bool LogCalled { get; set; }
+    [ThreadStatic]
+    public static bool LogCalled;
 
     private static void LogOrder(OrderEntityV6 source)
     {
