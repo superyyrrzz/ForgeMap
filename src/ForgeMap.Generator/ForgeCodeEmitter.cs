@@ -1422,15 +1422,16 @@ internal sealed class ForgeCodeEmitter
         SourceProductionContext context,
         IMethodSymbol method)
     {
-        var hookMethod = forger.Symbol.GetMembers(hookMethodName)
+        var candidates = forger.Symbol.GetMembers(hookMethodName)
             .OfType<IMethodSymbol>()
-            .FirstOrDefault(m => m.ReturnsVoid && m.Parameters.Length == 1 &&
+            .Where(m => m.ReturnsVoid && m.Parameters.Length == 1 &&
                 m.Parameters[0].RefKind == RefKind.None &&
                 !m.Parameters[0].IsParams &&
                 (SymbolEqualityComparer.Default.Equals(m.Parameters[0].Type, sourceType) ||
-                 CanAssign(sourceType, m.Parameters[0].Type)));
+                 CanAssign(sourceType, m.Parameters[0].Type)))
+            .ToList();
 
-        if (hookMethod == null)
+        if (candidates.Count == 0)
         {
             context.ReportDiagnostic(Diagnostic.Create(
                 DiagnosticDescriptors.HookMethodInvalid,
@@ -1439,7 +1440,11 @@ internal sealed class ForgeCodeEmitter
             return false;
         }
 
-        return true;
+        // Prefer exact type match over assignable match
+        var exactMatch = candidates.FirstOrDefault(m =>
+            SymbolEqualityComparer.Default.Equals(m.Parameters[0].Type, sourceType));
+
+        return exactMatch != null || candidates.Count == 1;
     }
 
     /// <summary>
@@ -1453,9 +1458,9 @@ internal sealed class ForgeCodeEmitter
         SourceProductionContext context,
         IMethodSymbol method)
     {
-        var hookMethod = forger.Symbol.GetMembers(hookMethodName)
+        var candidates = forger.Symbol.GetMembers(hookMethodName)
             .OfType<IMethodSymbol>()
-            .FirstOrDefault(m => m.ReturnsVoid && m.Parameters.Length == 2 &&
+            .Where(m => m.ReturnsVoid && m.Parameters.Length == 2 &&
                 m.Parameters[0].RefKind == RefKind.None &&
                 !m.Parameters[0].IsParams &&
                 m.Parameters[1].RefKind == RefKind.None &&
@@ -1463,9 +1468,10 @@ internal sealed class ForgeCodeEmitter
                 (SymbolEqualityComparer.Default.Equals(m.Parameters[0].Type, sourceType) ||
                  CanAssign(sourceType, m.Parameters[0].Type)) &&
                 (SymbolEqualityComparer.Default.Equals(m.Parameters[1].Type, destType) ||
-                 CanAssign(destType, m.Parameters[1].Type)));
+                 CanAssign(destType, m.Parameters[1].Type)))
+            .ToList();
 
-        if (hookMethod == null)
+        if (candidates.Count == 0)
         {
             context.ReportDiagnostic(Diagnostic.Create(
                 DiagnosticDescriptors.HookMethodInvalid,
@@ -1474,7 +1480,12 @@ internal sealed class ForgeCodeEmitter
             return false;
         }
 
-        return true;
+        // Prefer exact type match over assignable match
+        var exactMatch = candidates.FirstOrDefault(m =>
+            SymbolEqualityComparer.Default.Equals(m.Parameters[0].Type, sourceType) &&
+            SymbolEqualityComparer.Default.Equals(m.Parameters[1].Type, destType));
+
+        return exactMatch != null || candidates.Count == 1;
     }
 
     /// <summary>
