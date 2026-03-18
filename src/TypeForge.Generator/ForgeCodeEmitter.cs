@@ -225,7 +225,8 @@ internal sealed class ForgeCodeEmitter
 
         if (chosenCtor != null && ctorParamMappings != null && chosenCtor.Parameters.Length > 0)
         {
-            // Constructor mapping: generate new Dest(param1: expr1, param2: expr2)
+            // Constructor mapping: generate new Dest(param1: expr1, param2: expr2) { Prop = value, ... }
+            // Using object initializer syntax so init-only properties work too
             sb.AppendLine($"            var result = new {destinationType.ToDisplayString()}(");
 
             for (int i = 0; i < ctorParamMappings.Count; i++)
@@ -237,13 +238,12 @@ internal sealed class ForgeCodeEmitter
                 sb.AppendLine($"                {mapping.CtorParamName}: {expr}{separator}");
             }
 
-            sb.AppendLine("            );");
-
-            // Set remaining properties that have setters and weren't covered by ctor
+            // Collect remaining property assignments for object initializer
             var remainingDestProps = destProperties
                 .Where(p => p.SetMethod != null && !ctorCoveredDestProps.Contains(p.Name))
                 .ToList();
 
+            var initAssignments = new List<(string Name, string Expr)>();
             foreach (var destProp in remainingDestProps)
             {
                 if (ignoredProperties.Contains(destProp.Name))
@@ -254,7 +254,20 @@ internal sealed class ForgeCodeEmitter
                     propertyMappings, resolverMappings, forgeWithMappings, ignoredProperties, forger, context, method);
 
                 if (assignment != null)
-                    sb.AppendLine($"            result.{destProp.Name} = {assignment};");
+                    initAssignments.Add((destProp.Name, assignment));
+            }
+
+            if (initAssignments.Count > 0)
+            {
+                sb.AppendLine("            )");
+                sb.AppendLine("            {");
+                foreach (var (name, expr) in initAssignments)
+                    sb.AppendLine($"                {name} = {expr},");
+                sb.AppendLine("            };");
+            }
+            else
+            {
+                sb.AppendLine("            );");
             }
 
             sb.AppendLine("            return result;");
@@ -499,14 +512,25 @@ internal sealed class ForgeCodeEmitter
     private string? TryAutoFlatten(IPropertySymbol destProp, string sourceParam, INamedTypeSymbol sourceType)
     {
         var destName = destProp.Name;
-        var result = TryAutoFlattenRecursive(destName, 0, sourceParam, sourceType);
-        return result;
+        var (expr, leafType) = TryAutoFlattenRecursive(destName, 0, sourceParam, sourceType);
+        if (expr == null || leafType == null)
+            return null;
+
+        // Validate type compatibility between leaf and destination property
+        if (!CanAssign(leafType, destProp.Type))
+            return null;
+
+        // Handle nullable-to-non-nullable value type conversion
+        if (IsNullableToNonNullableValueType(leafType, destProp.Type))
+            return $"({destProp.Type.ToDisplayString()}){expr}";
+
+        return expr;
     }
 
-    private string? TryAutoFlattenRecursive(string destName, int startIndex, string currentExpr, INamedTypeSymbol currentType)
+    private (string? Expression, ITypeSymbol? LeafType) TryAutoFlattenRecursive(string destName, int startIndex, string currentExpr, INamedTypeSymbol currentType)
     {
         if (startIndex >= destName.Length)
-            return null;
+            return (null, null);
 
         var properties = GetMappableProperties(currentType).ToList();
 
@@ -521,12 +545,14 @@ internal sealed class ForgeCodeEmitter
                 if (newStartIndex == destName.Length)
                 {
                     // Full match - this property is the leaf
+                    string leafExpr;
                     if (prop.Type.IsReferenceType)
-                        return $"{currentExpr}?.{propName}!";
+                        leafExpr = $"{currentExpr}?.{propName}!";
                     else if (currentExpr.Contains("?."))
-                        return $"{currentExpr}?.{propName}!";
+                        leafExpr = $"{currentExpr}?.{propName}!";
                     else
-                        return $"{currentExpr}.{propName}";
+                        leafExpr = $"{currentExpr}.{propName}";
+                    return (leafExpr, prop.Type);
                 }
 
                 // Partial match - recurse into this property's type
@@ -536,13 +562,13 @@ internal sealed class ForgeCodeEmitter
                         ? $"{currentExpr}?.{propName}"
                         : $"{currentExpr}.{propName}";
                     var result = TryAutoFlattenRecursive(destName, newStartIndex, nullConditionalExpr, namedType);
-                    if (result != null)
+                    if (result.Expression != null)
                         return result;
                 }
             }
         }
 
-        return null;
+        return (null, null);
     }
 
     /// <summary>
@@ -622,7 +648,7 @@ internal sealed class ForgeCodeEmitter
                     }
                 }
 
-                if (sourceExpr != null)
+                if (sourceExpr != null && sourcePropType != null && CanAssign(sourcePropType, param.Type))
                 {
                     mappings.Add(new CtorParamMapping(param.Name, matchedDestPropName!, sourceExpr, sourcePropType, param.Type));
                 }

@@ -900,7 +900,7 @@ public class EnumForgingGeneratorTests
 
         var generatedCode = generatedTrees[0].GetText().ToString();
         Assert.Contains("Enum.Parse", generatedCode);
-        Assert.Contains("true", generatedCode);
+        Assert.Contains("source, true)", generatedCode);
     }
 
     private static (IReadOnlyList<Diagnostic> Diagnostics, IReadOnlyList<SyntaxTree> GeneratedTrees) RunGenerator(string source)
@@ -986,8 +986,8 @@ public class ConstructorMappingGeneratorTests
         var generatedCode = generatedTrees[0].GetText().ToString();
         Assert.Contains("new TestNamespace.HybridDest(", generatedCode);
         Assert.Contains("id:", generatedCode);
-        Assert.Contains("result.Name = source.Name;", generatedCode);
-        Assert.Contains("result.Total = source.Total;", generatedCode);
+        Assert.Contains("Name = source.Name,", generatedCode);
+        Assert.Contains("Total = source.Total,", generatedCode);
     }
 
     [Fact]
