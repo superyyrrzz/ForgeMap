@@ -320,7 +320,8 @@ internal sealed class ForgeCodeEmitter
         // Null check (only for reference types)
         if (reverseSourceType.IsReferenceType)
         {
-            sb.AppendLine($"            if ({sourceParam} == null) return null!;");
+            var nullReturn = reverseDestType.IsValueType ? "default" : "null!";
+            sb.AppendLine($"            if ({sourceParam} == null) return {nullReturn};");
             sb.AppendLine();
         }
 
