@@ -296,7 +296,24 @@ internal sealed class ForgeCodeEmitter
 
             if (nestedMethod != null && HasReverseForgeAttribute(nestedMethod))
             {
-                reverseForgeWithMappings[reverseDestPropName!] = forgingMethodName;
+                // Also verify the nested method's types are actually reversible —
+                // if they fail IsReversibleObjectType, no reverse overload will be generated,
+                // and calling it would cause a compile error in the consumer project.
+                var nestedSourceType = nestedMethod.Parameters[0].Type as INamedTypeSymbol;
+                var nestedDestType = nestedMethod.ReturnType as INamedTypeSymbol;
+
+                if (nestedSourceType != null && nestedDestType != null &&
+                    IsReversibleObjectType(nestedSourceType) && IsReversibleObjectType(nestedDestType))
+                {
+                    reverseForgeWithMappings[reverseDestPropName!] = forgingMethodName;
+                }
+                else
+                {
+                    context.ReportDiagnostic(Diagnostic.Create(
+                        DiagnosticDescriptors.ForgeWithLacksReverseForge,
+                        forwardMethod.Locations.FirstOrDefault(),
+                        forgingMethodName));
+                }
             }
             else
             {
@@ -465,7 +482,8 @@ internal sealed class ForgeCodeEmitter
                     if (sourcePropertyType.IsReferenceType)
                     {
                         var localVarName = $"__forgeWith_{destProp.Name}";
-                        return $"{sourceExpr} is {{ }} {localVarName} ? {forgingMethodName}({localVarName}) : null!";
+                        var nullFallback = destProp.Type.IsValueType ? $"default({destProp.Type.ToDisplayString()})" : "null!";
+                        return $"{sourceExpr} is {{ }} {localVarName} ? {forgingMethodName}({localVarName}) : {nullFallback}";
                     }
                     else
                     {
