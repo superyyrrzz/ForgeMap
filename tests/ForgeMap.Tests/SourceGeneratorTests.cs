@@ -1265,6 +1265,11 @@ public class ReverseForgeGeneratorTests
         // Count occurrences of reverse method signature (partial, since it's explicitly declared)
         var reverseMethodCount = generatedCode.Split(new[] { "partial TestNamespace.SourceEntity Forge(TestNamespace.DestDto source)" }, System.StringSplitOptions.None).Length - 1;
         Assert.Equal(1, reverseMethodCount);
+
+        // Ensure no auto-generated (non-partial) reverse method was emitted
+        // Remove all partial occurrences and check that the non-partial signature doesn't appear
+        var withoutPartial = generatedCode.Replace("partial TestNamespace.SourceEntity Forge(TestNamespace.DestDto source)", "");
+        Assert.DoesNotContain("TestNamespace.SourceEntity Forge(TestNamespace.DestDto source)", withoutPartial);
     }
 
     [Fact]

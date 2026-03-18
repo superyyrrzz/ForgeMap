@@ -55,11 +55,13 @@ internal sealed class ForgeCodeEmitter
             .Where(m => m.IsPartialDefinition && !m.ReturnsVoid || (m.IsPartialDefinition && m.ReturnsVoid && HasForgeIntoPattern(m)))
             .ToList();
 
-        // Collect all explicitly declared partial method signatures so we know which reverse methods to skip
+        // Collect all method signatures (partial + non-partial) so we know which reverse methods to skip.
+        // Including non-partial methods prevents generating a duplicate if the user provides an explicit
+        // reverse implementation as a regular (non-partial) method.
         var declaredSignatures = new HashSet<string>();
-        foreach (var method in partialMethods)
+        foreach (var member in forger.Symbol.GetMembers().OfType<IMethodSymbol>())
         {
-            declaredSignatures.Add(GetMethodSignatureKey(method));
+            declaredSignatures.Add(GetMethodSignatureKey(member));
         }
 
         foreach (var method in partialMethods)
@@ -75,6 +77,10 @@ internal sealed class ForgeCodeEmitter
         foreach (var method in partialMethods)
         {
             if (!HasReverseForgeAttribute(method))
+                continue;
+
+            // Guard: [ReverseForge] requires exactly one parameter
+            if (method.Parameters.Length == 0)
                 continue;
 
             // Build the reverse signature key to check if an explicit declaration exists
@@ -196,8 +202,33 @@ internal sealed class ForgeCodeEmitter
                 reverseDestPropName = forwardDestPropName; // same name by convention
             }
 
-            // Check if the nested forging method has [ReverseForge]
-            var nestedMethod = forger.Symbol.GetMembers(forgingMethodName)
+            // Check if the nested forging method has [ReverseForge].
+            // Use type-based matching (like FindForgingMethod) to resolve the correct overload,
+            // since forgers commonly overload Forge(...) for multiple type pairs.
+            // The forward nested method takes forwardSourcePropType and returns forwardDestPropType.
+            var forwardDestPropType = forwardDestType.GetMembers(forwardDestPropName)
+                .OfType<IPropertySymbol>()
+                .FirstOrDefault()?.Type;
+            var forwardSourcePropType = reverseDestPropName != null
+                ? forwardSourceType.GetMembers(reverseDestPropName)
+                    .OfType<IPropertySymbol>()
+                    .FirstOrDefault()?.Type
+                : null;
+
+            IMethodSymbol? nestedMethod = null;
+            if (forwardSourcePropType != null && forwardDestPropType != null)
+            {
+                // Find the forward nested method by its type signature
+                nestedMethod = forger.Symbol.GetMembers(forgingMethodName)
+                    .OfType<IMethodSymbol>()
+                    .FirstOrDefault(m =>
+                        m.IsPartialDefinition && !m.ReturnsVoid && m.Parameters.Length == 1 &&
+                        SymbolEqualityComparer.Default.Equals(m.Parameters[0].Type, forwardSourcePropType) &&
+                        SymbolEqualityComparer.Default.Equals(m.ReturnType, forwardDestPropType));
+            }
+
+            // Fallback: if types couldn't be resolved, try name-only matching
+            nestedMethod ??= forger.Symbol.GetMembers(forgingMethodName)
                 .OfType<IMethodSymbol>()
                 .FirstOrDefault(m => m.IsPartialDefinition && !m.ReturnsVoid && m.Parameters.Length == 1);
 
@@ -340,6 +371,10 @@ internal sealed class ForgeCodeEmitter
         SourceProductionContext context,
         IMethodSymbol method)
     {
+        // [Ignore] takes precedence over all other mappings including [ForgeWith]
+        if (ignoredProperties.Contains(destProp.Name))
+            return null;
+
         // Check if this property has a reverse [ForgeWith] mapping
         if (reverseForgeWithMappings.TryGetValue(destProp.Name, out var forgingMethodName))
         {
