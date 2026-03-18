@@ -1456,6 +1456,7 @@ public class HookGeneratorTests
         var (diagnostics, generatedTrees) = RunGenerator(source);
 
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        Assert.Single(generatedTrees);
 
         var generatedCode = generatedTrees[0].GetText().ToString();
 
@@ -1586,6 +1587,7 @@ public class HookGeneratorTests
         var (diagnostics, generatedTrees) = RunGenerator(source);
 
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        Assert.Single(generatedTrees);
 
         var generatedCode = generatedTrees[0].GetText().ToString();
 

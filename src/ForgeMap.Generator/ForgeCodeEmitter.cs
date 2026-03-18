@@ -731,7 +731,7 @@ internal sealed class ForgeCodeEmitter
             sb.AppendLine($"            var result = new {destinationType.ToDisplayString()}");
             sb.AppendLine("            {");
 
-            foreach (var destProp in destProperties)
+            foreach (var destProp in destProperties.Where(p => p.SetMethod != null))
             {
                 var assignment = GeneratePropertyAssignment(
                     destProp, sourceParam, sourceType, sourceProperties,
