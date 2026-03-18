@@ -148,6 +148,14 @@ internal sealed class ForgeCodeEmitter
         if (forwardSourceType == null || forwardDestType == null)
             return string.Empty;
 
+        // [ReverseForge] only supports class/struct/record object mappings.
+        // Enum, collection, and primitive types use specialized forward code paths
+        // that cannot be auto-reversed.
+        if (forwardSourceType.TypeKind == TypeKind.Enum || forwardDestType.TypeKind == TypeKind.Enum ||
+            forwardSourceType.SpecialType == SpecialType.System_String || forwardDestType.SpecialType == SpecialType.System_String ||
+            GetCollectionElementType(forwardSourceType) != null || GetCollectionElementType(forwardDestType) != null)
+            return string.Empty;
+
         // In reverse: source is the forward dest, dest is the forward source
         var reverseSourceType = forwardDestType;
         var reverseDestType = forwardSourceType;
@@ -193,7 +201,8 @@ internal sealed class ForgeCodeEmitter
 
             // Find the source property that maps to this dest property
             string? reverseDestPropName = null;
-            if (forwardPropertyMappings.TryGetValue(forwardDestPropName, out var mappedSourceProp))
+            if (forwardPropertyMappings.TryGetValue(forwardDestPropName, out var mappedSourceProp)
+                && !mappedSourceProp.Contains(".")) // Nested paths can't be used as reverse dest properties
             {
                 reverseDestPropName = mappedSourceProp;
             }
@@ -255,9 +264,12 @@ internal sealed class ForgeCodeEmitter
         sb.AppendLine($"        {accessibility} {reverseDestType.ToDisplayString()} {forwardMethod.Name}({reverseSourceType.ToDisplayString()} {sourceParam})");
         sb.AppendLine("        {");
 
-        // Null check
-        sb.AppendLine($"            if ({sourceParam} == null) return null!;");
-        sb.AppendLine();
+        // Null check (only for reference types)
+        if (reverseSourceType.IsReferenceType)
+        {
+            sb.AppendLine($"            if ({sourceParam} == null) return null!;");
+            sb.AppendLine();
+        }
 
         // Get mappable properties
         var sourceProperties = GetMappableProperties(reverseSourceType);
