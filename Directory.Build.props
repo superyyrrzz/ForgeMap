@@ -14,8 +14,6 @@
     <PackageProjectUrl>https://github.com/superyyrrzz/typeforge</PackageProjectUrl>
     <RepositoryUrl>https://github.com/superyyrrzz/typeforge</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
-    <PackageReadmeFile>README.md</PackageReadmeFile>
-    <PackageIcon>icon.png</PackageIcon>
     <Copyright>Copyright (c) TypeForge Contributors</Copyright>
 
     <!-- Versioning -->

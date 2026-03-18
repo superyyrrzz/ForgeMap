@@ -8,6 +8,8 @@
 
     <Description>TypeForge is a lightweight, compile-time object transformation library for .NET. Zero-reflection, source-generator-based mapping with compile-time type safety.</Description>
     <PackageTags>automapper;mapping;sourcegenerator;dto;transformation;object-mapper</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageIcon>icon.png</PackageIcon>
 
     <!-- This is the main package users reference -->
     <IsPackable>true</IsPackable>
