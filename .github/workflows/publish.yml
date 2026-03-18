@@ -67,6 +67,7 @@ jobs:
 
       - name: Download symbol package
         uses: actions/download-artifact@v4
+        continue-on-error: true
         with:
           name: nuget-symbols
           path: ${{ env.NuGetDirectory }}
@@ -76,7 +77,13 @@ jobs:
         with:
           dotnet-version: 8.0.x
 
-      - name: Publish to NuGet.org
+      - name: Publish NuGet package
+        run: dotnet nuget push ${{ env.NuGetDirectory }}/*.nupkg --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
+
+      - name: Publish symbol package
         run: |
-          dotnet nuget push ${{ env.NuGetDirectory }}/*.nupkg --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
-          dotnet nuget push ${{ env.NuGetDirectory }}/*.snupkg --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
+          shopt -s nullglob
+          snupkgs=(${{ env.NuGetDirectory }}/*.snupkg)
+          if [ ${#snupkgs[@]} -gt 0 ]; then
+            dotnet nuget push ${{ env.NuGetDirectory }}/*.snupkg --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
+          fi
