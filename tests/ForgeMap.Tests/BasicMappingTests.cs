@@ -261,6 +261,67 @@ public class FlatEmployeeDto
     public string? CompanyAddressCity { get; set; }
 }
 
+// v0.5 Test Models - ReverseForge
+
+public class ArticleEntity
+{
+    public int Id { get; set; }
+    public string Title { get; set; } = string.Empty;
+    public string Content { get; set; } = string.Empty;
+    public string InternalNote { get; set; } = string.Empty;
+}
+
+public class ArticleDto
+{
+    public int Id { get; set; }
+    public string Title { get; set; } = string.Empty;
+    public string Content { get; set; } = string.Empty;
+    public string InternalNote { get; set; } = string.Empty;
+}
+
+public class BookEntity
+{
+    public int Id { get; set; }
+    public string BookTitle { get; set; } = string.Empty;
+    public string Author { get; set; } = string.Empty;
+}
+
+public class BookDto
+{
+    public int Id { get; set; }
+    public string DisplayTitle { get; set; } = string.Empty;
+    public string Author { get; set; } = string.Empty;
+}
+
+public class TagEntity
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string Slug { get; set; } = string.Empty;
+}
+
+public class TagDto
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string Slug { get; set; } = string.Empty;
+    public string ComputedLabel { get; set; } = string.Empty;
+}
+
+public class ContactEntity
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public AddressEntity? HomeAddress { get; set; }
+}
+
+public class ContactDto
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public AddressDto? HomeAddress { get; set; }
+}
+
 #endregion
 
 #region Forgers
@@ -441,6 +502,46 @@ public partial class FlattenForger
     /// Auto-flatten: EmployeeEntity.Company.Name → FlatEmployeeDto.CompanyName.
     /// </summary>
     public partial FlatEmployeeDto Forge(EmployeeEntity source);
+}
+
+// v0.5 Forger - ReverseForge
+
+[ForgeMap]
+public partial class ReverseForger
+{
+    /// <summary>
+    /// Simple reverse: generates both Forge(ArticleEntity → ArticleDto) and Forge(ArticleDto → ArticleEntity).
+    /// </summary>
+    [ReverseForge]
+    public partial ArticleDto Forge(ArticleEntity source);
+
+    /// <summary>
+    /// Reverse with [ForgeProperty]: BookTitle ↔ DisplayTitle swapped in both directions.
+    /// </summary>
+    [ReverseForge]
+    [ForgeProperty(nameof(BookEntity.BookTitle), nameof(BookDto.DisplayTitle))]
+    public partial BookDto Forge(BookEntity source);
+
+    /// <summary>
+    /// Reverse with [Ignore]: InternalNote is ignored in both directions.
+    /// </summary>
+    [ReverseForge]
+    [Ignore(nameof(ArticleDto.InternalNote))]
+    public partial ArticleDto ForgeIgnored(ArticleEntity source);
+
+    /// <summary>
+    /// Reverse with [ForgeWith]: HomeAddress uses nested Forge for AddressEntity ↔ AddressDto.
+    /// Also has [ReverseForge] on the nested method so it can reverse.
+    /// </summary>
+    [ReverseForge]
+    [ForgeWith(nameof(ContactDto.HomeAddress), nameof(Forge))]
+    public partial ContactDto Forge(ContactEntity source);
+
+    /// <summary>
+    /// Nested address forging method with [ReverseForge].
+    /// </summary>
+    [ReverseForge]
+    public partial AddressDto Forge(AddressEntity source);
 }
 
 #endregion
@@ -1246,6 +1347,154 @@ public class AutoFlatteningTests
         result.Name.Should().Be("Charlie");
         result.CompanyName.Should().Be("NoAddress Inc");
         result.CompanyAddressCity.Should().BeNull();
+    }
+}
+
+#endregion
+
+#region v0.5 Feature Tests
+
+public class ReverseForgeTests
+{
+    private readonly ReverseForger _forger = new();
+
+    [Fact]
+    public void ReverseForge_SimpleMapping_ShouldMapForward()
+    {
+        var entity = new ArticleEntity { Id = 1, Title = "Hello", Content = "World", InternalNote = "Note" };
+        var dto = _forger.Forge(entity);
+
+        dto.Should().NotBeNull();
+        dto.Id.Should().Be(1);
+        dto.Title.Should().Be("Hello");
+        dto.Content.Should().Be("World");
+    }
+
+    [Fact]
+    public void ReverseForge_SimpleMapping_ShouldMapReverse()
+    {
+        var dto = new ArticleDto { Id = 2, Title = "Reverse", Content = "Test", InternalNote = "N" };
+        var entity = _forger.Forge(dto);
+
+        entity.Should().NotBeNull();
+        entity.Id.Should().Be(2);
+        entity.Title.Should().Be("Reverse");
+        entity.Content.Should().Be("Test");
+    }
+
+    [Fact]
+    public void ReverseForge_NullSource_ShouldReturnNull_Forward()
+    {
+        ArticleEntity? entity = null;
+        var dto = _forger.Forge(entity!);
+        dto.Should().BeNull();
+    }
+
+    [Fact]
+    public void ReverseForge_NullSource_ShouldReturnNull_Reverse()
+    {
+        ArticleDto? dto = null;
+        var entity = _forger.Forge(dto!);
+        entity.Should().BeNull();
+    }
+
+    [Fact]
+    public void ReverseForge_WithForgeProperty_ShouldMapForward()
+    {
+        var entity = new BookEntity { Id = 1, BookTitle = "My Book", Author = "Alice" };
+        var dto = _forger.Forge(entity);
+
+        dto.Should().NotBeNull();
+        dto.Id.Should().Be(1);
+        dto.DisplayTitle.Should().Be("My Book");
+        dto.Author.Should().Be("Alice");
+    }
+
+    [Fact]
+    public void ReverseForge_WithForgeProperty_ShouldMapReverse()
+    {
+        var dto = new BookDto { Id = 2, DisplayTitle = "Other Book", Author = "Bob" };
+        var entity = _forger.Forge(dto);
+
+        entity.Should().NotBeNull();
+        entity.Id.Should().Be(2);
+        entity.BookTitle.Should().Be("Other Book");
+        entity.Author.Should().Be("Bob");
+    }
+
+    [Fact]
+    public void ReverseForge_WithIgnore_ShouldIgnoreBothDirections()
+    {
+        var entity = new ArticleEntity { Id = 1, Title = "Test", Content = "Body", InternalNote = "Secret" };
+        var dto = _forger.ForgeIgnored(entity);
+
+        dto.Should().NotBeNull();
+        dto.Id.Should().Be(1);
+        dto.Title.Should().Be("Test");
+        dto.Content.Should().Be("Body");
+        dto.InternalNote.Should().BeNullOrEmpty(); // ignored
+
+        var reversedEntity = _forger.ForgeIgnored(dto);
+
+        reversedEntity.Should().NotBeNull();
+        reversedEntity.Id.Should().Be(1);
+        reversedEntity.Title.Should().Be("Test");
+        reversedEntity.Content.Should().Be("Body");
+        reversedEntity.InternalNote.Should().BeNullOrEmpty(); // ignored in reverse too
+    }
+
+    [Fact]
+    public void ReverseForge_WithForgeWith_ShouldMapNestedForward()
+    {
+        var entity = new ContactEntity
+        {
+            Id = 1,
+            Name = "Alice",
+            HomeAddress = new AddressEntity { Street = "123 Main St", City = "Springfield", ZipCode = "62701" }
+        };
+
+        var dto = _forger.Forge(entity);
+
+        dto.Should().NotBeNull();
+        dto.Id.Should().Be(1);
+        dto.Name.Should().Be("Alice");
+        dto.HomeAddress.Should().NotBeNull();
+        dto.HomeAddress!.Street.Should().Be("123 Main St");
+        dto.HomeAddress.City.Should().Be("Springfield");
+    }
+
+    [Fact]
+    public void ReverseForge_WithForgeWith_ShouldMapNestedReverse()
+    {
+        var dto = new ContactDto
+        {
+            Id = 2,
+            Name = "Bob",
+            HomeAddress = new AddressDto { Street = "456 Oak Ave", City = "Shelbyville", ZipCode = "12345" }
+        };
+
+        var entity = _forger.Forge(dto);
+
+        entity.Should().NotBeNull();
+        entity.Id.Should().Be(2);
+        entity.Name.Should().Be("Bob");
+        entity.HomeAddress.Should().NotBeNull();
+        entity.HomeAddress!.Street.Should().Be("456 Oak Ave");
+        entity.HomeAddress.City.Should().Be("Shelbyville");
+    }
+
+    [Fact]
+    public void ReverseForge_WithForgeWith_NullNested_ShouldReturnNull()
+    {
+        var entity = new ContactEntity { Id = 3, Name = "Charlie", HomeAddress = null };
+        var dto = _forger.Forge(entity);
+
+        dto.Should().NotBeNull();
+        dto.HomeAddress.Should().BeNull();
+
+        var reverseEntity = _forger.Forge(dto);
+        reverseEntity.Should().NotBeNull();
+        reverseEntity.HomeAddress.Should().BeNull();
     }
 }
 
