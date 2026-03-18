@@ -103,6 +103,11 @@ internal sealed class ForgeCodeEmitter
             return GenerateForgeIntoMethod(method, sourceType, destinationType as INamedTypeSymbol, forger, context);
         }
 
+        // Check for enum forging scenarios
+        var enumResult = TryGenerateEnumForgeMethod(method, sourceType, destinationType);
+        if (enumResult != null)
+            return enumResult;
+
         // Check for collection mapping (List<T>, T[], IEnumerable<T>, etc.)
         var sourceElementType = GetCollectionElementType(sourceType);
         var destElementType = GetCollectionElementType(destinationType);
@@ -117,6 +122,55 @@ internal sealed class ForgeCodeEmitter
         }
 
         return GenerateForgeMethod(method, sourceType as INamedTypeSymbol, destNamedType, forger, context);
+    }
+
+    /// <summary>
+    /// Tries to generate an enum forging method. Returns null if source/dest are not enum/string combinations.
+    /// Handles: enum→enum (cast by name), enum→string (.ToString()), string→enum (Enum.Parse).
+    /// </summary>
+    private string? TryGenerateEnumForgeMethod(IMethodSymbol method, ITypeSymbol sourceType, ITypeSymbol destinationType)
+    {
+        var isSourceEnum = sourceType.TypeKind == TypeKind.Enum;
+        var isDestEnum = destinationType.TypeKind == TypeKind.Enum;
+        var isSourceString = sourceType.SpecialType == SpecialType.System_String;
+        var isDestString = destinationType.SpecialType == SpecialType.System_String;
+
+        if (!isSourceEnum && !isDestEnum)
+            return null;
+
+        // At least one side must be enum; the other must be enum or string
+        if (!isSourceEnum && !isSourceString)
+            return null;
+        if (!isDestEnum && !isDestString)
+            return null;
+
+        var sb = new StringBuilder();
+        var sourceParam = method.Parameters[0].Name;
+        var accessibility = GetAccessibilityKeyword(method.DeclaredAccessibility);
+        var destDisplay = destinationType.ToDisplayString();
+        var sourceDisplay = sourceType.ToDisplayString();
+
+        sb.AppendLine($"        {accessibility} partial {destDisplay} {method.Name}({sourceDisplay} {sourceParam})");
+        sb.AppendLine("        {");
+
+        if (isSourceEnum && isDestEnum)
+        {
+            // enum → enum: parse by name for safety (handles mismatched underlying values)
+            sb.AppendLine($"            return ({destDisplay})global::System.Enum.Parse(typeof({destDisplay}), {sourceParam}.ToString());");
+        }
+        else if (isSourceEnum && isDestString)
+        {
+            // enum → string: .ToString()
+            sb.AppendLine($"            return {sourceParam}.ToString();");
+        }
+        else if (isSourceString && isDestEnum)
+        {
+            // string → enum: Enum.Parse with case-insensitive matching
+            sb.AppendLine($"            return ({destDisplay})global::System.Enum.Parse(typeof({destDisplay}), {sourceParam}, true);");
+        }
+
+        sb.AppendLine("        }");
+        return sb.ToString();
     }
 
     private string GenerateForgeMethod(
@@ -157,180 +211,550 @@ internal sealed class ForgeCodeEmitter
         var sourceProperties = GetMappableProperties(sourceType);
         var destProperties = GetMappableProperties(destinationType);
 
-        // Build property mappings
-        sb.AppendLine($"            return new {destinationType.ToDisplayString()}");
-        sb.AppendLine("            {");
+        // Determine constructor strategy
+        var (chosenCtor, ctorParamMappings) = ResolveConstructor(
+            destinationType, sourceType, sourceProperties, propertyMappings, context, method);
 
-        foreach (var destProp in destProperties)
+        // Track which destination properties are covered by constructor parameters
+        var ctorCoveredDestProps = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (ctorParamMappings != null)
         {
-            // Skip ignored properties
-            if (ignoredProperties.Contains(destProp.Name))
-                continue;
+            foreach (var mapping in ctorParamMappings)
+                ctorCoveredDestProps.Add(mapping.DestPropertyName);
+        }
 
-            // Check if this property has a resolver from [ForgeFrom]
-            if (resolverMappings.TryGetValue(destProp.Name, out var resolverMethodName))
+        if (chosenCtor != null && ctorParamMappings != null && chosenCtor.Parameters.Length > 0)
+        {
+            // Constructor mapping: generate new Dest(param1: expr1, param2: expr2) { Prop = value, ... }
+            // Using object initializer syntax so init-only properties work too
+            sb.AppendLine($"            var result = new {destinationType.ToDisplayString()}(");
+
+            for (int i = 0; i < ctorParamMappings.Count; i++)
             {
-                // Find the source property path for this destination (if mapped via [ForgeProperty])
-                string? sourcePropPath = null;
-                ITypeSymbol? sourcePathLeafType = null;
+                var mapping = ctorParamMappings[i];
+                var separator = i < ctorParamMappings.Count - 1 ? "," : "";
+                var expr = GenerateCtorParamExpression(
+                    mapping.SourceExpression, mapping.SourcePropertyType, mapping.DestPropertyType);
+                sb.AppendLine($"                {mapping.CtorParamName}: {expr}{separator}");
+            }
 
-                if (propertyMappings.TryGetValue(destProp.Name, out sourcePropPath))
-                {
-                    // Resolve the leaf type for the full path (handles nested paths like "Customer.Name")
-                    sourcePathLeafType = ResolvePathLeafType(sourcePropPath, sourceType);
-                }
-                else
-                {
-                    // Try to find by same name
-                    var matchingSourceProp = sourceProperties.FirstOrDefault(sp => sp.Name == destProp.Name);
-                    if (matchingSourceProp != null)
-                    {
-                        sourcePropPath = matchingSourceProp.Name;
-                        sourcePathLeafType = matchingSourceProp.Type;
-                    }
-                }
+            // Collect remaining property assignments for object initializer
+            var remainingDestProps = destProperties
+                .Where(p => p.SetMethod != null && !ctorCoveredDestProps.Contains(p.Name))
+                .ToList();
 
-                // Find the resolver method - pass leaf type directly for proper overload selection
-                var resolverMethod = FindResolverMethod(forger.Symbol, resolverMethodName, sourceType, sourcePathLeafType);
-
-                if (resolverMethod == null)
-                {
-                    // Report diagnostic FM0008: Resolver method not found
-                    context.ReportDiagnostic(Diagnostic.Create(
-                        DiagnosticDescriptors.ResolverMethodNotFound,
-                        method.Locations.FirstOrDefault(),
-                        resolverMethodName));
+            var initAssignments = new List<(string Name, string Expr)>();
+            foreach (var destProp in remainingDestProps)
+            {
+                if (ignoredProperties.Contains(destProp.Name))
                     continue;
-                }
 
-                // Determine what to pass to the resolver
-                var resolverParamType = resolverMethod.Parameters[0].Type;
-                string resolverCall;
+                var assignment = GeneratePropertyAssignment(
+                    destProp, sourceParam, sourceType, sourceProperties,
+                    propertyMappings, resolverMappings, forgeWithMappings, ignoredProperties, forger, context, method);
 
-                if (SymbolEqualityComparer.Default.Equals(resolverParamType, sourceType) ||
-                    CanAssign(sourceType, resolverParamType))
+                if (assignment != null)
+                    initAssignments.Add((destProp.Name, assignment));
+            }
+
+            if (initAssignments.Count > 0)
+            {
+                sb.AppendLine("            )");
+                sb.AppendLine("            {");
+                foreach (var (name, expr) in initAssignments)
+                    sb.AppendLine($"                {name} = {expr},");
+                sb.AppendLine("            };");
+            }
+            else
+            {
+                sb.AppendLine("            );");
+            }
+
+            sb.AppendLine("            return result;");
+        }
+        else
+        {
+            // Object initializer pattern (existing behavior)
+            sb.AppendLine($"            return new {destinationType.ToDisplayString()}");
+            sb.AppendLine("            {");
+
+            foreach (var destProp in destProperties)
+            {
+                var assignment = GeneratePropertyAssignment(
+                    destProp, sourceParam, sourceType, sourceProperties,
+                    propertyMappings, resolverMappings, forgeWithMappings, ignoredProperties, forger, context, method);
+
+                if (assignment != null)
+                    sb.AppendLine($"                {destProp.Name} = {assignment},");
+            }
+
+            sb.AppendLine("            };");
+        }
+
+        sb.AppendLine("        }");
+
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Generates a property assignment expression string, or null if the property should be skipped.
+    /// </summary>
+    private string? GeneratePropertyAssignment(
+        IPropertySymbol destProp,
+        string sourceParam,
+        INamedTypeSymbol sourceType,
+        IEnumerable<IPropertySymbol> sourceProperties,
+        Dictionary<string, string> propertyMappings,
+        Dictionary<string, string> resolverMappings,
+        Dictionary<string, string> forgeWithMappings,
+        HashSet<string> ignoredProperties,
+        ForgerInfo forger,
+        SourceProductionContext context,
+        IMethodSymbol method)
+    {
+        // Skip ignored properties
+        if (ignoredProperties.Contains(destProp.Name))
+            return null;
+
+        // Check if this property has a resolver from [ForgeFrom]
+        if (resolverMappings.TryGetValue(destProp.Name, out var resolverMethodName))
+        {
+            return GenerateResolverExpression(
+                destProp, resolverMethodName, sourceParam, sourceType,
+                sourceProperties, propertyMappings, forger, context, method);
+        }
+
+        // Check if this property has a [ForgeWith] mapping for nested object forging
+        if (forgeWithMappings.TryGetValue(destProp.Name, out var forgingMethodName))
+        {
+            return GenerateForgeWithExpression(
+                destProp, forgingMethodName, sourceParam, sourceType,
+                sourceProperties, propertyMappings, forger, context, method);
+        }
+
+        // Check if this property has a mapping from [ForgeProperty]
+        if (propertyMappings.TryGetValue(destProp.Name, out var sourcePropName))
+        {
+            var (sourceExpr, hasNullConditional) = GenerateSourceExpressionWithNullInfo(sourceParam, sourcePropName, sourceType);
+            var nullForgiving = hasNullConditional && destProp.Type.NullableAnnotation != NullableAnnotation.Annotated ? "!" : "";
+            return $"{sourceExpr}{nullForgiving}";
+        }
+
+        // Try to find matching source property by name (convention)
+        var sourceProp = sourceProperties.FirstOrDefault(sp =>
+            string.Equals(sp.Name, destProp.Name, StringComparison.Ordinal));
+
+        if (sourceProp != null && CanAssign(sourceProp.Type, destProp.Type))
+        {
+            if (IsNullableToNonNullableValueType(sourceProp.Type, destProp.Type))
+                return $"({destProp.Type.ToDisplayString()}){sourceParam}.{sourceProp.Name}!";
+            else
+                return $"{sourceParam}.{sourceProp.Name}";
+        }
+
+        // Try automatic flattening: destProp "CustomerName" → source.Customer.Name
+        var flattenResult = TryAutoFlatten(destProp, sourceParam, sourceType);
+        if (flattenResult != null)
+            return flattenResult;
+
+        return null;
+    }
+
+    /// <summary>
+    /// Generates a resolver expression for [ForgeFrom].
+    /// </summary>
+    private string? GenerateResolverExpression(
+        IPropertySymbol destProp,
+        string resolverMethodName,
+        string sourceParam,
+        INamedTypeSymbol sourceType,
+        IEnumerable<IPropertySymbol> sourceProperties,
+        Dictionary<string, string> propertyMappings,
+        ForgerInfo forger,
+        SourceProductionContext context,
+        IMethodSymbol method)
+    {
+        string? sourcePropPath = null;
+        ITypeSymbol? sourcePathLeafType = null;
+
+        if (propertyMappings.TryGetValue(destProp.Name, out sourcePropPath))
+        {
+            sourcePathLeafType = ResolvePathLeafType(sourcePropPath, sourceType);
+        }
+        else
+        {
+            var matchingSourceProp = sourceProperties.FirstOrDefault(sp => sp.Name == destProp.Name);
+            if (matchingSourceProp != null)
+            {
+                sourcePropPath = matchingSourceProp.Name;
+                sourcePathLeafType = matchingSourceProp.Type;
+            }
+        }
+
+        var resolverMethod = FindResolverMethod(forger.Symbol, resolverMethodName, sourceType, sourcePathLeafType);
+
+        if (resolverMethod == null)
+        {
+            context.ReportDiagnostic(Diagnostic.Create(
+                DiagnosticDescriptors.ResolverMethodNotFound,
+                method.Locations.FirstOrDefault(),
+                resolverMethodName));
+            return null;
+        }
+
+        var resolverParamType = resolverMethod.Parameters[0].Type;
+
+        if (SymbolEqualityComparer.Default.Equals(resolverParamType, sourceType) ||
+            CanAssign(sourceType, resolverParamType))
+        {
+            return $"{resolverMethodName}({sourceParam})";
+        }
+        else if (sourcePropPath != null && sourcePathLeafType != null &&
+                 CanAssign(sourcePathLeafType, resolverParamType))
+        {
+            var (sourceExpr, hasNullConditional) = GenerateSourceExpressionWithNullInfo(sourceParam, sourcePropPath, sourceType);
+            var isLiftedValueType = hasNullConditional && sourcePathLeafType.IsValueType && GetNullableUnderlyingType(sourcePathLeafType) == null;
+            if (IsNullableToNonNullableValueType(sourcePathLeafType, resolverParamType) || isLiftedValueType)
+            {
+                return $"{resolverMethodName}(({resolverParamType.ToDisplayString()}){sourceExpr}!)";
+            }
+            else
+            {
+                var isNullableExpr = hasNullConditional || sourcePathLeafType.NullableAnnotation == NullableAnnotation.Annotated;
+                var nullForgiving = isNullableExpr && resolverParamType.NullableAnnotation != NullableAnnotation.Annotated ? "!" : "";
+                return $"{resolverMethodName}({sourceExpr}{nullForgiving})";
+            }
+        }
+        else
+        {
+            context.ReportDiagnostic(Diagnostic.Create(
+                DiagnosticDescriptors.InvalidResolverSignature,
+                method.Locations.FirstOrDefault(),
+                resolverMethodName));
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Generates a [ForgeWith] expression for nested object forging.
+    /// </summary>
+    private string? GenerateForgeWithExpression(
+        IPropertySymbol destProp,
+        string forgingMethodName,
+        string sourceParam,
+        INamedTypeSymbol sourceType,
+        IEnumerable<IPropertySymbol> sourceProperties,
+        Dictionary<string, string> propertyMappings,
+        ForgerInfo forger,
+        SourceProductionContext context,
+        IMethodSymbol method)
+    {
+        string? forgeWithSourcePropName = null;
+        if (propertyMappings.TryGetValue(destProp.Name, out var mappedSource))
+        {
+            forgeWithSourcePropName = mappedSource;
+        }
+        else
+        {
+            var matchingSourceProp = sourceProperties.FirstOrDefault(sp =>
+                string.Equals(sp.Name, destProp.Name, StringComparison.Ordinal));
+            if (matchingSourceProp != null)
+                forgeWithSourcePropName = matchingSourceProp.Name;
+        }
+
+        if (forgeWithSourcePropName != null)
+        {
+            var sourcePropertyType = ResolvePathLeafType(forgeWithSourcePropName, sourceType);
+            if (sourcePropertyType != null)
+            {
+                var nestedForgeMethod = FindForgingMethod(forger.Symbol, forgingMethodName, sourcePropertyType, destProp.Type);
+                if (nestedForgeMethod != null)
                 {
-                    // Pass the full source object
-                    resolverCall = $"{resolverMethodName}({sourceParam})";
-                }
-                else if (sourcePropPath != null && sourcePathLeafType != null &&
-                         CanAssign(sourcePathLeafType, resolverParamType))
-                {
-                    // Pass the source property value - use null-info to handle nullable expressions
-                    var (sourceExpr, hasNullConditional) = GenerateSourceExpressionWithNullInfo(sourceParam, sourcePropPath, sourceType);
-
-                    // Handle Nullable<T> to T conversion with explicit cast
-                    // Also handle lifted value types from null-conditional (e.g., source.Customer?.Age becomes int?)
-                    var isLiftedValueType = hasNullConditional && sourcePathLeafType.IsValueType && GetNullableUnderlyingType(sourcePathLeafType) == null;
-                    if (IsNullableToNonNullableValueType(sourcePathLeafType, resolverParamType) || isLiftedValueType)
+                    var (sourceExpr, _) = GenerateSourceExpressionWithNullInfo(sourceParam, forgeWithSourcePropName, sourceType);
+                    if (sourcePropertyType.IsReferenceType)
                     {
-                        resolverCall = $"{resolverMethodName}(({resolverParamType.ToDisplayString()}){sourceExpr}!)";
+                        var localVarName = $"__forgeWith_{destProp.Name}";
+                        return $"{sourceExpr} is {{ }} {localVarName} ? {forgingMethodName}({localVarName}) : null!";
                     }
                     else
                     {
-                        // Add null-forgiving if expression is nullable (from null-conditional or nullable ref type)
-                        // but resolver param is non-nullable
-                        var isNullableExpr = hasNullConditional || sourcePathLeafType.NullableAnnotation == NullableAnnotation.Annotated;
-                        var nullForgiving = isNullableExpr && resolverParamType.NullableAnnotation != NullableAnnotation.Annotated ? "!" : "";
-                        resolverCall = $"{resolverMethodName}({sourceExpr}{nullForgiving})";
+                        return $"{forgingMethodName}({sourceExpr})";
                     }
-                }
-                else
-                {
-                    // Report diagnostic FM0009: Invalid resolver signature
-                    context.ReportDiagnostic(Diagnostic.Create(
-                        DiagnosticDescriptors.InvalidResolverSignature,
-                        method.Locations.FirstOrDefault(),
-                        resolverMethodName));
-                    continue;
-                }
-
-                sb.AppendLine($"                {destProp.Name} = {resolverCall},");
-                continue;
-            }
-
-            // Check if this property has a [ForgeWith] mapping for nested object forging
-            if (forgeWithMappings.TryGetValue(destProp.Name, out var forgingMethodName))
-            {
-                // Find matching source property by name or [ForgeProperty] mapping
-                string? forgeWithSourcePropName = null;
-                if (propertyMappings.TryGetValue(destProp.Name, out var mappedSource))
-                {
-                    forgeWithSourcePropName = mappedSource;
-                }
-                else
-                {
-                    var matchingSourceProp = sourceProperties.FirstOrDefault(sp =>
-                        string.Equals(sp.Name, destProp.Name, StringComparison.Ordinal));
-                    if (matchingSourceProp != null)
-                        forgeWithSourcePropName = matchingSourceProp.Name;
-                }
-
-                if (forgeWithSourcePropName != null)
-                {
-                    var sourcePropertyType = ResolvePathLeafType(forgeWithSourcePropName, sourceType);
-                    if (sourcePropertyType != null)
-                    {
-                        // Find the forging method on the forger class
-                        var nestedForgeMethod = FindForgingMethod(forger.Symbol, forgingMethodName, sourcePropertyType, destProp.Type);
-                        if (nestedForgeMethod != null)
-                        {
-                            var (sourceExpr, _) = GenerateSourceExpressionWithNullInfo(sourceParam, forgeWithSourcePropName, sourceType);
-                            // Null source property => null destination (no nested call)
-                            if (sourcePropertyType.IsReferenceType)
-                            {
-                                var localVarName = $"__forgeWith_{destProp.Name}";
-                                sb.AppendLine($"                {destProp.Name} = {sourceExpr} is {{ }} {localVarName} ? {forgingMethodName}({localVarName}) : null!,");
-                            }
-                            else
-                            {
-                                sb.AppendLine($"                {destProp.Name} = {forgingMethodName}({sourceExpr}),");
-                            }
-                            continue;
-                        }
-                    }
-                }
-
-                // Report FM0008: method not found
-                context.ReportDiagnostic(Diagnostic.Create(
-                    DiagnosticDescriptors.ResolverMethodNotFound,
-                    method.Locations.FirstOrDefault(),
-                    forgingMethodName));
-                continue;
-            }
-
-            // Check if this property has a mapping from [ForgeProperty]
-            if (propertyMappings.TryGetValue(destProp.Name, out var sourcePropName))
-            {
-                var (sourceExpr, hasNullConditional) = GenerateSourceExpressionWithNullInfo(sourceParam, sourcePropName, sourceType);
-                // Add null-forgiving operator if destination is non-nullable and we have null-conditional
-                var nullForgiving = hasNullConditional && destProp.Type.NullableAnnotation != NullableAnnotation.Annotated ? "!" : "";
-                sb.AppendLine($"                {destProp.Name} = {sourceExpr}{nullForgiving},");
-                continue;
-            }
-
-            // Try to find matching source property by name (convention)
-            var sourceProp = sourceProperties.FirstOrDefault(sp =>
-                string.Equals(sp.Name, destProp.Name, StringComparison.Ordinal));
-
-            if (sourceProp != null && CanAssign(sourceProp.Type, destProp.Type))
-            {
-                // Handle Nullable<T> to T conversion using explicit cast which throws if null
-                if (IsNullableToNonNullableValueType(sourceProp.Type, destProp.Type))
-                {
-                    sb.AppendLine($"                {destProp.Name} = ({destProp.Type.ToDisplayString()}){sourceParam}.{sourceProp.Name}!,");
-                }
-                else
-                {
-                    sb.AppendLine($"                {destProp.Name} = {sourceParam}.{sourceProp.Name},");
                 }
             }
         }
 
-        sb.AppendLine("            };");
-        sb.AppendLine("        }");
+        context.ReportDiagnostic(Diagnostic.Create(
+            DiagnosticDescriptors.ResolverMethodNotFound,
+            method.Locations.FirstOrDefault(),
+            forgingMethodName));
+        return null;
+    }
 
-        return sb.ToString();
+    /// <summary>
+    /// Generates a mapping expression for a constructor parameter, handling Nullable&lt;T&gt; to T.
+    /// </summary>
+    private static string GenerateCtorParamExpression(
+        string sourceExpression,
+        ITypeSymbol? sourcePropertyType,
+        ITypeSymbol destPropertyType)
+    {
+        if (sourcePropertyType != null && IsNullableToNonNullableValueType(sourcePropertyType, destPropertyType))
+            return $"({destPropertyType.ToDisplayString()}){sourceExpression}!";
+
+        return sourceExpression;
+    }
+
+    /// <summary>
+    /// Tries automatic flattening: matches dest property "CustomerName" to source path "Customer.Name".
+    /// Walks the source type hierarchy looking for concatenated property name matches.
+    /// </summary>
+    private string? TryAutoFlatten(IPropertySymbol destProp, string sourceParam, INamedTypeSymbol sourceType)
+    {
+        var destName = destProp.Name;
+        var (expr, leafType) = TryAutoFlattenRecursive(destName, 0, sourceParam, sourceType);
+        if (expr == null || leafType == null)
+            return null;
+
+        // Validate type compatibility between leaf and destination property
+        if (!CanAssign(leafType, destProp.Type))
+            return null;
+
+        // Handle nullable-to-non-nullable value type conversion
+        if (IsNullableToNonNullableValueType(leafType, destProp.Type))
+            return $"({destProp.Type.ToDisplayString()}){expr}";
+
+        return expr;
+    }
+
+    private (string? Expression, ITypeSymbol? LeafType) TryAutoFlattenRecursive(string destName, int startIndex, string currentExpr, INamedTypeSymbol currentType)
+    {
+        if (startIndex >= destName.Length)
+            return (null, null);
+
+        var properties = GetMappableProperties(currentType).ToList();
+
+        foreach (var prop in properties)
+        {
+            var propName = prop.Name;
+            if (destName.Length >= startIndex + propName.Length &&
+                string.Equals(destName.Substring(startIndex, propName.Length), propName, StringComparison.OrdinalIgnoreCase))
+            {
+                var newStartIndex = startIndex + propName.Length;
+
+                if (newStartIndex == destName.Length)
+                {
+                    // Full match - this property is the leaf
+                    string leafExpr;
+                    if (prop.Type.IsReferenceType)
+                        leafExpr = $"{currentExpr}?.{propName}!";
+                    else if (currentExpr.Contains("?."))
+                        leafExpr = $"{currentExpr}?.{propName}!";
+                    else
+                        leafExpr = $"{currentExpr}.{propName}";
+                    return (leafExpr, prop.Type);
+                }
+
+                // Partial match - recurse into this property's type
+                if (prop.Type is INamedTypeSymbol namedType && namedType.TypeKind == TypeKind.Class)
+                {
+                    var nullConditionalExpr = prop.Type.IsReferenceType
+                        ? $"{currentExpr}?.{propName}"
+                        : $"{currentExpr}.{propName}";
+                    var result = TryAutoFlattenRecursive(destName, newStartIndex, nullConditionalExpr, namedType);
+                    if (result.Expression != null)
+                        return result;
+                }
+            }
+        }
+
+        return (null, null);
+    }
+
+    /// <summary>
+    /// Resolves the constructor to use for destination type instantiation.
+    /// Returns (null, null) if a parameterless constructor should be used (object initializer pattern).
+    /// </summary>
+    private (IMethodSymbol? Constructor, List<CtorParamMapping>? Mappings) ResolveConstructor(
+        INamedTypeSymbol destinationType,
+        INamedTypeSymbol sourceType,
+        IEnumerable<IPropertySymbol> sourceProperties,
+        Dictionary<string, string> propertyMappings,
+        SourceProductionContext context,
+        IMethodSymbol method)
+    {
+        var constructors = destinationType.InstanceConstructors
+            .Where(c => c.DeclaredAccessibility == Accessibility.Public)
+            .ToList();
+
+        // If a parameterless constructor exists, prefer it (object initializer pattern)
+        var parameterlessCtor = constructors.FirstOrDefault(c => c.Parameters.Length == 0);
+        if (parameterlessCtor != null)
+            return (null, null);
+
+        if (constructors.Count == 0)
+        {
+            context.ReportDiagnostic(Diagnostic.Create(
+                DiagnosticDescriptors.DestinationTypeHasNoConstructor,
+                method.Locations.FirstOrDefault(),
+                destinationType.Name));
+            return (null, null);
+        }
+
+        // Build a reverse map: dest property name → source expression
+        var destToSourceExpr = BuildDestToSourceMap(sourceType, sourceProperties.ToList(), propertyMappings);
+        var sourcePropertiesList = sourceProperties.ToList();
+
+        // Score each constructor by how many parameters can be satisfied
+        var scoredCtors = new List<(IMethodSymbol Ctor, List<CtorParamMapping> Mappings, int Score)>();
+
+        foreach (var ctor in constructors)
+        {
+            var mappings = new List<CtorParamMapping>();
+            var allMatched = true;
+
+            foreach (var param in ctor.Parameters)
+            {
+                var paramName = param.Name;
+
+                // Try case-insensitive match against destination property names first
+                // (constructor parameter matching is always case-insensitive per spec)
+                string? matchedDestPropName = null;
+                string? sourceExpr = null;
+                ITypeSymbol? sourcePropType = null;
+
+                // Check if any dest prop matches this ctor param (case-insensitive)
+                foreach (var kvp in destToSourceExpr)
+                {
+                    if (string.Equals(kvp.Key, paramName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        matchedDestPropName = kvp.Key;
+                        sourceExpr = kvp.Value.Expression;
+                        sourcePropType = kvp.Value.Type;
+                        break;
+                    }
+                }
+
+                // Also try direct source property match (case-insensitive)
+                if (sourceExpr == null)
+                {
+                    var directMatch = sourcePropertiesList.FirstOrDefault(sp =>
+                        string.Equals(sp.Name, paramName, StringComparison.OrdinalIgnoreCase));
+                    if (directMatch != null)
+                    {
+                        matchedDestPropName = paramName;
+                        sourceExpr = $"source.{directMatch.Name}";
+                        sourcePropType = directMatch.Type;
+                    }
+                }
+
+                if (sourceExpr != null && sourcePropType != null && CanAssign(sourcePropType, param.Type))
+                {
+                    mappings.Add(new CtorParamMapping(param.Name, matchedDestPropName!, sourceExpr, sourcePropType, param.Type));
+                }
+                else
+                {
+                    allMatched = false;
+                    break;
+                }
+            }
+
+            if (allMatched)
+            {
+                scoredCtors.Add((ctor, mappings, ctor.Parameters.Length));
+            }
+        }
+
+        if (scoredCtors.Count == 0)
+        {
+            // No fully-matched ctor. Report FM0014 for the constructor with the most params.
+            var bestCtor = constructors.OrderByDescending(c => c.Parameters.Length).First();
+            foreach (var param in bestCtor.Parameters)
+            {
+                var found = destToSourceExpr.Keys.Any(k => string.Equals(k, param.Name, StringComparison.OrdinalIgnoreCase))
+                    || sourcePropertiesList.Any(sp => string.Equals(sp.Name, param.Name, StringComparison.OrdinalIgnoreCase));
+                if (!found)
+                {
+                    context.ReportDiagnostic(Diagnostic.Create(
+                        DiagnosticDescriptors.ConstructorParameterNotMatched,
+                        method.Locations.FirstOrDefault(),
+                        param.Name,
+                        destinationType.Name));
+                }
+            }
+            return (null, null);
+        }
+
+        // Pick best (most parameters matched)
+        var maxScore = scoredCtors.Max(s => s.Score);
+        var bestMatches = scoredCtors.Where(s => s.Score == maxScore).ToList();
+
+        if (bestMatches.Count > 1)
+        {
+            context.ReportDiagnostic(Diagnostic.Create(
+                DiagnosticDescriptors.AmbiguousConstructor,
+                method.Locations.FirstOrDefault(),
+                destinationType.Name));
+            return (null, null);
+        }
+
+        return (bestMatches[0].Ctor, bestMatches[0].Mappings);
+    }
+
+    /// <summary>
+    /// Builds a mapping from destination property name → source expression info.
+    /// Includes [ForgeProperty] mappings and direct name matches.
+    /// </summary>
+    private Dictionary<string, (string Expression, ITypeSymbol? Type)> BuildDestToSourceMap(
+        INamedTypeSymbol sourceType,
+        List<IPropertySymbol> sourceProperties,
+        Dictionary<string, string> propertyMappings)
+    {
+        var map = new Dictionary<string, (string Expression, ITypeSymbol? Type)>(StringComparer.OrdinalIgnoreCase);
+
+        // Add all direct source property matches by name
+        foreach (var sp in sourceProperties)
+        {
+            map[sp.Name] = ($"source.{sp.Name}", sp.Type);
+        }
+
+        // Overlay [ForgeProperty] mappings (dest name → source path)
+        foreach (var kvp in propertyMappings)
+        {
+            var destPropName = kvp.Key;
+            var sourcePath = kvp.Value;
+            var leafType = ResolvePathLeafType(sourcePath, sourceType);
+
+            if (sourcePath.Contains("."))
+            {
+                var (expr, _) = GenerateSourceExpressionWithNullInfo("source", sourcePath, sourceType);
+                map[destPropName] = (expr, leafType);
+            }
+            else
+            {
+                map[destPropName] = ($"source.{sourcePath}", leafType);
+            }
+        }
+
+        return map;
+    }
+
+    private sealed class CtorParamMapping
+    {
+        public CtorParamMapping(string ctorParamName, string destPropertyName, string sourceExpression, ITypeSymbol? sourcePropertyType, ITypeSymbol destPropertyType)
+        {
+            CtorParamName = ctorParamName;
+            DestPropertyName = destPropertyName;
+            SourceExpression = sourceExpression;
+            SourcePropertyType = sourcePropertyType;
+            DestPropertyType = destPropertyType;
+        }
+
+        public string CtorParamName { get; }
+        public string DestPropertyName { get; }
+        public string SourceExpression { get; }
+        public ITypeSymbol? SourcePropertyType { get; }
+        public ITypeSymbol DestPropertyType { get; }
     }
 
     private HashSet<string> GetIgnoredProperties(IMethodSymbol method)
