@@ -108,7 +108,7 @@ internal sealed class ForgeCodeEmitter
         var destElementType = GetCollectionElementType(destinationType);
         if (sourceElementType != null && destElementType != null)
         {
-            return GenerateCollectionForgeMethod(method, sourceType, destinationType, destElementType);
+            return GenerateCollectionForgeMethod(method, sourceType, destinationType, sourceElementType, destElementType, forger, context);
         }
 
         if (destinationType is not INamedTypeSymbol destNamedType)
@@ -275,11 +275,12 @@ internal sealed class ForgeCodeEmitter
                         var nestedForgeMethod = FindForgingMethod(forger.Symbol, forgingMethodName, sourcePropertyType, destProp.Type);
                         if (nestedForgeMethod != null)
                         {
-                            var (sourceExpr, hasNullConditional) = GenerateSourceExpressionWithNullInfo(sourceParam, forgeWithSourcePropName, sourceType);
+                            var (sourceExpr, _) = GenerateSourceExpressionWithNullInfo(sourceParam, forgeWithSourcePropName, sourceType);
                             // Null source property => null destination (no nested call)
-                            if (sourcePropertyType.IsReferenceType || hasNullConditional)
+                            if (sourcePropertyType.IsReferenceType)
                             {
-                                sb.AppendLine($"                {destProp.Name} = {sourceExpr} != null ? {forgingMethodName}({sourceExpr}) : null,");
+                                var localVarName = $"__forgeWith_{destProp.Name}";
+                                sb.AppendLine($"                {destProp.Name} = {sourceExpr} is {{ }} {localVarName} ? {forgingMethodName}({localVarName}) : null!,");
                             }
                             else
                             {
@@ -744,10 +745,14 @@ internal sealed class ForgeCodeEmitter
                         var nestedForgeMethod = FindForgingMethod(forger.Symbol, forgingMethodName, sourcePropertyType, destProp.Type);
                         if (nestedForgeMethod != null)
                         {
-                            var (sourceExpr, hasNullConditional) = GenerateSourceExpressionWithNullInfo(sourceParam, forgeWithSourcePropName, sourceNamedType);
-                            if (sourcePropertyType.IsReferenceType || hasNullConditional)
+                            var (sourceExpr, _) = GenerateSourceExpressionWithNullInfo(sourceParam, forgeWithSourcePropName, sourceNamedType);
+                            if (sourcePropertyType.IsReferenceType)
                             {
-                                sb.AppendLine($"            {destParam}.{destProp.Name} = {sourceExpr} != null ? {forgingMethodName}({sourceExpr}) : null;");
+                                var localVarName = $"__forgeWith_{destProp.Name}";
+                                sb.AppendLine($"            if ({sourceExpr} is {{ }} {localVarName})");
+                                sb.AppendLine($"                {destParam}.{destProp.Name} = {forgingMethodName}({localVarName});");
+                                sb.AppendLine($"            else");
+                                sb.AppendLine($"                {destParam}.{destProp.Name} = null;");
                             }
                             else
                             {
@@ -804,8 +809,22 @@ internal sealed class ForgeCodeEmitter
         IMethodSymbol method,
         ITypeSymbol sourceCollectionType,
         ITypeSymbol destCollectionType,
-        ITypeSymbol destElementType)
+        ITypeSymbol sourceElementType,
+        ITypeSymbol destElementType,
+        ForgerInfo forger,
+        SourceProductionContext context)
     {
+        // Validate that an element forging method exists
+        var elementForgeMethod = FindForgingMethod(forger.Symbol, method.Name, sourceElementType, destElementType);
+        if (elementForgeMethod == null)
+        {
+            context.ReportDiagnostic(Diagnostic.Create(
+                DiagnosticDescriptors.ResolverMethodNotFound,
+                method.Locations.FirstOrDefault(),
+                $"{method.Name}({sourceElementType.ToDisplayString()})"));
+            return string.Empty;
+        }
+
         var sb = new StringBuilder();
         var sourceParam = method.Parameters[0].Name;
 
@@ -821,7 +840,8 @@ internal sealed class ForgeCodeEmitter
         // Determine the destination collection kind
         if (destCollectionType is IArrayTypeSymbol)
         {
-            // T[] target
+            // T[] target — arrays need count up front; safe because array sources have .Length
+            // and list sources have .Count; IEnumerable sources use .Count() (LINQ)
             var destElemDisplay = destElementType.ToDisplayString();
             var lengthExpr = GetCollectionLengthExpression(sourceCollectionType, sourceParam);
             sb.AppendLine($"            var result = new {destElemDisplay}[{lengthExpr}];");
@@ -845,9 +865,19 @@ internal sealed class ForgeCodeEmitter
             {
                 // List<T>, IList<T>, ICollection<T>, IReadOnlyList<T>, IReadOnlyCollection<T> -> return List<T>
                 var destElemDisplay = destElementType.ToDisplayString();
-                var countExpr = GetCollectionLengthExpression(sourceCollectionType, sourceParam);
 
-                sb.AppendLine($"            var result = new global::System.Collections.Generic.List<{destElemDisplay}>({countExpr});");
+                // Avoid double-enumeration: only pre-size when source has a cheap Count property.
+                // For IEnumerable<T> sources, allocate without capacity to avoid calling Count().
+                if (HasCheapCount(sourceCollectionType))
+                {
+                    var countExpr = GetCollectionLengthExpression(sourceCollectionType, sourceParam);
+                    sb.AppendLine($"            var result = new global::System.Collections.Generic.List<{destElemDisplay}>({countExpr});");
+                }
+                else
+                {
+                    sb.AppendLine($"            var result = new global::System.Collections.Generic.List<{destElemDisplay}>();");
+                }
+
                 sb.AppendLine($"            foreach (var item in {sourceParam})");
                 sb.AppendLine("            {");
                 sb.AppendLine($"                result.Add({method.Name}(item));");
@@ -859,6 +889,27 @@ internal sealed class ForgeCodeEmitter
         sb.AppendLine("        }");
 
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// Returns true if the collection type has a cheap .Count or .Length property (not LINQ's Count() extension).
+    /// </summary>
+    private static bool HasCheapCount(ITypeSymbol sourceType)
+    {
+        if (sourceType is IArrayTypeSymbol)
+            return true;
+
+        if (sourceType is INamedTypeSymbol namedType && namedType.IsGenericType)
+        {
+            var originalDef = namedType.OriginalDefinition.ToDisplayString();
+            return originalDef == "System.Collections.Generic.List<T>" ||
+                   originalDef == "System.Collections.Generic.ICollection<T>" ||
+                   originalDef == "System.Collections.Generic.IReadOnlyCollection<T>" ||
+                   originalDef == "System.Collections.Generic.IList<T>" ||
+                   originalDef == "System.Collections.Generic.IReadOnlyList<T>";
+        }
+
+        return false;
     }
 
     /// <summary>

@@ -658,9 +658,10 @@ public class ForgeWithGeneratorTests
         Assert.Single(generatedTrees);
 
         var generatedCode = generatedTrees[0].GetText().ToString();
-        // Should contain null-guarded nested forge call
+        // Should contain null-guarded nested forge call using pattern matching
         Assert.Contains("Address =", generatedCode);
-        Assert.Contains("Forge(source.Address)", generatedCode);
+        Assert.Contains("source.Address is { } __forgeWith_Address", generatedCode);
+        Assert.Contains("Forge(__forgeWith_Address)", generatedCode);
         Assert.Contains("Id = source.Id,", generatedCode);
     }
 
