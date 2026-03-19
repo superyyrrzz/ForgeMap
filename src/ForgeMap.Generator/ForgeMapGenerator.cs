@@ -165,7 +165,7 @@ public sealed class ForgeMapGenerator : IIncrementalGenerator
             if (forger.Symbol.IsAbstract || forger.Symbol.IsGenericType)
                 continue;
 
-            // Skip types that aren't publicly accessible (nested private/protected types)
+            // Only register public or internal top-level types
             if (forger.Symbol.DeclaredAccessibility != Accessibility.Public &&
                 forger.Symbol.DeclaredAccessibility != Accessibility.Internal)
                 continue;
@@ -174,20 +174,25 @@ public sealed class ForgeMapGenerator : IIncrementalGenerator
 
             var fullyQualifiedName = $"global::{forger.Symbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat.WithGlobalNamespaceStyle(SymbolDisplayGlobalNamespaceStyle.Omitted))}";
 
-            // Prefer explicit factory for IServiceProvider or IServiceScopeFactory single-param ctors;
+            // Use explicit factory only when the sole public ctor takes IServiceProvider or IServiceScopeFactory;
             // otherwise register by implementation type and let the container resolve the constructor
             var needsFactory = false;
             string? factoryExpr = null;
+            var publicCtors = forger.Symbol.Constructors.Where(c => !c.IsStatic && c.DeclaredAccessibility == Accessibility.Public).ToList();
 
-            if (iServiceProviderSymbol != null && HasCtorWithSingleParam(forger.Symbol, iServiceProviderSymbol))
+            if (publicCtors.Count == 1 && publicCtors[0].Parameters.Length == 1)
             {
-                needsFactory = true;
-                factoryExpr = $"sp => new {fullyQualifiedName}(sp)";
-            }
-            else if (iServiceScopeFactorySymbol != null && HasCtorWithSingleParam(forger.Symbol, iServiceScopeFactorySymbol))
-            {
-                needsFactory = true;
-                factoryExpr = $"sp => new {fullyQualifiedName}(sp.GetRequiredService<global::Microsoft.Extensions.DependencyInjection.IServiceScopeFactory>())";
+                var paramType = publicCtors[0].Parameters[0].Type;
+                if (iServiceProviderSymbol != null && SymbolEqualityComparer.Default.Equals(paramType, iServiceProviderSymbol))
+                {
+                    needsFactory = true;
+                    factoryExpr = $"sp => new {fullyQualifiedName}(sp)";
+                }
+                else if (iServiceScopeFactorySymbol != null && SymbolEqualityComparer.Default.Equals(paramType, iServiceScopeFactorySymbol))
+                {
+                    needsFactory = true;
+                    factoryExpr = $"sp => new {fullyQualifiedName}(sp.GetRequiredService<global::Microsoft.Extensions.DependencyInjection.IServiceScopeFactory>())";
+                }
             }
 
             if (needsFactory)
@@ -209,14 +214,6 @@ public sealed class ForgeMapGenerator : IIncrementalGenerator
         context.AddSource("ForgeMapServiceCollectionExtensions.g.cs", sb.ToString());
     }
 
-    private static bool HasCtorWithSingleParam(INamedTypeSymbol type, ITypeSymbol paramType)
-    {
-        return type.Constructors.Any(c =>
-            !c.IsStatic &&
-            c.DeclaredAccessibility == Accessibility.Public &&
-            c.Parameters.Length == 1 &&
-            SymbolEqualityComparer.Default.Equals(c.Parameters[0].Type, paramType));
-    }
 }
 
 internal sealed class ForgerInfo
