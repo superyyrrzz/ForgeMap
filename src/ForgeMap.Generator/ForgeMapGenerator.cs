@@ -85,7 +85,7 @@ public sealed class ForgeMapGenerator : IIncrementalGenerator
             var generatedSource = emitter.GenerateForger(forger, context);
             if (!string.IsNullOrEmpty(generatedSource))
             {
-                var hintName = $"{forger.Symbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat.WithGlobalNamespaceStyle(SymbolDisplayGlobalNamespaceStyle.Omitted)).Replace(".", "_")}.g.cs";
+                var hintName = $"{forger.Symbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat.WithGlobalNamespaceStyle(SymbolDisplayGlobalNamespaceStyle.Omitted)).Replace(".", "_").Replace("<", "_").Replace(">", "_").Replace(",", "_").Replace(" ", "")}.g.cs";
                 context.AddSource(hintName, generatedSource);
             }
         }
@@ -166,7 +166,7 @@ public sealed class ForgeMapGenerator : IIncrementalGenerator
         sb.AppendLine();
         foreach (var forger in forgers)
         {
-            if (forger.Symbol.IsAbstract)
+            if (forger.Symbol.IsAbstract || forger.Symbol.IsGenericType)
                 continue;
 
             var fullyQualifiedName = $"global::{forger.Symbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat.WithGlobalNamespaceStyle(SymbolDisplayGlobalNamespaceStyle.Omitted))}";

@@ -65,6 +65,7 @@ internal sealed class ForgeCodeEmitter
         {
             NullHandling = _assemblyDefaults.NullHandling,
             PropertyMatching = _assemblyDefaults.PropertyMatching,
+            GenerateCollectionMappings = _assemblyDefaults.GenerateCollectionMappings,
             SuppressDiagnostics = new HashSet<string>(_assemblyDefaults.SuppressDiagnostics, StringComparer.OrdinalIgnoreCase),
         };
 
