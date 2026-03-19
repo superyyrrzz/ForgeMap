@@ -154,6 +154,25 @@ internal sealed class ForgeCodeEmitter
             ? $"{forger.Symbol.Name}<{string.Join(", ", forger.Symbol.TypeParameters.Select(tp => tp.Name))}>"
             : forger.Symbol.Name;
         sb.AppendLine($"    {accessibility} partial class {className}");
+
+        // Emit type parameter constraints for generic forgers
+        if (forger.Symbol.IsGenericType)
+        {
+            foreach (var tp in forger.Symbol.TypeParameters)
+            {
+                var constraints = new List<string>();
+                if (tp.HasReferenceTypeConstraint) constraints.Add("class");
+                if (tp.HasValueTypeConstraint) constraints.Add("struct");
+                if (tp.HasUnmanagedTypeConstraint) constraints.Add("unmanaged");
+                if (tp.HasNotNullConstraint) constraints.Add("notnull");
+                foreach (var ct in tp.ConstraintTypes)
+                    constraints.Add(ct.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat));
+                if (tp.HasConstructorConstraint) constraints.Add("new()");
+                if (constraints.Count > 0)
+                    sb.AppendLine($"        where {tp.Name} : {string.Join(", ", constraints)}");
+            }
+        }
+
         sb.AppendLine("    {");
 
         // Find and implement partial methods

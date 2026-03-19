@@ -26,22 +26,14 @@ It contains exact API commands, correct author logins per API, and GraphQL queri
 
 ## Each cron iteration
 
-### 1. Gate: Has Copilot reviewed HEAD?
-
-Compare HEAD SHA with Copilot's latest review commit (see references).
-- **Match** → proceed to step 2
-- **No match** → request review, **skip this iteration entirely**. Do not check comments. Do not count as clean.
-
-### 2. Fetch unresolved Copilot threads
+### 1. Always fetch unresolved Copilot threads first
 
 Use GraphQL (see references). Filter by `copilot-pull-request-reviewer` (no `[bot]`).
 If PR is MERGED/CLOSED → cancel cron and stop.
 
-### 3. No comments → count as confirmed-clean
+**Why threads-first**: Copilot's REST review API `commit_id` does NOT reliably update when Copilot leaves inline comments. If you gate on review SHA matching HEAD before checking threads, you will miss comments that Copilot left asynchronously. Always check threads regardless of review SHA.
 
-Only if step 1 confirmed Copilot reviewed HEAD. After 3 consecutive confirmed-clean iterations → cancel cron, report success.
-
-### 4. Fix each comment
+### 2. If unresolved comments exist → fix them
 
 For each unresolved comment:
 - Read the code, assess validity
@@ -49,15 +41,21 @@ For each unresolved comment:
 - Build and test (`dotnet build && dotnet test` or equivalent)
 - Reply to comment, then resolve thread
 
-### 5. Commit, push, reset clean counter to 0
+After all comments addressed: commit, push, reset clean counter to 0, re-trigger Copilot review (MANDATORY — see step 4).
 
-### 6. Re-trigger Copilot review (MANDATORY after every push)
+### 3. If no unresolved comments → check review SHA and count clean
+
+Compare HEAD SHA with Copilot's latest review commit (see references).
+- **Match or Copilot has no pending review request** → confirmed-clean. After 3 consecutive confirmed-clean iterations → cancel cron, report success.
+- **No match** → request review, do NOT count as clean (Copilot may not have reviewed yet).
+
+### 4. Re-trigger Copilot review (MANDATORY after every push)
 
 Never skip this step — it was the #1 failure mode historically.
 
 ## Stop conditions
 
-- 3 consecutive confirmed-clean iterations
+- 3 consecutive confirmed-clean iterations (with no unresolved threads)
 - 20 total iterations
 - PR merged/closed
 - User cancels via `CronDelete`

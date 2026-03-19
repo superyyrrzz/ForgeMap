@@ -169,6 +169,13 @@ public sealed class ForgeMapGenerator : IIncrementalGenerator
             if (forger.Symbol.IsAbstract || forger.Symbol.IsGenericType)
                 continue;
 
+            // Skip types that aren't publicly accessible (nested private/protected types)
+            if (forger.Symbol.DeclaredAccessibility != Accessibility.Public &&
+                forger.Symbol.DeclaredAccessibility != Accessibility.Internal)
+                continue;
+            if (forger.Symbol.ContainingType != null)
+                continue;
+
             var fullyQualifiedName = $"global::{forger.Symbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat.WithGlobalNamespaceStyle(SymbolDisplayGlobalNamespaceStyle.Omitted))}";
 
             // Prefer explicit factory for IServiceProvider or IServiceScopeFactory single-param ctors;
