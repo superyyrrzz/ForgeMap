@@ -183,6 +183,10 @@ public sealed class ForgeMapGenerator : IIncrementalGenerator
             string? factoryExpr = null;
             var publicCtors = forger.Symbol.Constructors.Where(c => !c.IsStatic && c.DeclaredAccessibility == Accessibility.Public).ToList();
 
+            // Skip types with no public constructors — DI container cannot activate them
+            if (publicCtors.Count == 0)
+                continue;
+
             if (publicCtors.Count == 1 && publicCtors[0].Parameters.Length == 1)
             {
                 var paramType = publicCtors[0].Parameters[0].Type;
