@@ -1498,4 +1498,257 @@ public class ReverseForgeTests
     }
 }
 
+#region v0.6 Test Models
+
+public class OrderEntityV6
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public decimal Total { get; set; }
+}
+
+public class OrderDtoV6
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public decimal Total { get; set; }
+    public string DisplayName { get; set; } = string.Empty;
+}
+
+#endregion
+
+#region v0.6 Forgers
+
+[ForgeMap]
+public partial class HookForger
+{
+    // BeforeForge only
+    [BeforeForge(nameof(ValidateOrder))]
+    public partial OrderDtoV6 Forge(OrderEntityV6 source);
+
+    // AfterForge only
+    [AfterForge(nameof(EnrichOrder))]
+    public partial OrderDto Forge(OrderEntity source);
+
+    // Both BeforeForge and AfterForge
+    [BeforeForge(nameof(ValidateOrder))]
+    [AfterForge(nameof(EnrichOrderV6))]
+    public partial OrderDtoV6 ForgeWithBoth(OrderEntityV6 source);
+
+    // Multiple BeforeForge hooks
+    [BeforeForge(nameof(ValidateOrder))]
+    [BeforeForge(nameof(LogOrder))]
+    public partial OrderDtoV6 ForgeMultiBefore(OrderEntityV6 source);
+
+    // ForgeInto with hooks
+    [BeforeForge(nameof(ValidateOrder))]
+    [AfterForge(nameof(EnrichOrderV6))]
+    public partial void ForgeInto(OrderEntityV6 source, [UseExistingValue] OrderDtoV6 destination);
+
+    // Hook methods
+
+    private static void ValidateOrder(OrderEntityV6 source)
+    {
+        if (source.Id <= 0) throw new ArgumentException("Id must be positive", nameof(source));
+    }
+
+    private static void EnrichOrder(OrderEntity source, OrderDto destination)
+    {
+        destination.Name = $"Order #{source.Id} - {destination.Name}";
+    }
+
+    private static void EnrichOrderV6(OrderEntityV6 source, OrderDtoV6 destination)
+    {
+        destination.DisplayName = $"Order #{source.Id} - {source.Name}";
+    }
+
+    [ThreadStatic]
+    internal static bool LogCalled;
+
+    private static void LogOrder(OrderEntityV6 source)
+    {
+        _ = source; // Suppress IDE0060
+        LogCalled = true;
+    }
+}
+
+#endregion
+
+#region v0.6 Feature Tests
+
+public class BeforeForgeTests
+{
+    private readonly HookForger _forger = new();
+
+    [Fact]
+    public void BeforeForge_ShouldCallValidation()
+    {
+        // Arrange - invalid source (Id <= 0)
+        var source = new OrderEntityV6 { Id = 0, Name = "Test", Total = 100m };
+
+        // Act & Assert - should throw from BeforeForge validation
+        var action = () => _forger.Forge(source);
+        action.Should().Throw<ArgumentException>()
+            .WithMessage("*Id must be positive*");
+    }
+
+    [Fact]
+    public void BeforeForge_ValidSource_ShouldMapSuccessfully()
+    {
+        var source = new OrderEntityV6 { Id = 1, Name = "Test Order", Total = 99.99m };
+
+        var result = _forger.Forge(source);
+
+        result.Should().NotBeNull();
+        result.Id.Should().Be(1);
+        result.Name.Should().Be("Test Order");
+        result.Total.Should().Be(99.99m);
+    }
+
+    [Fact]
+    public void BeforeForge_NullSource_ShouldReturnNull_NotCallHook()
+    {
+        // Null source should return null before BeforeForge runs (per spec)
+        OrderEntityV6? source = null;
+
+        var result = _forger.Forge(source!);
+
+        result.Should().BeNull();
+    }
+
+    [Fact]
+    public void BeforeForge_MultipleHooks_ShouldCallInOrder()
+    {
+        HookForger.LogCalled = false;
+
+        // Invalid source - ValidateOrder runs first and throws
+        var source = new OrderEntityV6 { Id = -1, Name = "Bad", Total = 0m };
+
+        var action = () => _forger.ForgeMultiBefore(source);
+        action.Should().Throw<ArgumentException>();
+
+        // LogOrder should NOT have been called since ValidateOrder threw first
+        HookForger.LogCalled.Should().BeFalse();
+    }
+
+    [Fact]
+    public void BeforeForge_MultipleHooks_AllCalled_WhenValid()
+    {
+        HookForger.LogCalled = false;
+
+        var source = new OrderEntityV6 { Id = 5, Name = "Good", Total = 50m };
+
+        var result = _forger.ForgeMultiBefore(source);
+
+        result.Should().NotBeNull();
+        result.Id.Should().Be(5);
+        HookForger.LogCalled.Should().BeTrue();
+    }
+}
+
+public class AfterForgeTests
+{
+    private readonly HookForger _forger = new();
+
+    [Fact]
+    public void AfterForge_ShouldEnrichDestination()
+    {
+        var source = new OrderEntity
+        {
+            Id = 42,
+            Name = "Widget",
+            Total = 100m,
+            CreatedAt = DateTime.Now,
+            InternalCode = "ABC"
+        };
+
+        var result = _forger.Forge(source);
+
+        result.Should().NotBeNull();
+        result.Name.Should().Be("Order #42 - Widget");
+        result.Id.Should().Be(42);
+        result.Total.Should().Be(100m);
+    }
+
+    [Fact]
+    public void AfterForge_NullSource_ShouldReturnNull_NotCallHook()
+    {
+        OrderEntity? source = null;
+
+        var result = _forger.Forge(source!);
+
+        result.Should().BeNull();
+    }
+}
+
+public class BeforeAndAfterForgeTests
+{
+    private readonly HookForger _forger = new();
+
+    [Fact]
+    public void BothHooks_ShouldValidateThenEnrich()
+    {
+        var source = new OrderEntityV6 { Id = 10, Name = "Combined", Total = 200m };
+
+        var result = _forger.ForgeWithBoth(source);
+
+        result.Should().NotBeNull();
+        result.Id.Should().Be(10);
+        result.Name.Should().Be("Combined");
+        result.DisplayName.Should().Be("Order #10 - Combined");
+    }
+
+    [Fact]
+    public void BothHooks_InvalidSource_ShouldThrowFromBeforeForge()
+    {
+        var source = new OrderEntityV6 { Id = 0, Name = "Invalid", Total = 0m };
+
+        var action = () => _forger.ForgeWithBoth(source);
+        action.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public void ForgeInto_WithHooks_ShouldValidateAndEnrich()
+    {
+        var source = new OrderEntityV6 { Id = 7, Name = "Into Test", Total = 77m };
+        var existing = new OrderDtoV6 { Id = 999, Name = "Old", Total = 0m, DisplayName = "Old Display" };
+
+        _forger.ForgeInto(source, existing);
+
+        existing.Id.Should().Be(7);
+        existing.Name.Should().Be("Into Test");
+        existing.Total.Should().Be(77m);
+        existing.DisplayName.Should().Be("Order #7 - Into Test");
+    }
+
+    [Fact]
+    public void ForgeInto_WithHooks_InvalidSource_ShouldThrowFromBeforeForge()
+    {
+        var source = new OrderEntityV6 { Id = -1, Name = "Bad", Total = 0m };
+        var existing = new OrderDtoV6 { Id = 999, Name = "Old", Total = 0m };
+
+        var action = () => _forger.ForgeInto(source, existing);
+        action.Should().Throw<ArgumentException>();
+
+        // Destination should be unchanged
+        existing.Id.Should().Be(999);
+        existing.Name.Should().Be("Old");
+    }
+
+    [Fact]
+    public void ForgeInto_WithHooks_NullSource_ShouldNotCallHooks()
+    {
+        OrderEntityV6? source = null;
+        var existing = new OrderDtoV6 { Id = 999, Name = "Original", Total = 100m };
+
+        _forger.ForgeInto(source!, existing);
+
+        // Destination should be unchanged
+        existing.Id.Should().Be(999);
+        existing.Name.Should().Be("Original");
+    }
+}
+
+#endregion
+
 #endregion

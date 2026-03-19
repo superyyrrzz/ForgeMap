@@ -16,6 +16,8 @@ internal sealed class ForgeCodeEmitter
     private readonly INamedTypeSymbol? _forgeFromAttributeSymbol;
     private readonly INamedTypeSymbol? _forgeWithAttributeSymbol;
     private readonly INamedTypeSymbol? _reverseForgeAttributeSymbol;
+    private readonly INamedTypeSymbol? _beforeForgeAttributeSymbol;
+    private readonly INamedTypeSymbol? _afterForgeAttributeSymbol;
 
     public ForgeCodeEmitter(Compilation compilation)
     {
@@ -24,6 +26,8 @@ internal sealed class ForgeCodeEmitter
         _forgeFromAttributeSymbol = compilation.GetTypeByMetadataName("ForgeMap.ForgeFromAttribute");
         _forgeWithAttributeSymbol = compilation.GetTypeByMetadataName("ForgeMap.ForgeWithAttribute");
         _reverseForgeAttributeSymbol = compilation.GetTypeByMetadataName("ForgeMap.ReverseForgeAttribute");
+        _beforeForgeAttributeSymbol = compilation.GetTypeByMetadataName("ForgeMap.BeforeForgeAttribute");
+        _afterForgeAttributeSymbol = compilation.GetTypeByMetadataName("ForgeMap.AfterForgeAttribute");
     }
 
     public string GenerateForger(ForgerInfo forger, SourceProductionContext context)
@@ -527,13 +531,17 @@ internal sealed class ForgeCodeEmitter
         // Check for enum forging scenarios
         var enumResult = TryGenerateEnumForgeMethod(method, sourceType, destinationType);
         if (enumResult != null)
+        {
+            ReportHooksNotSupportedIfPresent(method, context);
             return enumResult;
+        }
 
         // Check for collection mapping (List<T>, T[], IEnumerable<T>, etc.)
         var sourceElementType = GetCollectionElementType(sourceType);
         var destElementType = GetCollectionElementType(destinationType);
         if (sourceElementType != null && destElementType != null)
         {
+            ReportHooksNotSupportedIfPresent(method, context);
             return GenerateCollectionForgeMethod(method, sourceType, destinationType, sourceElementType, destElementType, forger, context);
         }
 
@@ -619,6 +627,20 @@ internal sealed class ForgeCodeEmitter
         // Get [ForgeWith] mappings for nested object forging
         var forgeWithMappings = GetForgeWithMappings(method);
 
+        // Get [BeforeForge] and [AfterForge] hooks
+        var beforeForgeHooks = GetBeforeForgeHooks(method);
+        var afterForgeHooks = GetAfterForgeHooks(method);
+
+        // Validate hooks and filter to only valid ones
+        beforeForgeHooks = beforeForgeHooks
+            .Where(h => ValidateBeforeForgeHook(h, sourceType, forger, context, method))
+            .ToList();
+        afterForgeHooks = afterForgeHooks
+            .Where(h => ValidateAfterForgeHook(h, sourceType, destinationType, forger, context, method))
+            .ToList();
+
+        var hasAfterForge = afterForgeHooks.Count > 0;
+
         // Method signature
         var accessibility = GetAccessibilityKeyword(method.DeclaredAccessibility);
         sb.AppendLine($"        {accessibility} partial {destinationType.ToDisplayString()} {method.Name}({sourceType.ToDisplayString()} {sourceParam})");
@@ -627,6 +649,14 @@ internal sealed class ForgeCodeEmitter
         // Null check
         sb.AppendLine($"            if ({sourceParam} == null) return null!;");
         sb.AppendLine();
+
+        // [BeforeForge] callbacks
+        foreach (var hookName in beforeForgeHooks)
+        {
+            sb.AppendLine($"            {hookName}({sourceParam});");
+        }
+        if (beforeForgeHooks.Count > 0)
+            sb.AppendLine();
 
         // Get mappable properties
         var sourceProperties = GetMappableProperties(sourceType);
@@ -689,6 +719,38 @@ internal sealed class ForgeCodeEmitter
             else
             {
                 sb.AppendLine("            );");
+            }
+
+            // [AfterForge] callbacks
+            foreach (var hookName in afterForgeHooks)
+            {
+                sb.AppendLine($"            {hookName}({sourceParam}, result);");
+            }
+
+            sb.AppendLine("            return result;");
+        }
+        else if (hasAfterForge)
+        {
+            // When AfterForge hooks exist, we need a variable to pass to the hooks
+            sb.AppendLine($"            var result = new {destinationType.ToDisplayString()}");
+            sb.AppendLine("            {");
+
+            foreach (var destProp in destProperties.Where(p => p.SetMethod != null))
+            {
+                var assignment = GeneratePropertyAssignment(
+                    destProp, sourceParam, sourceType, sourceProperties,
+                    propertyMappings, resolverMappings, forgeWithMappings, ignoredProperties, forger, context, method);
+
+                if (assignment != null)
+                    sb.AppendLine($"                {destProp.Name} = {assignment},");
+            }
+
+            sb.AppendLine("            };");
+
+            // [AfterForge] callbacks
+            foreach (var hookName in afterForgeHooks)
+            {
+                sb.AppendLine($"            {hookName}({sourceParam}, result);");
             }
 
             sb.AppendLine("            return result;");
@@ -1307,6 +1369,167 @@ internal sealed class ForgeCodeEmitter
     }
 
     /// <summary>
+    /// Gets [BeforeForge] hook method names in declaration order.
+    /// </summary>
+    private List<string> GetBeforeForgeHooks(IMethodSymbol method)
+    {
+        var hooks = new List<string>();
+
+        if (_beforeForgeAttributeSymbol == null)
+            return hooks;
+
+        foreach (var attr in method.GetAttributes())
+        {
+            if (!SymbolEqualityComparer.Default.Equals(attr.AttributeClass, _beforeForgeAttributeSymbol))
+                continue;
+
+            if (attr.ConstructorArguments.Length >= 1 && attr.ConstructorArguments[0].Value is string methodName)
+            {
+                hooks.Add(methodName);
+            }
+        }
+
+        return hooks;
+    }
+
+    /// <summary>
+    /// Gets [AfterForge] hook method names in declaration order.
+    /// </summary>
+    private List<string> GetAfterForgeHooks(IMethodSymbol method)
+    {
+        var hooks = new List<string>();
+
+        if (_afterForgeAttributeSymbol == null)
+            return hooks;
+
+        foreach (var attr in method.GetAttributes())
+        {
+            if (!SymbolEqualityComparer.Default.Equals(attr.AttributeClass, _afterForgeAttributeSymbol))
+                continue;
+
+            if (attr.ConstructorArguments.Length >= 1 && attr.ConstructorArguments[0].Value is string methodName)
+            {
+                hooks.Add(methodName);
+            }
+        }
+
+        return hooks;
+    }
+
+    /// <summary>
+    /// Validates a BeforeForge hook method. Must be void with a single parameter matching the source type.
+    /// </summary>
+    private bool ValidateBeforeForgeHook(
+        string hookMethodName,
+        ITypeSymbol sourceType,
+        ForgerInfo forger,
+        SourceProductionContext context,
+        IMethodSymbol method)
+    {
+        var candidates = forger.Symbol.GetMembers(hookMethodName)
+            .OfType<IMethodSymbol>()
+            .Where(m => m.ReturnsVoid && m.Parameters.Length == 1 &&
+                !m.IsGenericMethod &&
+                m.Parameters[0].RefKind == RefKind.None &&
+                !m.Parameters[0].IsParams &&
+                (SymbolEqualityComparer.Default.Equals(m.Parameters[0].Type, sourceType) ||
+                 CanAssign(sourceType, m.Parameters[0].Type)))
+            .ToList();
+
+        if (candidates.Count == 0)
+        {
+            context.ReportDiagnostic(Diagnostic.Create(
+                DiagnosticDescriptors.HookMethodInvalid,
+                method.Locations.FirstOrDefault(),
+                hookMethodName));
+            return false;
+        }
+
+        // Prefer exact type match over assignable match
+        var exactMatch = candidates.FirstOrDefault(m =>
+            SymbolEqualityComparer.Default.Equals(m.Parameters[0].Type, sourceType));
+
+        if (exactMatch != null || candidates.Count == 1)
+            return true;
+
+        // Multiple assignable candidates with no exact match — ambiguous
+        context.ReportDiagnostic(Diagnostic.Create(
+            DiagnosticDescriptors.HookMethodInvalid,
+            method.Locations.FirstOrDefault(),
+            hookMethodName));
+        return false;
+    }
+
+    /// <summary>
+    /// Validates an AfterForge hook method. Must be void with two parameters: source type and destination type.
+    /// </summary>
+    private bool ValidateAfterForgeHook(
+        string hookMethodName,
+        ITypeSymbol sourceType,
+        ITypeSymbol destType,
+        ForgerInfo forger,
+        SourceProductionContext context,
+        IMethodSymbol method)
+    {
+        var candidates = forger.Symbol.GetMembers(hookMethodName)
+            .OfType<IMethodSymbol>()
+            .Where(m => m.ReturnsVoid && m.Parameters.Length == 2 &&
+                !m.IsGenericMethod &&
+                m.Parameters[0].RefKind == RefKind.None &&
+                !m.Parameters[0].IsParams &&
+                m.Parameters[1].RefKind == RefKind.None &&
+                !m.Parameters[1].IsParams &&
+                (SymbolEqualityComparer.Default.Equals(m.Parameters[0].Type, sourceType) ||
+                 CanAssign(sourceType, m.Parameters[0].Type)) &&
+                (SymbolEqualityComparer.Default.Equals(m.Parameters[1].Type, destType) ||
+                 CanAssign(destType, m.Parameters[1].Type)))
+            .ToList();
+
+        if (candidates.Count == 0)
+        {
+            context.ReportDiagnostic(Diagnostic.Create(
+                DiagnosticDescriptors.HookMethodInvalid,
+                method.Locations.FirstOrDefault(),
+                hookMethodName));
+            return false;
+        }
+
+        // Prefer exact type match over assignable match
+        var exactMatch = candidates.FirstOrDefault(m =>
+            SymbolEqualityComparer.Default.Equals(m.Parameters[0].Type, sourceType) &&
+            SymbolEqualityComparer.Default.Equals(m.Parameters[1].Type, destType));
+
+        if (exactMatch != null || candidates.Count == 1)
+            return true;
+
+        // Multiple assignable candidates with no exact match — ambiguous
+        context.ReportDiagnostic(Diagnostic.Create(
+            DiagnosticDescriptors.HookMethodInvalid,
+            method.Locations.FirstOrDefault(),
+            hookMethodName));
+        return false;
+    }
+
+    /// <summary>
+    /// Reports FM0018 if [BeforeForge] or [AfterForge] attributes are present on a method
+    /// that does not support hooks (enum or collection forge methods).
+    /// </summary>
+    private void ReportHooksNotSupportedIfPresent(IMethodSymbol method, SourceProductionContext context)
+    {
+        var hasHooks = (_beforeForgeAttributeSymbol != null && method.GetAttributes().Any(a =>
+            SymbolEqualityComparer.Default.Equals(a.AttributeClass, _beforeForgeAttributeSymbol))) ||
+            (_afterForgeAttributeSymbol != null && method.GetAttributes().Any(a =>
+            SymbolEqualityComparer.Default.Equals(a.AttributeClass, _afterForgeAttributeSymbol)));
+
+        if (hasHooks)
+        {
+            context.ReportDiagnostic(Diagnostic.Create(
+                DiagnosticDescriptors.HooksNotSupportedOnMethodKind,
+                method.Locations.FirstOrDefault()));
+        }
+    }
+
+    /// <summary>
     /// Finds a forging method on the forger class that accepts the given source type and returns the given destination type.
     /// </summary>
     private static IMethodSymbol? FindForgingMethod(INamedTypeSymbol forgerType, string methodName, ITypeSymbol sourcePropertyType, ITypeSymbol destPropertyType)
@@ -1468,6 +1691,18 @@ internal sealed class ForgeCodeEmitter
         // Get [ForgeWith] mappings for nested object forging
         var forgeWithMappings = GetForgeWithMappings(method);
 
+        // Get [BeforeForge] and [AfterForge] hooks
+        var beforeForgeHooks = GetBeforeForgeHooks(method);
+        var afterForgeHooks = GetAfterForgeHooks(method);
+
+        // Validate hooks and filter to only valid ones
+        beforeForgeHooks = beforeForgeHooks
+            .Where(h => ValidateBeforeForgeHook(h, sourceType, forger, context, method))
+            .ToList();
+        afterForgeHooks = afterForgeHooks
+            .Where(h => ValidateAfterForgeHook(h, sourceType, destinationType, forger, context, method))
+            .ToList();
+
         // Method signature
         var accessibility = GetAccessibilityKeyword(method.DeclaredAccessibility);
         sb.AppendLine($"        {accessibility} partial void {method.Name}({sourceType.ToDisplayString()} {sourceParam}, {destinationType.ToDisplayString()} {destParam})");
@@ -1477,6 +1712,14 @@ internal sealed class ForgeCodeEmitter
         sb.AppendLine($"            if ({destParam} == null) throw new global::System.ArgumentNullException(nameof({destParam}));");
         sb.AppendLine($"            if ({sourceParam} == null) return;");
         sb.AppendLine();
+
+        // [BeforeForge] callbacks
+        foreach (var hookName in beforeForgeHooks)
+        {
+            sb.AppendLine($"            {hookName}({sourceParam});");
+        }
+        if (beforeForgeHooks.Count > 0)
+            sb.AppendLine();
 
         // Get mappable properties
         var sourceProperties = GetMappableProperties(sourceNamedType);
@@ -1640,6 +1883,14 @@ internal sealed class ForgeCodeEmitter
                     sb.AppendLine($"            {destParam}.{destProp.Name} = {sourceParam}.{sourceProp.Name};");
                 }
             }
+        }
+
+        // [AfterForge] callbacks
+        if (afterForgeHooks.Count > 0)
+            sb.AppendLine();
+        foreach (var hookName in afterForgeHooks)
+        {
+            sb.AppendLine($"            {hookName}({sourceParam}, {destParam});");
         }
 
         sb.AppendLine("        }");

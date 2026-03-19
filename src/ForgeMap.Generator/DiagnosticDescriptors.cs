@@ -144,4 +144,12 @@ internal static class DiagnosticDescriptors
         category: Category,
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor HooksNotSupportedOnMethodKind = new(
+        id: "FM0018",
+        title: "[BeforeForge]/[AfterForge] not supported on enum or collection forge methods",
+        messageFormat: "[BeforeForge]/[AfterForge] hooks are not supported on enum or collection forge methods",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
 }
