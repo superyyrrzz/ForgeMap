@@ -110,7 +110,7 @@ internal sealed class ForgeCodeEmitter
     /// <summary>
     /// Generates the null-check code for source parameter based on NullHandling config.
     /// For ReturnNull: "if (source == null) return {nullReturn};" (or "return;" if nullReturn is null)
-    /// For ThrowException: "global::System.ArgumentNullException.ThrowIfNull(source);"
+    /// For ThrowException: "if (source == null) throw new ArgumentNullException(nameof(source));"
     /// </summary>
     private string GenerateNullCheck(string sourceParam, string? nullReturn)
     {
@@ -749,9 +749,12 @@ internal sealed class ForgeCodeEmitter
         sb.AppendLine($"        {accessibility} partial {destinationType.ToDisplayString()} {method.Name}({sourceType.ToDisplayString()} {sourceParam})");
         sb.AppendLine("        {");
 
-        // Null check
-        sb.AppendLine(GenerateNullCheck(sourceParam, "null!"));
-        sb.AppendLine();
+        // Null check (only for reference types or nullable value types)
+        if (sourceType.IsReferenceType || sourceType.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T)
+        {
+            sb.AppendLine(GenerateNullCheck(sourceParam, "null!"));
+            sb.AppendLine();
+        }
 
         // [BeforeForge] callbacks
         foreach (var hookName in beforeForgeHooks)
@@ -1813,7 +1816,10 @@ internal sealed class ForgeCodeEmitter
 
         // Null checks
         sb.AppendLine($"            if ({destParam} == null) throw new global::System.ArgumentNullException(nameof({destParam}));");
-        sb.AppendLine(GenerateNullCheck(sourceParam, null));
+        if (sourceType.IsReferenceType || sourceType.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T)
+        {
+            sb.AppendLine(GenerateNullCheck(sourceParam, null));
+        }
         sb.AppendLine();
 
         // [BeforeForge] callbacks
