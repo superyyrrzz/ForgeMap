@@ -139,6 +139,9 @@ public sealed class ForgeMapGenerator : IIncrementalGenerator
         if (compilation.GetTypeByMetadataName("Microsoft.Extensions.DependencyInjection.ServiceLifetime") == null)
             return;
 
+        if (compilation.GetTypeByMetadataName("Microsoft.Extensions.DependencyInjection.Extensions.ServiceCollectionDescriptorExtensions") == null)
+            return;
+
         var iServiceProviderSymbol = compilation.GetTypeByMetadataName("System.IServiceProvider");
         var iServiceScopeFactorySymbol = compilation.GetTypeByMetadataName(
             "Microsoft.Extensions.DependencyInjection.IServiceScopeFactory");
