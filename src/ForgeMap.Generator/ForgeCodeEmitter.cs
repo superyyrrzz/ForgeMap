@@ -752,7 +752,8 @@ internal sealed class ForgeCodeEmitter
         // Null check (only for reference types or nullable value types)
         if (sourceType.IsReferenceType || sourceType.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T)
         {
-            sb.AppendLine(GenerateNullCheck(sourceParam, "null!"));
+            var nullReturn = destinationType.IsValueType ? "default" : "null!";
+            sb.AppendLine(GenerateNullCheck(sourceParam, nullReturn));
             sb.AppendLine();
         }
 
@@ -1063,7 +1064,8 @@ internal sealed class ForgeCodeEmitter
                     if (sourcePropertyType.IsReferenceType)
                     {
                         var localVarName = $"__forgeWith_{destProp.Name}";
-                        return $"{sourceExpr} is {{ }} {localVarName} ? {forgingMethodName}({localVarName}) : null!";
+                        var nullFallback = destProp.Type.IsValueType ? "default" : "null!";
+                        return $"{sourceExpr} is {{ }} {localVarName} ? {forgingMethodName}({localVarName}) : {nullFallback}";
                     }
                     else
                     {
@@ -1949,7 +1951,8 @@ internal sealed class ForgeCodeEmitter
                                 sb.AppendLine($"            if ({sourceExpr} is {{ }} {localVarName})");
                                 sb.AppendLine($"                {destParam}.{destProp.Name} = {forgingMethodName}({localVarName});");
                                 sb.AppendLine($"            else");
-                                sb.AppendLine($"                {destParam}.{destProp.Name} = null;");
+                                var nullAssign = destProp.Type.IsValueType ? "default" : "null";
+                                sb.AppendLine($"                {destParam}.{destProp.Name} = {nullAssign};");
                             }
                             else
                             {

@@ -69,8 +69,8 @@ public class DiIntegrationTests
 
         var provider = services.BuildServiceProvider();
 
-        var forger1 = provider.GetService<DiSimpleForger>();
-        var forger2 = provider.GetService<DiSimpleForger>();
+        var forger1 = provider.GetRequiredService<DiSimpleForger>();
+        var forger2 = provider.GetRequiredService<DiSimpleForger>();
 
         forger1.Should().BeSameAs(forger2);
     }
@@ -83,16 +83,16 @@ public class DiIntegrationTests
 
         var provider = services.BuildServiceProvider();
 
-        DiSimpleForger? forger1;
-        DiSimpleForger? forger2;
+        DiSimpleForger forger1;
+        DiSimpleForger forger2;
 
         using (var scope1 = provider.CreateScope())
         {
-            forger1 = scope1.ServiceProvider.GetService<DiSimpleForger>();
+            forger1 = scope1.ServiceProvider.GetRequiredService<DiSimpleForger>();
         }
         using (var scope2 = provider.CreateScope())
         {
-            forger2 = scope2.ServiceProvider.GetService<DiSimpleForger>();
+            forger2 = scope2.ServiceProvider.GetRequiredService<DiSimpleForger>();
         }
 
         forger1.Should().NotBeSameAs(forger2);
@@ -141,8 +141,8 @@ public class DiIntegrationTests
 
         var provider = services.BuildServiceProvider();
 
-        var forger1 = provider.GetService<DiSimpleForger>();
-        var forger2 = provider.GetService<DiSimpleForger>();
+        var forger1 = provider.GetRequiredService<DiSimpleForger>();
+        var forger2 = provider.GetRequiredService<DiSimpleForger>();
 
         forger1.Should().NotBeSameAs(forger2);
     }
