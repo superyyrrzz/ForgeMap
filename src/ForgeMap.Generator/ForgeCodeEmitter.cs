@@ -116,7 +116,7 @@ internal sealed class ForgeCodeEmitter
     {
         if (_config.NullHandling == 1) // ThrowException
         {
-            return $"            global::System.ArgumentNullException.ThrowIfNull({sourceParam});";
+            return $"            if ({sourceParam} == null) throw new global::System.ArgumentNullException(nameof({sourceParam}));";
         }
 
         // ReturnNull (default)
@@ -678,6 +678,13 @@ internal sealed class ForgeCodeEmitter
         sb.AppendLine($"        {accessibility} partial {destDisplay} {method.Name}({sourceDisplay} {sourceParam})");
         sb.AppendLine("        {");
 
+        // Add null handling for reference-type inputs (string)
+        if (isSourceString)
+        {
+            sb.AppendLine(GenerateNullCheck(sourceParam, "default"));
+            sb.AppendLine();
+        }
+
         if (isSourceEnum && isDestEnum)
         {
             // enum → enum: parse by name for safety (handles mismatched underlying values)
@@ -1117,7 +1124,7 @@ internal sealed class ForgeCodeEmitter
         {
             var propName = prop.Name;
             if (destName.Length >= startIndex + propName.Length &&
-                string.Equals(destName.Substring(startIndex, propName.Length), propName, StringComparison.OrdinalIgnoreCase))
+                string.Equals(destName.Substring(startIndex, propName.Length), propName, _config.PropertyNameComparison))
             {
                 var newStartIndex = startIndex + propName.Length;
 
@@ -2026,7 +2033,7 @@ internal sealed class ForgeCodeEmitter
 
         sb.AppendLine($"        {accessibility} partial {destTypeDisplay} {method.Name}({sourceTypeDisplay} {sourceParam})");
         sb.AppendLine("        {");
-        sb.AppendLine($"            if ({sourceParam} == null) return null!;");
+        sb.AppendLine(GenerateNullCheck(sourceParam, "null!"));
         sb.AppendLine();
 
         // Determine the destination collection kind

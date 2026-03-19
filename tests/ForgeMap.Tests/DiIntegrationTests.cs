@@ -99,17 +99,6 @@ public class DiIntegrationTests
     }
 
     [Fact]
-    public void AddForgeMaps_WithAssemblyOverload_ShouldAlsoWork()
-    {
-        var services = new ServiceCollection();
-        services.AddForgeMaps(typeof(DiSimpleForger).Assembly);
-
-        var provider = services.BuildServiceProvider();
-        var forger = provider.GetService<DiSimpleForger>();
-        forger.Should().NotBeNull();
-    }
-
-    [Fact]
     public void AddForgeMaps_ResolvedForger_ShouldWorkCorrectly()
     {
         var services = new ServiceCollection();
@@ -138,6 +127,7 @@ public class DiIntegrationTests
         var entity = new DiSourceEntity { Id = 7, Name = "DI Test" };
         var dto = forger.Forge(entity);
 
+        forger.Services.Should().NotBeNull();
         dto.Should().NotBeNull();
         dto.Id.Should().Be(7);
         dto.Name.Should().Be("DI Test");

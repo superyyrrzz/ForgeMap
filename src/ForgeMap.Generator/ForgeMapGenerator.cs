@@ -199,17 +199,6 @@ public sealed class ForgeMapGenerator : IIncrementalGenerator
         sb.AppendLine();
         sb.AppendLine("            return services;");
         sb.AppendLine("        }");
-        sb.AppendLine();
-        sb.AppendLine("        /// <summary>");
-        sb.AppendLine("        /// Registers all classes marked with [ForgeMap] in the specified assembly.");
-        sb.AppendLine("        /// </summary>");
-        sb.AppendLine("        public static global::Microsoft.Extensions.DependencyInjection.IServiceCollection AddForgeMaps(");
-        sb.AppendLine("            this global::Microsoft.Extensions.DependencyInjection.IServiceCollection services,");
-        sb.AppendLine("            global::System.Reflection.Assembly assembly,");
-        sb.AppendLine("            global::Microsoft.Extensions.DependencyInjection.ServiceLifetime lifetime = global::Microsoft.Extensions.DependencyInjection.ServiceLifetime.Singleton)");
-        sb.AppendLine("        {");
-        sb.AppendLine("            return AddForgeMaps(services, lifetime);");
-        sb.AppendLine("        }");
         sb.AppendLine("    }");
         sb.AppendLine("}");
 
