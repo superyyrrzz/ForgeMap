@@ -159,7 +159,8 @@ public sealed class ForgeMapGenerator : IIncrementalGenerator
         sb.AppendLine("            this global::Microsoft.Extensions.DependencyInjection.IServiceCollection services,");
         sb.AppendLine("            global::Microsoft.Extensions.DependencyInjection.ServiceLifetime lifetime = global::Microsoft.Extensions.DependencyInjection.ServiceLifetime.Singleton)");
         sb.AppendLine("        {");
-
+        sb.AppendLine("            if (services == null) throw new global::System.ArgumentNullException(nameof(services));");
+        sb.AppendLine();
         foreach (var forger in forgers)
         {
             if (forger.Symbol.IsAbstract)
