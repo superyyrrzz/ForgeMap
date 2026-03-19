@@ -156,7 +156,7 @@ public sealed class ForgeMapGenerator : IIncrementalGenerator
         sb.AppendLine("    public static class ForgeMapServiceCollectionExtensions");
         sb.AppendLine("    {");
         sb.AppendLine("        /// <summary>");
-        sb.AppendLine("        /// Registers all classes marked with [ForgeMap] with the specified lifetime.");
+        sb.AppendLine("        /// Registers concrete, non-generic, top-level [ForgeMap] classes with the specified lifetime.");
         sb.AppendLine("        /// </summary>");
         sb.AppendLine("        public static global::Microsoft.Extensions.DependencyInjection.IServiceCollection AddForgeMaps(");
         sb.AppendLine("            this global::Microsoft.Extensions.DependencyInjection.IServiceCollection services,");

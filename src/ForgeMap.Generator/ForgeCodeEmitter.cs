@@ -956,7 +956,7 @@ internal sealed class ForgeCodeEmitter
             // When null-conditional lifts a non-nullable value type to Nullable<T>, cast back
             var isLiftedValueType = hasNullConditional && sourceLeafType != null && sourceLeafType.IsValueType && GetNullableUnderlyingType(sourceLeafType) == null;
             if (isLiftedValueType && destProp.Type.IsValueType && GetNullableUnderlyingType(destProp.Type) == null)
-                return $"({destProp.Type.ToDisplayString()}){sourceExpr}!";
+                return $"({destProp.Type.ToDisplayString()})({sourceExpr})!";
             var nullForgiving = hasNullConditional && destProp.Type.NullableAnnotation != NullableAnnotation.Annotated ? "!" : "";
             return $"{sourceExpr}{nullForgiving}";
         }
@@ -1145,14 +1145,14 @@ internal sealed class ForgeCodeEmitter
 
         // Handle nullable-to-non-nullable value type conversion
         if (IsNullableToNonNullableValueType(leafType, destProp.Type))
-            return $"({destProp.Type.ToDisplayString()}){expr}";
+            return expr.Contains("?.") ? $"({destProp.Type.ToDisplayString()})({expr})" : $"({destProp.Type.ToDisplayString()}){expr}";
 
         // Handle lifted value type from null-conditional: source.Customer?.Age is int? even
         // though Age is int. The ! operator suppresses warnings but doesn't cast, so emit
         // an explicit cast to the destination type.
         if (expr.Contains("?.") && leafType.IsValueType && GetNullableUnderlyingType(leafType) == null
             && destProp.Type.IsValueType && GetNullableUnderlyingType(destProp.Type) == null)
-            return $"({destProp.Type.ToDisplayString()}){expr}";
+            return $"({destProp.Type.ToDisplayString()})({expr})";
 
         return expr;
     }
@@ -2019,7 +2019,7 @@ internal sealed class ForgeCodeEmitter
                 var isLiftedValueType = hasNullConditional && sourceLeafType != null && sourceLeafType.IsValueType && GetNullableUnderlyingType(sourceLeafType) == null;
                 if (isLiftedValueType && destProp.Type.IsValueType && GetNullableUnderlyingType(destProp.Type) == null)
                 {
-                    sb.AppendLine($"            {destParam}.{destProp.Name} = ({destProp.Type.ToDisplayString()}){sourceExpr}!;");
+                    sb.AppendLine($"            {destParam}.{destProp.Name} = ({destProp.Type.ToDisplayString()})({sourceExpr})!;");
                 }
                 else
                 {
