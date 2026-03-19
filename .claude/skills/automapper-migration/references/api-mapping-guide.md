@@ -10,7 +10,7 @@ This reference maps AutoMapper patterns to their ForgeMap equivalents.
 | `CreateMap<S,D>()` | `partial D Forge(S source);` method | Each mapping is a partial method declaration |
 | `IMapper` (injected) | Forger class (injected) | Register via `services.AddForgeMaps()` |
 | `mapper.Map<D>(src)` | `forger.Forge(src)` | Direct method call |
-| `mapper.Map(src, dest)` | `forger.ForgeInto(src, dest)` | Uses `[UseExistingValue]` parameter |
+| `mapper.Map(src, dest)` | `forger.ForgeInto(src, dest)` | Any void partial method with a `[UseExistingValue]` parameter; `ForgeInto` is a naming convention, not required |
 
 ## Property Mapping
 
@@ -210,17 +210,20 @@ CreateMap<Order, OrderDto>();
 CreateMap<Address, AddressDto>();  // nested single object
 CreateMap<LineItem, LineItemDto>(); // nested collection
 
-// AFTER (ForgeMap) — single nested object uses [ForgeWith]
+// AFTER (ForgeMap) — single nested object and collection both use [ForgeWith]
 [ForgeWith(nameof(OrderDto.ShippingAddress), nameof(ForgeAddress))]
+[ForgeWith(nameof(OrderDto.LineItems), nameof(ForgeLineItems))]
 public partial OrderDto Forge(Order source);
 
 public partial AddressDto ForgeAddress(Address source);
 
 // Collection properties (e.g., List<LineItem> → List<LineItemDto>) are
-// auto-mapped when an element forge method exists and
-// GenerateCollectionMappings = true (the default).
-// Do NOT use [ForgeWith] for collections — it expects the method to
-// accept/return the collection type, not individual elements.
+// NOT auto-mapped on a parent object just because an element forge exists.
+// Declare a collection-level forge method and reference it via [ForgeWith].
+public partial IReadOnlyList<LineItemDto> ForgeLineItems(IReadOnlyList<LineItem> source);
+
+// The collection forge method above is auto-implemented by the generator
+// (when GenerateCollectionMappings = true) using this element forge method:
 public partial LineItemDto ForgeItem(LineItem source);
 ```
 
@@ -260,7 +263,8 @@ private void CalculateTotal(Order source, OrderDto dest)
 // BEFORE (AutoMapper)
 mapper.Map(source, existingDest);
 
-// AFTER (ForgeMap)
+// AFTER (ForgeMap) — method name is a convention; the generator
+// recognizes any void partial method with a [UseExistingValue] parameter.
 [ForgeMap]
 public partial class AppForger
 {

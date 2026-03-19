@@ -263,8 +263,8 @@ For each AutoMapper `Profile`, create a corresponding `[ForgeMap]` partial class
 | `.AfterMap(...)` | `[AfterForge(nameof(MethodName))]` |
 | `.ForMember(d => d.X, o => o.MapFrom(s => expr))` | `[ForgeFrom(nameof(D.X), nameof(ResolverMethod))]` + static method |
 | Nested `CreateMap<A,B>()` used in parent | `[ForgeWith(nameof(D.Prop), nameof(ForgeNested))]` + nested forge method | For single nested objects only |
-| Nested collection (e.g., `List<A>` → `List<B>`) | Declare element forge method `partial B Forge(A source)` | Auto-mapped when `GenerateCollectionMappings = true` (default); do NOT use `[ForgeWith]` for collections |
-| `mapper.Map(src, dest)` pattern | `ForgeInto(src, [UseExistingValue] dest)` method |
+| Nested collection (e.g., `List<A>` → `List<B>`) | `[ForgeWith]` referencing a collection-level forge method + element forge method | Declare `partial List<BDto> ForgeItems(List<B> source)` (auto-implemented when element forge exists and `GenerateCollectionMappings = true`); collection properties are NOT auto-mapped on a parent object |
+| `mapper.Map(src, dest)` pattern | A void partial method with a `[UseExistingValue]` destination parameter (e.g., `ForgeInto(src, [UseExistingValue] dest)`). The name `ForgeInto` is a convention, not required |
 
 **Common gotchas**:
 - AutoMapper is case-insensitive by default; ForgeMap is case-sensitive. Add `PropertyMatching = PropertyMatching.ByNameCaseInsensitive` if the project relies on case-insensitive matching.
@@ -406,7 +406,7 @@ Eliminate `IMappingService` and have all code depend directly on ForgeMap forger
 For every class that injects `IMappingService`:
 - Replace `IMappingService mappingService` with the appropriate forger class (e.g., `AppForger forger`)
 - Replace `_mappingService.Map<UserDto>(user)` with `_forger.Forge(user)` (direct forge calls)
-- Replace `_mappingService.Map(source, dest)` with `_forger.ForgeInto(source, dest)`
+- Replace `_mappingService.Map(source, dest)` with a call to the generated void method with `[UseExistingValue]` (often named `ForgeInto`, e.g., `_forger.ForgeInto(source, dest)`)
 
 #### 4.2 Delete abstraction layer files
 
