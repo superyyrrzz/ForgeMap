@@ -7,6 +7,25 @@ using Microsoft.CodeAnalysis;
 namespace ForgeMap.Generator;
 
 /// <summary>
+/// Resolved configuration for a forger class, combining assembly-level defaults
+/// and class-level [ForgeMap] attribute overrides.
+/// </summary>
+internal sealed class ForgerConfig
+{
+    /// <summary>0 = ReturnNull (default), 1 = ThrowException</summary>
+    public int NullHandling { get; set; }
+
+    /// <summary>0 = ByName (default, case-sensitive), 1 = ByNameCaseInsensitive</summary>
+    public int PropertyMatching { get; set; }
+
+    /// <summary>Diagnostic IDs to suppress for this forger (e.g. "FM0005").</summary>
+    public HashSet<string> SuppressDiagnostics { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    public StringComparison PropertyNameComparison =>
+        PropertyMatching == 1 ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+}
+
+/// <summary>
 /// Emits generated forging code for ForgeMap forger classes.
 /// </summary>
 internal sealed class ForgeCodeEmitter
@@ -18,8 +37,10 @@ internal sealed class ForgeCodeEmitter
     private readonly INamedTypeSymbol? _reverseForgeAttributeSymbol;
     private readonly INamedTypeSymbol? _beforeForgeAttributeSymbol;
     private readonly INamedTypeSymbol? _afterForgeAttributeSymbol;
+    private readonly ForgerConfig _assemblyDefaults;
+    private ForgerConfig _config = null!;
 
-    public ForgeCodeEmitter(Compilation compilation)
+    public ForgeCodeEmitter(Compilation compilation, ForgerConfig assemblyDefaults)
     {
         _ignoreAttributeSymbol = compilation.GetTypeByMetadataName("ForgeMap.IgnoreAttribute");
         _forgePropertyAttributeSymbol = compilation.GetTypeByMetadataName("ForgeMap.ForgePropertyAttribute");
@@ -28,10 +49,85 @@ internal sealed class ForgeCodeEmitter
         _reverseForgeAttributeSymbol = compilation.GetTypeByMetadataName("ForgeMap.ReverseForgeAttribute");
         _beforeForgeAttributeSymbol = compilation.GetTypeByMetadataName("ForgeMap.BeforeForgeAttribute");
         _afterForgeAttributeSymbol = compilation.GetTypeByMetadataName("ForgeMap.AfterForgeAttribute");
+        _assemblyDefaults = assemblyDefaults;
+    }
+
+    /// <summary>
+    /// Resolves the effective configuration for a forger class by overlaying
+    /// class-level [ForgeMap] attribute settings on top of assembly defaults.
+    /// </summary>
+    private ForgerConfig ResolveForgerConfig(ForgerInfo forger)
+    {
+        var config = new ForgerConfig
+        {
+            NullHandling = _assemblyDefaults.NullHandling,
+            PropertyMatching = _assemblyDefaults.PropertyMatching,
+            SuppressDiagnostics = new HashSet<string>(_assemblyDefaults.SuppressDiagnostics, StringComparer.OrdinalIgnoreCase),
+        };
+
+        var attr = forger.ForgeMapAttribute;
+        foreach (var named in attr.NamedArguments)
+        {
+            switch (named.Key)
+            {
+                case "NullHandling":
+                    config.NullHandling = (int)named.Value.Value!;
+                    break;
+                case "PropertyMatching":
+                    config.PropertyMatching = (int)named.Value.Value!;
+                    break;
+                case "SuppressDiagnostics":
+                    if (!named.Value.IsNull)
+                    {
+                        foreach (var item in named.Value.Values)
+                        {
+                            if (item.Value is string s)
+                                config.SuppressDiagnostics.Add(s);
+                        }
+                    }
+                    break;
+            }
+        }
+
+        return config;
+    }
+
+    /// <summary>
+    /// Reports a diagnostic unless it is suppressed by the forger's SuppressDiagnostics config.
+    /// </summary>
+    private void ReportDiagnosticIfNotSuppressed(
+        SourceProductionContext context,
+        DiagnosticDescriptor descriptor,
+        Location? location,
+        params object?[] messageArgs)
+    {
+        if (_config.SuppressDiagnostics.Contains(descriptor.Id))
+            return;
+
+        context.ReportDiagnostic(Diagnostic.Create(descriptor, location, messageArgs));
+    }
+
+    /// <summary>
+    /// Generates the null-check code for source parameter based on NullHandling config.
+    /// For ReturnNull: "if (source == null) return {nullReturn};" (or "return;" if nullReturn is null)
+    /// For ThrowException: "global::System.ArgumentNullException.ThrowIfNull(source);"
+    /// </summary>
+    private string GenerateNullCheck(string sourceParam, string? nullReturn)
+    {
+        if (_config.NullHandling == 1) // ThrowException
+        {
+            return $"            global::System.ArgumentNullException.ThrowIfNull({sourceParam});";
+        }
+
+        // ReturnNull (default)
+        if (nullReturn == null)
+            return $"            if ({sourceParam} == null) return;";
+        return $"            if ({sourceParam} == null) return {nullReturn};";
     }
 
     public string GenerateForger(ForgerInfo forger, SourceProductionContext context)
     {
+        _config = ResolveForgerConfig(forger);
         var sb = new StringBuilder();
 
         // File header
@@ -243,10 +339,10 @@ internal sealed class ForgeCodeEmitter
         // Emit FM0012 warnings for [ForgeFrom] properties
         foreach (var kvp in forwardResolverMappings)
         {
-            context.ReportDiagnostic(Diagnostic.Create(
+            ReportDiagnosticIfNotSuppressed(context,
                 DiagnosticDescriptors.ForgeFromCannotBeReversed,
                 forwardMethod.Locations.FirstOrDefault(),
-                kvp.Key));
+                kvp.Key);
         }
 
         // Build reverse [ForgeWith] mappings and emit FM0015 warnings where nested method lacks [ReverseForge]
@@ -313,18 +409,18 @@ internal sealed class ForgeCodeEmitter
                 }
                 else
                 {
-                    context.ReportDiagnostic(Diagnostic.Create(
+                    ReportDiagnosticIfNotSuppressed(context,
                         DiagnosticDescriptors.ForgeWithLacksReverseForge,
                         forwardMethod.Locations.FirstOrDefault(),
-                        forgingMethodName));
+                        forgingMethodName);
                 }
             }
             else
             {
-                context.ReportDiagnostic(Diagnostic.Create(
+                ReportDiagnosticIfNotSuppressed(context,
                     DiagnosticDescriptors.ForgeWithLacksReverseForge,
                     forwardMethod.Locations.FirstOrDefault(),
-                    forgingMethodName));
+                    forgingMethodName);
             }
         }
 
@@ -342,7 +438,7 @@ internal sealed class ForgeCodeEmitter
         if (reverseSourceType.IsReferenceType)
         {
             var nullReturn = reverseDestType.IsValueType ? "default" : "null!";
-            sb.AppendLine($"            if ({sourceParam} == null) return {nullReturn};");
+            sb.AppendLine(GenerateNullCheck(sourceParam, nullReturn));
             sb.AppendLine();
         }
 
@@ -472,7 +568,7 @@ internal sealed class ForgeCodeEmitter
             else
             {
                 var match = sourceProperties.FirstOrDefault(sp =>
-                    string.Equals(sp.Name, destProp.Name, StringComparison.Ordinal));
+                    string.Equals(sp.Name, destProp.Name, _config.PropertyNameComparison));
                 if (match != null)
                     sourcePropName = match.Name;
             }
@@ -647,7 +743,7 @@ internal sealed class ForgeCodeEmitter
         sb.AppendLine("        {");
 
         // Null check
-        sb.AppendLine($"            if ({sourceParam} == null) return null!;");
+        sb.AppendLine(GenerateNullCheck(sourceParam, "null!"));
         sb.AppendLine();
 
         // [BeforeForge] callbacks
@@ -825,7 +921,7 @@ internal sealed class ForgeCodeEmitter
 
         // Try to find matching source property by name (convention)
         var sourceProp = sourceProperties.FirstOrDefault(sp =>
-            string.Equals(sp.Name, destProp.Name, StringComparison.Ordinal));
+            string.Equals(sp.Name, destProp.Name, _config.PropertyNameComparison));
 
         if (sourceProp != null && CanAssign(sourceProp.Type, destProp.Type))
         {
@@ -878,10 +974,10 @@ internal sealed class ForgeCodeEmitter
 
         if (resolverMethod == null)
         {
-            context.ReportDiagnostic(Diagnostic.Create(
+            ReportDiagnosticIfNotSuppressed(context,
                 DiagnosticDescriptors.ResolverMethodNotFound,
                 method.Locations.FirstOrDefault(),
-                resolverMethodName));
+                resolverMethodName);
             return null;
         }
 
@@ -910,10 +1006,10 @@ internal sealed class ForgeCodeEmitter
         }
         else
         {
-            context.ReportDiagnostic(Diagnostic.Create(
+            ReportDiagnosticIfNotSuppressed(context,
                 DiagnosticDescriptors.InvalidResolverSignature,
                 method.Locations.FirstOrDefault(),
-                resolverMethodName));
+                resolverMethodName);
             return null;
         }
     }
@@ -940,7 +1036,7 @@ internal sealed class ForgeCodeEmitter
         else
         {
             var matchingSourceProp = sourceProperties.FirstOrDefault(sp =>
-                string.Equals(sp.Name, destProp.Name, StringComparison.Ordinal));
+                string.Equals(sp.Name, destProp.Name, _config.PropertyNameComparison));
             if (matchingSourceProp != null)
                 forgeWithSourcePropName = matchingSourceProp.Name;
         }
@@ -967,10 +1063,10 @@ internal sealed class ForgeCodeEmitter
             }
         }
 
-        context.ReportDiagnostic(Diagnostic.Create(
+        ReportDiagnosticIfNotSuppressed(context,
             DiagnosticDescriptors.ResolverMethodNotFound,
             method.Locations.FirstOrDefault(),
-            forgingMethodName));
+            forgingMethodName);
         return null;
     }
 
@@ -1077,10 +1173,10 @@ internal sealed class ForgeCodeEmitter
 
         if (constructors.Count == 0)
         {
-            context.ReportDiagnostic(Diagnostic.Create(
+            ReportDiagnosticIfNotSuppressed(context,
                 DiagnosticDescriptors.DestinationTypeHasNoConstructor,
                 method.Locations.FirstOrDefault(),
-                destinationType.Name));
+                destinationType.Name);
             return (null, null);
         }
 
@@ -1158,11 +1254,11 @@ internal sealed class ForgeCodeEmitter
                     || sourcePropertiesList.Any(sp => string.Equals(sp.Name, param.Name, StringComparison.OrdinalIgnoreCase));
                 if (!found)
                 {
-                    context.ReportDiagnostic(Diagnostic.Create(
+                    ReportDiagnosticIfNotSuppressed(context,
                         DiagnosticDescriptors.ConstructorParameterNotMatched,
                         method.Locations.FirstOrDefault(),
                         param.Name,
-                        destinationType.Name));
+                        destinationType.Name);
                 }
             }
             return (null, null);
@@ -1174,10 +1270,10 @@ internal sealed class ForgeCodeEmitter
 
         if (bestMatches.Count > 1)
         {
-            context.ReportDiagnostic(Diagnostic.Create(
+            ReportDiagnosticIfNotSuppressed(context,
                 DiagnosticDescriptors.AmbiguousConstructor,
                 method.Locations.FirstOrDefault(),
-                destinationType.Name));
+                destinationType.Name);
             return (null, null);
         }
 
@@ -1438,10 +1534,10 @@ internal sealed class ForgeCodeEmitter
 
         if (candidates.Count == 0)
         {
-            context.ReportDiagnostic(Diagnostic.Create(
+            ReportDiagnosticIfNotSuppressed(context,
                 DiagnosticDescriptors.HookMethodInvalid,
                 method.Locations.FirstOrDefault(),
-                hookMethodName));
+                hookMethodName);
             return false;
         }
 
@@ -1453,10 +1549,10 @@ internal sealed class ForgeCodeEmitter
             return true;
 
         // Multiple assignable candidates with no exact match — ambiguous
-        context.ReportDiagnostic(Diagnostic.Create(
+        ReportDiagnosticIfNotSuppressed(context,
             DiagnosticDescriptors.HookMethodInvalid,
             method.Locations.FirstOrDefault(),
-            hookMethodName));
+            hookMethodName);
         return false;
     }
 
@@ -1487,10 +1583,10 @@ internal sealed class ForgeCodeEmitter
 
         if (candidates.Count == 0)
         {
-            context.ReportDiagnostic(Diagnostic.Create(
+            ReportDiagnosticIfNotSuppressed(context,
                 DiagnosticDescriptors.HookMethodInvalid,
                 method.Locations.FirstOrDefault(),
-                hookMethodName));
+                hookMethodName);
             return false;
         }
 
@@ -1503,10 +1599,10 @@ internal sealed class ForgeCodeEmitter
             return true;
 
         // Multiple assignable candidates with no exact match — ambiguous
-        context.ReportDiagnostic(Diagnostic.Create(
+        ReportDiagnosticIfNotSuppressed(context,
             DiagnosticDescriptors.HookMethodInvalid,
             method.Locations.FirstOrDefault(),
-            hookMethodName));
+            hookMethodName);
         return false;
     }
 
@@ -1523,9 +1619,9 @@ internal sealed class ForgeCodeEmitter
 
         if (hasHooks)
         {
-            context.ReportDiagnostic(Diagnostic.Create(
+            ReportDiagnosticIfNotSuppressed(context,
                 DiagnosticDescriptors.HooksNotSupportedOnMethodKind,
-                method.Locations.FirstOrDefault()));
+                method.Locations.FirstOrDefault());
         }
     }
 
@@ -1710,7 +1806,7 @@ internal sealed class ForgeCodeEmitter
 
         // Null checks
         sb.AppendLine($"            if ({destParam} == null) throw new global::System.ArgumentNullException(nameof({destParam}));");
-        sb.AppendLine($"            if ({sourceParam} == null) return;");
+        sb.AppendLine(GenerateNullCheck(sourceParam, null));
         sb.AppendLine();
 
         // [BeforeForge] callbacks
@@ -1759,10 +1855,10 @@ internal sealed class ForgeCodeEmitter
 
                 if (resolverMethod == null)
                 {
-                    context.ReportDiagnostic(Diagnostic.Create(
+                    ReportDiagnosticIfNotSuppressed(context,
                         DiagnosticDescriptors.ResolverMethodNotFound,
                         method.Locations.FirstOrDefault(),
-                        resolverMethodName));
+                        resolverMethodName);
                     continue;
                 }
 
@@ -1798,10 +1894,10 @@ internal sealed class ForgeCodeEmitter
                 }
                 else
                 {
-                    context.ReportDiagnostic(Diagnostic.Create(
+                    ReportDiagnosticIfNotSuppressed(context,
                         DiagnosticDescriptors.InvalidResolverSignature,
                         method.Locations.FirstOrDefault(),
-                        resolverMethodName));
+                        resolverMethodName);
                     continue;
                 }
 
@@ -1820,7 +1916,7 @@ internal sealed class ForgeCodeEmitter
                 else
                 {
                     var matchingSourceProp = sourceProperties.FirstOrDefault(sp =>
-                        string.Equals(sp.Name, destProp.Name, StringComparison.Ordinal));
+                        string.Equals(sp.Name, destProp.Name, _config.PropertyNameComparison));
                     if (matchingSourceProp != null)
                         forgeWithSourcePropName = matchingSourceProp.Name;
                 }
@@ -1851,10 +1947,10 @@ internal sealed class ForgeCodeEmitter
                     }
                 }
 
-                context.ReportDiagnostic(Diagnostic.Create(
+                ReportDiagnosticIfNotSuppressed(context,
                     DiagnosticDescriptors.ResolverMethodNotFound,
                     method.Locations.FirstOrDefault(),
-                    forgingMethodName));
+                    forgingMethodName);
                 continue;
             }
 
@@ -1869,7 +1965,7 @@ internal sealed class ForgeCodeEmitter
             }
 
             var sourceProp = sourceProperties.FirstOrDefault(sp =>
-                string.Equals(sp.Name, destProp.Name, StringComparison.Ordinal));
+                string.Equals(sp.Name, destProp.Name, _config.PropertyNameComparison));
 
             if (sourceProp != null && CanAssign(sourceProp.Type, destProp.Type))
             {
@@ -1914,10 +2010,10 @@ internal sealed class ForgeCodeEmitter
         var elementForgeMethod = FindForgingMethod(forger.Symbol, method.Name, sourceElementType, destElementType);
         if (elementForgeMethod == null)
         {
-            context.ReportDiagnostic(Diagnostic.Create(
+            ReportDiagnosticIfNotSuppressed(context,
                 DiagnosticDescriptors.ResolverMethodNotFound,
                 method.Locations.FirstOrDefault(),
-                $"{method.Name}({sourceElementType.ToDisplayString()})"));
+                $"{method.Name}({sourceElementType.ToDisplayString()})");
             return string.Empty;
         }
 
