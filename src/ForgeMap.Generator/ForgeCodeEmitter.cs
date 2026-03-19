@@ -1175,10 +1175,9 @@ internal sealed class ForgeCodeEmitter
                 if (newStartIndex == destName.Length)
                 {
                     // Full match - this property is the leaf
+                    // Use null-conditional only if the chain already has ?. (ancestor was nullable)
                     string leafExpr;
-                    if (prop.Type.IsReferenceType)
-                        leafExpr = $"{currentExpr}?.{propName}!";
-                    else if (currentExpr.Contains("?."))
+                    if (currentExpr.Contains("?."))
                         leafExpr = $"{currentExpr}?.{propName}!";
                     else
                         leafExpr = $"{currentExpr}.{propName}";

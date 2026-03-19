@@ -133,14 +133,10 @@ public sealed class ForgeMapGenerator : IIncrementalGenerator
         SourceProductionContext context)
     {
         // Only generate if the user references Microsoft.Extensions.DependencyInjection.Abstractions
-        var serviceCollectionSymbol = compilation.GetTypeByMetadataName(
-            "Microsoft.Extensions.DependencyInjection.IServiceCollection");
-        if (serviceCollectionSymbol == null)
+        if (compilation.GetTypeByMetadataName("Microsoft.Extensions.DependencyInjection.IServiceCollection") == null)
             return;
 
-        var serviceLifetimeSymbol = compilation.GetTypeByMetadataName(
-            "Microsoft.Extensions.DependencyInjection.ServiceLifetime");
-        if (serviceLifetimeSymbol == null)
+        if (compilation.GetTypeByMetadataName("Microsoft.Extensions.DependencyInjection.ServiceLifetime") == null)
             return;
 
         var iServiceProviderSymbol = compilation.GetTypeByMetadataName("System.IServiceProvider");
