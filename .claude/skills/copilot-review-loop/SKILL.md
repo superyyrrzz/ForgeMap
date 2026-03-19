@@ -10,8 +10,9 @@ description: >
 # Copilot Review Loop
 
 Request GitHub Copilot to review a PR, then monitor for comments on a 5-minute loop.
-Each iteration: ensure review is requested, check for unresolved comments, fix valid issues,
-reply, resolve threads, and re-trigger Copilot review — repeating until no new comments appear.
+Each iteration: ensure review is requested, **wait for review completion**, check for unresolved
+comments, fix valid issues, reply, resolve threads, and re-trigger Copilot review — repeating
+until no new comments appear.
 
 ## PR number detection
 
@@ -41,7 +42,7 @@ gh api repos/{OWNER}/{REPO}/pulls/{PR_NUMBER}/requested_reviewers \
 
 Execute this exact sequence every iteration. **Every step is mandatory — never skip the re-trigger step.**
 
-### Step 1 — Ensure Copilot has reviewed the latest commit
+### Step 1 — BLOCK until Copilot has reviewed the latest commit
 
 Check whether Copilot has already reviewed the PR's latest (HEAD) commit:
 
@@ -54,9 +55,15 @@ gh api repos/{OWNER}/{REPO}/pulls/{PR_NUMBER}/reviews \
   --jq '[.[] | select(.user.login == "copilot-pull-request-reviewer[bot]")] | sort_by(.submitted_at) | last | .commit_id'
 ```
 
-- If Copilot's latest review `commit_id` does NOT match `HEAD_SHA`, request a new review (see "Copilot review request" above) and **wait ~60 seconds** before checking for comments, to give Copilot time to analyze the diff.
-- If Copilot's latest review `commit_id` matches `HEAD_SHA`, proceed to check comments.
-- If Copilot has never reviewed this PR, request a review and wait.
+**CRITICAL: You MUST wait for Copilot to finish reviewing the HEAD commit before proceeding.**
+
+- If Copilot's latest review `commit_id` matches `HEAD_SHA` → proceed to Step 2.
+- If Copilot's latest review `commit_id` does NOT match `HEAD_SHA`, or Copilot has never reviewed:
+  1. Request a new review (see "Copilot review request" above).
+  2. **Poll in a loop**: sleep 30 seconds, then re-check the review `commit_id`. Repeat until it matches `HEAD_SHA` or you have waited **5 minutes total** (10 retries × 30s).
+  3. If after 5 minutes Copilot still hasn't reviewed, **skip this iteration entirely** — do NOT check for comments, do NOT count it as a clean iteration. Just let the cron reschedule.
+
+**Why this matters**: If you check for unresolved comments before Copilot has finished reviewing, you'll find zero comments and incorrectly count the iteration as "clean". This causes the loop to exit prematurely while Copilot's review comments are still incoming.
 
 ### Step 2 — Fetch unresolved threads
 
@@ -93,7 +100,11 @@ Also check `state` — if the PR is `MERGED` or `CLOSED`, stop the loop immediat
 
 ### Step 3 — If no unresolved Copilot comments
 
-Report "No unresolved Copilot review comments. PR is clean." and **stop the loop** (cancel the cron job).
+Only count as a clean iteration if **Step 1 confirmed Copilot reviewed the HEAD commit**.
+
+Report "No unresolved Copilot review comments. PR is clean. (Consecutive clean: N/3)"
+
+If this is the 3rd consecutive clean iteration, **stop the loop** (cancel the cron job). Otherwise, let the cron continue.
 
 ### Step 4 — For each unresolved comment
 
@@ -115,6 +126,8 @@ git add <changed files>
 git commit -m "<message>"
 git push origin <branch>
 ```
+
+**Reset the consecutive clean counter to 0** (since we just pushed new code that needs review).
 
 ### Step 6 — Re-trigger Copilot review (MANDATORY)
 
@@ -145,14 +158,15 @@ After the first iteration completes, use `CronCreate` to schedule recurring chec
 1. **Always use `copilot-pull-request-reviewer[bot]`** — never use just `"copilot"` as the reviewer name. The short name silently returns 200 but does nothing.
 2. **Never skip the re-trigger step** — this was the #1 failure mode in manual runs. Even if no comments were found, if you just pushed a fix, ALWAYS re-trigger.
 3. **Atomic iterations** — each iteration must complete the full check→fix→push→reply→resolve→re-trigger cycle before the next one starts.
-4. **Max consecutive clean iterations**: If 3 consecutive iterations find no new comments, stop the loop and report success.
-5. **Max total iterations**: Stop after 20 total iterations to prevent infinite loops. Report remaining unresolved comments if any.
-6. **Build verification**: Always build and test after code changes, before committing.
+4. **NEVER count an iteration as "clean" unless Copilot has reviewed the HEAD commit** — this was the #2 failure mode. The cron would fire, see 0 unresolved comments (because Copilot hadn't reviewed yet), count it as clean, and prematurely exit after 3 such false-clean iterations.
+5. **Max consecutive clean iterations**: If 3 consecutive iterations find no new comments AND Copilot has reviewed the HEAD commit in each, stop the loop and report success.
+6. **Max total iterations**: Stop after 20 total iterations to prevent infinite loops. Report remaining unresolved comments if any.
+7. **Build verification**: Always build and test after code changes, before committing.
 
 ## Stop conditions
 
 The loop stops when ANY of these are true:
-- 3 consecutive iterations with no new Copilot comments
+- 3 consecutive **confirmed-clean** iterations (Copilot reviewed HEAD and left no new comments)
 - 20 total iterations reached
 - The PR is merged or closed
 - User cancels via `CronDelete`
