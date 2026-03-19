@@ -67,12 +67,14 @@ Create `IMappingService.cs` (or a similar name matching project conventions) wit
 ```csharp
 public interface IMappingService
 {
-    TDestination Map<TDestination>(object source);
-    TDestination Map<TSource, TDestination>(TSource source);
+    TDestination Map<TDestination>(object? source);
+    TDestination Map<TSource, TDestination>(TSource? source);
     void Map<TSource, TDestination>(TSource source, TDestination destination);
     // Only include overloads that are actually called in the codebase
 }
 ```
+
+**NOTE**: Use nullable parameter types (`object?`, `TSource?`) for source parameters that accept null, since modern .NET projects typically enable nullable reference types.
 
 **CRITICAL**: Do NOT expose `IMapper`, `Profile`, `MapperConfiguration`, or any AutoMapper type in the interface. The interface must be purely in terms of the project's own domain types.
 
@@ -87,8 +89,8 @@ internal class AutoMapperMappingService : IMappingService
 
     public AutoMapperMappingService(IMapper mapper) => _mapper = mapper;
 
-    public TDestination Map<TDestination>(object source) => _mapper.Map<TDestination>(source);
-    public TDestination Map<TSource, TDestination>(TSource source) => _mapper.Map<TSource, TDestination>(source);
+    public TDestination Map<TDestination>(object? source) => _mapper.Map<TDestination>(source);
+    public TDestination Map<TSource, TDestination>(TSource? source) => _mapper.Map<TSource, TDestination>(source);
     public void Map<TSource, TDestination>(TSource source, TDestination destination) => _mapper.Map(source, destination);
 }
 ```
@@ -186,7 +188,8 @@ public void Map_User_To_UserDto_MapsAllProperties()
 [Fact]
 public void Map_User_To_UserDto_NullSource_ReturnsNull()
 {
-    var dto = _sut.Map<User, UserDto>(null);
+    User? user = null;
+    var dto = _sut.Map<User, UserDto>(user);
     Assert.Null(dto);
 }
 ```
@@ -236,6 +239,8 @@ Swap the `AutoMapperMappingService` implementation with a `ForgeMapMappingServic
 
 Pin to a specific known-good version for reproducible builds. Update intentionally when needed.
 
+**NOTE**: Some features in the API mapping reference (e.g., `[ConvertWith]`) require ForgeMap 1.1+. If you need those features, pin to the minimum version that includes them. The reference guide marks version requirements where they differ from 1.0.
+
 Remove the AutoMapper package reference ONLY after all tests pass. For now, keep both.
 
 #### 3.2 Translate Profile classes to Forger classes
@@ -258,7 +263,7 @@ For each AutoMapper `Profile`, create a corresponding `[ForgeMap]` partial class
 
 **Common gotchas**:
 - AutoMapper is case-insensitive by default; ForgeMap is case-sensitive. Add `PropertyMatching = PropertyMatching.ByNameCaseInsensitive` if the project relies on case-insensitive matching.
-- AutoMapper auto-flattens (e.g., `Order.Customer.Name` → `CustomerName`). ForgeMap requires explicit `[ForgeProperty("Customer.Name", "CustomerName")]`.
+- AutoMapper auto-flattens (e.g., `Order.Customer.Name` → `CustomerName`). ForgeMap requires explicit `[ForgeProperty("Customer.Name", nameof(OrderDto.CustomerName))]`.
 - AutoMapper auto-discovers nested maps. ForgeMap requires explicit `[ForgeWith]`.
 - `ProjectTo<T>()` has NO ForgeMap equivalent. These call sites must be rewritten to materialize the query first, then map in-memory: `query.ToList().Select(x => forger.Forge(x)).ToList()`. Warn the user about potential performance implications.
 
@@ -271,7 +276,7 @@ internal class ForgeMapMappingService : IMappingService
 
     public ForgeMapMappingService(AppForger forger) => _forger = forger;
 
-    public TDestination Map<TDestination>(object source)
+    public TDestination Map<TDestination>(object? source)
     {
         // Handle null source — AutoMapper returns default(TDestination) for null
         if (source is null) return default!;
@@ -287,7 +292,7 @@ internal class ForgeMapMappingService : IMappingService
         };
     }
 
-    public TDestination Map<TSource, TDestination>(TSource source)
+    public TDestination Map<TSource, TDestination>(TSource? source)
     {
         // Similar dispatch based on TSource and TDestination
         // This can reuse the same switch logic
@@ -450,7 +455,7 @@ Common issues:
 - **Missing `partial` keyword**: Forger classes and forge methods MUST be `partial`
 - **Namespace mismatch**: Ensure ForgeMap attributes are imported (`using ForgeMap;`)
 - **Diagnostic FM0005** (unmapped source property): Add `[Ignore]` or `SuppressDiagnostics = new[] { "FM0005" }` if intentional
-- **Diagnostic FM0007** (forge method must return class/struct/record): Check return types
+- **Diagnostic FM0007** (nullable to non-nullable mapping): A nullable source property is mapped to a non-nullable destination — make the destination nullable, adjust null handling, or use `[ForgeFrom]` to provide a non-null fallback
 - **Diagnostic FM0015** (`[ForgeWith]` target missing `[ReverseForge]`): Add `[ReverseForge]` to nested method or remove from parent
 
 ### Test failures in step 3

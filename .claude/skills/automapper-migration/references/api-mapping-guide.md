@@ -20,7 +20,7 @@ This reference maps AutoMapper patterns to their ForgeMap equivalents.
 | `.ForMember(d => d.X, o => o.MapFrom(s => s.Y))` | `[ForgeProperty(nameof(S.Y), nameof(D.X))]` | Attribute on the forge method |
 | `.ForMember(d => d.X, o => o.Ignore())` | `[Ignore(nameof(D.X))]` | Attribute on the forge method |
 | `.ForMember(d => d.X, o => o.MapFrom(s => s.A.B))` | `[ForgeProperty("A.B", nameof(D.X))]` | Dot notation for nested access |
-| Flattening (`Order.CustomerName` from `Order.Customer.Name`) | `[ForgeProperty("Customer.Name", "CustomerName")]` | Explicit flattening with dot notation |
+| Flattening (`Order.CustomerName` from `Order.Customer.Name`) | `[ForgeProperty("Customer.Name", nameof(OrderDto.CustomerName))]` | Explicit flattening with dot notation |
 
 ## Custom Resolution
 
@@ -28,7 +28,7 @@ This reference maps AutoMapper patterns to their ForgeMap equivalents.
 |---|---|---|
 | `IValueResolver<S,D,TVal>` | `[ForgeFrom(nameof(D.DestProp), nameof(ResolverMethod))]` | Static/instance method on the forger class |
 | `.MapFrom(s => expr)` | `[ForgeFrom(nameof(D.DestProp), nameof(Method))]` | Resolver method returns value |
-| `ITypeConverter<S,D>` | `[ConvertWith(typeof(Converter))]` (v1.1+) | Implements `ITypeConverter<S,D>` |
+| `ITypeConverter<S,D>` | `[ConvertWith(typeof(Converter))]` | Implements `ITypeConverter<S,D>`. **Requires ForgeMap 1.1+** — use `[ForgeFrom]` resolvers on 1.0 |
 
 ### Resolver method signatures
 
@@ -145,7 +145,7 @@ public partial class OrderForger
 | `ProjectTo<T>()` (IQueryable) | Map in-memory after materializing the query |
 | `ConstructUsing()` | Use record types with constructor mapping (auto-detected) |
 | Conditional mapping (`.PreCondition()`) | Use `[BeforeForge]` to validate, or `[ForgeFrom]` with conditional logic |
-| Value converters (global type conversion) | `[ConvertWith]` per method (v1.1+), or `[ForgeFrom]` resolvers |
+| Value converters (global type conversion) | `[ConvertWith]` per method (**requires v1.1+**), or `[ForgeFrom]` resolvers (v1.0) |
 | Mapping inheritance (`.Include<>()`, `.IncludeBase<>()`) | Declare separate forge methods, use `[ForgeWith]` for shared parts |
 | Dynamic/runtime mapping | Not supported — ForgeMap is compile-time only |
 
