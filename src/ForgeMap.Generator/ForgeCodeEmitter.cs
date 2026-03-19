@@ -1123,7 +1123,14 @@ internal sealed class ForgeCodeEmitter
         ITypeSymbol destPropertyType)
     {
         if (sourcePropertyType != null && IsNullableToNonNullableValueType(sourcePropertyType, destPropertyType))
-            return $"({destPropertyType.ToDisplayString()}){sourceExpression}!";
+            return sourceExpression.Contains("?.") ? $"({destPropertyType.ToDisplayString()})({sourceExpression})!" : $"({destPropertyType.ToDisplayString()}){sourceExpression}!";
+
+        // Handle lifted value type from null-conditional: source.Customer?.Age is int?
+        // even though Age is int — cast back to the destination type
+        if (sourceExpression.Contains("?.") && sourcePropertyType != null
+            && sourcePropertyType.IsValueType && GetNullableUnderlyingType(sourcePropertyType) == null
+            && destPropertyType.IsValueType && GetNullableUnderlyingType(destPropertyType) == null)
+            return $"({destPropertyType.ToDisplayString()})({sourceExpression})!";
 
         return sourceExpression;
     }
