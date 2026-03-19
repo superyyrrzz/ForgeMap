@@ -83,7 +83,7 @@ public interface IMappingService
 Create `AutoMapperMappingService.cs` that implements `IMappingService` by delegating to AutoMapper's `IMapper`:
 
 ```csharp
-internal class AutoMapperMappingService : IMappingService
+public class AutoMapperMappingService : IMappingService
 {
     private readonly IMapper _mapper;
 
@@ -270,7 +270,7 @@ For each AutoMapper `Profile`, create a corresponding `[ForgeMap]` partial class
 #### 3.3 Create ForgeMapMappingService
 
 ```csharp
-internal class ForgeMapMappingService : IMappingService
+public class ForgeMapMappingService : IMappingService
 {
     private readonly AppForger _forger; // or multiple forgers
 
@@ -294,8 +294,8 @@ internal class ForgeMapMappingService : IMappingService
 
     public TDestination Map<TSource, TDestination>(TSource? source)
     {
-        // Similar dispatch based on TSource and TDestination
-        // This can reuse the same switch logic
+        if (source is null) return default!;
+        return Map<TDestination>((object)source);
     }
 
     public void Map<TSource, TDestination>(TSource source, TDestination destination)
