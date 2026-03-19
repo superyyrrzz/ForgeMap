@@ -1998,7 +1998,7 @@ internal sealed class ForgeCodeEmitter
                                 sb.AppendLine($"            if ({sourceExpr} is {{ }} {localVarName})");
                                 sb.AppendLine($"                {destParam}.{destProp.Name} = {forgingMethodName}({localVarName});");
                                 sb.AppendLine($"            else");
-                                var nullAssign = destProp.Type.IsValueType ? "default" : "null";
+                                var nullAssign = destProp.Type.IsValueType ? "default" : "null!";
                                 sb.AppendLine($"                {destParam}.{destProp.Name} = {nullAssign};");
                             }
                             else
