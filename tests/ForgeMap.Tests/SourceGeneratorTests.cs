@@ -1635,6 +1635,7 @@ public class HookGeneratorTests
 
         var (diagnostics, _) = RunGenerator(source);
 
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
         var warning = diagnostics.FirstOrDefault(d => d.Id == "FM0018");
         Assert.NotNull(warning);
         Assert.Equal(DiagnosticSeverity.Warning, warning.Severity);

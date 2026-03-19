@@ -1429,6 +1429,7 @@ internal sealed class ForgeCodeEmitter
         var candidates = forger.Symbol.GetMembers(hookMethodName)
             .OfType<IMethodSymbol>()
             .Where(m => m.ReturnsVoid && m.Parameters.Length == 1 &&
+                !m.IsGenericMethod &&
                 m.Parameters[0].RefKind == RefKind.None &&
                 !m.Parameters[0].IsParams &&
                 (SymbolEqualityComparer.Default.Equals(m.Parameters[0].Type, sourceType) ||
@@ -1473,6 +1474,7 @@ internal sealed class ForgeCodeEmitter
         var candidates = forger.Symbol.GetMembers(hookMethodName)
             .OfType<IMethodSymbol>()
             .Where(m => m.ReturnsVoid && m.Parameters.Length == 2 &&
+                !m.IsGenericMethod &&
                 m.Parameters[0].RefKind == RefKind.None &&
                 !m.Parameters[0].IsParams &&
                 m.Parameters[1].RefKind == RefKind.None &&
