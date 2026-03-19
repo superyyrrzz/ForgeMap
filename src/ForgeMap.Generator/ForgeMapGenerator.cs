@@ -196,11 +196,11 @@ public sealed class ForgeMapGenerator : IIncrementalGenerator
 
             if (needsFactory)
             {
-                sb.AppendLine($"            services.Add(new global::Microsoft.Extensions.DependencyInjection.ServiceDescriptor(typeof({fullyQualifiedName}), {factoryExpr}, lifetime));");
+                sb.AppendLine($"            global::Microsoft.Extensions.DependencyInjection.Extensions.ServiceCollectionDescriptorExtensions.TryAdd(services, new global::Microsoft.Extensions.DependencyInjection.ServiceDescriptor(typeof({fullyQualifiedName}), {factoryExpr}, lifetime));");
             }
             else
             {
-                sb.AppendLine($"            services.Add(new global::Microsoft.Extensions.DependencyInjection.ServiceDescriptor(typeof({fullyQualifiedName}), typeof({fullyQualifiedName}), lifetime));");
+                sb.AppendLine($"            global::Microsoft.Extensions.DependencyInjection.Extensions.ServiceCollectionDescriptorExtensions.TryAdd(services, new global::Microsoft.Extensions.DependencyInjection.ServiceDescriptor(typeof({fullyQualifiedName}), typeof({fullyQualifiedName}), lifetime));");
             }
         }
 
