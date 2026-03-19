@@ -118,10 +118,6 @@ public sealed class ForgeMapGenerator : IIncrementalGenerator
                 case "PropertyMatching":
                     config.PropertyMatching = (int)named.Value.Value!;
                     break;
-                case "GenerateCollectionMappings":
-                    // Currently not used by emitter (collections are always generated)
-                    // Stored for future use
-                    break;
             }
         }
 
