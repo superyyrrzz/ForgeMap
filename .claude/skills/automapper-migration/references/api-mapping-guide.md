@@ -20,7 +20,7 @@ This reference maps AutoMapper patterns to their ForgeMap equivalents.
 | `.ForMember(d => d.X, o => o.MapFrom(s => s.Y))` | `[ForgeProperty(nameof(S.Y), nameof(D.X))]` | Attribute on the forge method |
 | `.ForMember(d => d.X, o => o.Ignore())` | `[Ignore(nameof(D.X))]` | Attribute on the forge method |
 | `.ForMember(d => d.X, o => o.MapFrom(s => s.A.B))` | `[ForgeProperty("A.B", nameof(D.X))]` | Dot notation for nested access |
-| Flattening (`Order.CustomerName` from `Order.Customer.Name`) | Auto-flattened by default | ForgeMap auto-flattens (e.g., `CustomerName` → `Customer.Name`); use `[ForgeProperty("Customer.Name", nameof(OrderDto.CustomerName))]` only when auto-flatten fails to match |
+| Flattening (`Order.CustomerName` from `Order.Customer.Name`) | Auto-flattened by convention (no attributes needed) | ForgeMap auto-flattens by convention (e.g., `CustomerName` → `Customer.Name`); use `[ForgeProperty("Customer.Name", nameof(OrderDto.CustomerName))]` only as an override when naming doesn't line up |
 
 ## Custom Resolution
 
@@ -94,7 +94,7 @@ public partial class OrderForger
 
 | AutoMapper | ForgeMap | Notes |
 |---|---|---|
-| Auto collection mapping | Auto-generated when `GenerateCollectionMappings = true` (default) | Supports `List<T>`, arrays, `IEnumerable<T>` |
+| Auto collection mapping | Auto-generated when `GenerateCollectionMappings = true` on `[assembly: ForgeMapDefaults(...)]` (assembly-level, default `true`) | Supports `List<T>`, arrays, `IEnumerable<T>` |
 | `.ProjectTo<D>(config)` | Not supported (compile-time only) | ForgeMap is source-generated, not queryable |
 
 ## DI Registration
@@ -124,7 +124,7 @@ public partial class OrderForger
 
 | AutoMapper | ForgeMap |
 |---|---|
-| Default: case-insensitive, flattening | Default: case-sensitive, auto-flatten enabled |
+| Default: case-insensitive, flattening | Default: case-sensitive; flattening via conventions and `[ForgeProperty]` |
 | N/A | `PropertyMatching = PropertyMatching.ByNameCaseInsensitive` |
 
 ## Assembly-Level Defaults
