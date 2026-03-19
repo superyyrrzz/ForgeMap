@@ -202,17 +202,25 @@ public partial OrderDto Forge(Order source);
 // Generates both Forge(Order) → OrderDto and Forge(OrderDto) → Order
 ```
 
-### Pattern 4: Nested object mapping
+### Pattern 4: Nested object and collection mapping
 
 ```csharp
 // BEFORE (AutoMapper)
 CreateMap<Order, OrderDto>();
-CreateMap<LineItem, LineItemDto>();
+CreateMap<Address, AddressDto>();  // nested single object
+CreateMap<LineItem, LineItemDto>(); // nested collection
 
-// AFTER (ForgeMap)
-[ForgeWith(nameof(OrderDto.Items), nameof(ForgeItem))]
+// AFTER (ForgeMap) — single nested object uses [ForgeWith]
+[ForgeWith(nameof(OrderDto.ShippingAddress), nameof(ForgeAddress))]
 public partial OrderDto Forge(Order source);
 
+public partial AddressDto ForgeAddress(Address source);
+
+// Collection properties (e.g., List<LineItem> → List<LineItemDto>) are
+// auto-mapped when an element forge method exists and
+// GenerateCollectionMappings = true (the default).
+// Do NOT use [ForgeWith] for collections — it expects the method to
+// accept/return the collection type, not individual elements.
 public partial LineItemDto ForgeItem(LineItem source);
 ```
 

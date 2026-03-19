@@ -262,7 +262,8 @@ For each AutoMapper `Profile`, create a corresponding `[ForgeMap]` partial class
 | `.BeforeMap(...)` | `[BeforeForge(nameof(MethodName))]` |
 | `.AfterMap(...)` | `[AfterForge(nameof(MethodName))]` |
 | `.ForMember(d => d.X, o => o.MapFrom(s => expr))` | `[ForgeFrom(nameof(D.X), nameof(ResolverMethod))]` + static method |
-| Nested `CreateMap<A,B>()` used in parent | `[ForgeWith(nameof(D.Prop), nameof(ForgeNested))]` + nested forge method |
+| Nested `CreateMap<A,B>()` used in parent | `[ForgeWith(nameof(D.Prop), nameof(ForgeNested))]` + nested forge method | For single nested objects only |
+| Nested collection (e.g., `List<A>` → `List<B>`) | Declare element forge method `partial B Forge(A source)` | Auto-mapped when `GenerateCollectionMappings = true` (default); do NOT use `[ForgeWith]` for collections |
 | `mapper.Map(src, dest)` pattern | `ForgeInto(src, [UseExistingValue] dest)` method |
 
 **Common gotchas**:
