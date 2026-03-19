@@ -20,7 +20,7 @@ This reference maps AutoMapper patterns to their ForgeMap equivalents.
 | `.ForMember(d => d.X, o => o.MapFrom(s => s.Y))` | `[ForgeProperty(nameof(S.Y), nameof(D.X))]` | Attribute on the forge method |
 | `.ForMember(d => d.X, o => o.Ignore())` | `[Ignore(nameof(D.X))]` | Attribute on the forge method |
 | `.ForMember(d => d.X, o => o.MapFrom(s => s.A.B))` | `[ForgeProperty("A.B", nameof(D.X))]` | Dot notation for nested access |
-| Flattening (`Order.CustomerName` from `Order.Customer.Name`) | `[ForgeProperty("Customer.Name", nameof(OrderDto.CustomerName))]` | Explicit flattening with dot notation |
+| Flattening (`Order.CustomerName` from `Order.Customer.Name`) | Auto-flattened by default | ForgeMap auto-flattens (e.g., `CustomerName` → `Customer.Name`); use `[ForgeProperty("Customer.Name", nameof(OrderDto.CustomerName))]` only when auto-flatten fails to match |
 
 ## Custom Resolution
 
@@ -124,7 +124,7 @@ public partial class OrderForger
 
 | AutoMapper | ForgeMap |
 |---|---|
-| Default: case-insensitive, flattening | Default: case-sensitive, no auto-flatten |
+| Default: case-insensitive, flattening | Default: case-sensitive, auto-flatten enabled |
 | N/A | `PropertyMatching = PropertyMatching.ByNameCaseInsensitive` |
 
 ## Assembly-Level Defaults

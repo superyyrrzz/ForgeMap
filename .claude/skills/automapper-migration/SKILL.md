@@ -67,14 +67,18 @@ Create `IMappingService.cs` (or a similar name matching project conventions) wit
 ```csharp
 public interface IMappingService
 {
+    [return: System.Diagnostics.CodeAnalysis.MaybeNull]
     TDestination Map<TDestination>(object? source);
+
+    [return: System.Diagnostics.CodeAnalysis.MaybeNull]
     TDestination Map<TSource, TDestination>(TSource? source);
+
     void Map<TSource, TDestination>(TSource source, TDestination destination);
     // Only include overloads that are actually called in the codebase
 }
 ```
 
-**NOTE**: Use nullable parameter types (`object?`, `TSource?`) for source parameters that accept null, since modern .NET projects typically enable nullable reference types.
+**NOTE**: Use nullable parameter types (`object?`, `TSource?`) for source parameters that accept null, since modern .NET projects typically enable nullable reference types. Use `[return: MaybeNull]` on the return type so nullable flow analysis correctly understands that null sources produce null results — this prevents callers from assuming non-null returns when the source may be null.
 
 **CRITICAL**: Do NOT expose `IMapper`, `Profile`, `MapperConfiguration`, or any AutoMapper type in the interface. The interface must be purely in terms of the project's own domain types.
 
@@ -263,7 +267,7 @@ For each AutoMapper `Profile`, create a corresponding `[ForgeMap]` partial class
 
 **Common gotchas**:
 - AutoMapper is case-insensitive by default; ForgeMap is case-sensitive. Add `PropertyMatching = PropertyMatching.ByNameCaseInsensitive` if the project relies on case-insensitive matching.
-- AutoMapper auto-flattens (e.g., `Order.Customer.Name` → `CustomerName`). ForgeMap requires explicit `[ForgeProperty("Customer.Name", nameof(OrderDto.CustomerName))]`.
+- AutoMapper auto-flattens (e.g., `Order.Customer.Name` → `CustomerName`). ForgeMap also auto-flattens by default (via `TryAutoFlatten`), but if auto-flatten fails to match, use explicit `[ForgeProperty("Customer.Name", nameof(OrderDto.CustomerName))]`.
 - AutoMapper auto-discovers nested maps. ForgeMap requires explicit `[ForgeWith]`.
 - `ProjectTo<T>()` has NO ForgeMap equivalent. These call sites must be rewritten to materialize the query first, then map in-memory: `query.ToList().Select(x => forger.Forge(x)).ToList()`. Warn the user about potential performance implications.
 
