@@ -231,8 +231,10 @@ Swap the `AutoMapperMappingService` implementation with a `ForgeMapMappingServic
 #### 3.1 Add ForgeMap NuGet package
 
 ```xml
-<PackageReference Include="ForgeMap" Version="1.*" />
+<PackageReference Include="ForgeMap" Version="1.0.0" />
 ```
+
+Pin to a specific known-good version for reproducible builds. Update intentionally when needed.
 
 Remove the AutoMapper package reference ONLY after all tests pass. For now, keep both.
 
@@ -248,10 +250,10 @@ For each AutoMapper `Profile`, create a corresponding `[ForgeMap]` partial class
 | `.ForMember(d => d.X, o => o.MapFrom(s => s.Y))` | `[ForgeProperty(nameof(S.Y), nameof(D.X))]` |
 | `.ForMember(d => d.X, o => o.Ignore())` | `[Ignore(nameof(D.X))]` |
 | `.ReverseMap()` | `[ReverseForge]` |
-| `.BeforeMap(...)` | `[BeforeForge("MethodName")]` |
-| `.AfterMap(...)` | `[AfterForge("MethodName")]` |
-| `.ForMember(d => d.X, o => o.MapFrom(s => expr))` | `[ForgeFrom(nameof(D.X), "ResolverMethod")]` + static method |
-| Nested `CreateMap<A,B>()` used in parent | `[ForgeWith(nameof(D.Prop), "ForgeNested")]` + nested forge method |
+| `.BeforeMap(...)` | `[BeforeForge(nameof(MethodName))]` |
+| `.AfterMap(...)` | `[AfterForge(nameof(MethodName))]` |
+| `.ForMember(d => d.X, o => o.MapFrom(s => expr))` | `[ForgeFrom(nameof(D.X), nameof(ResolverMethod))]` + static method |
+| Nested `CreateMap<A,B>()` used in parent | `[ForgeWith(nameof(D.Prop), nameof(ForgeNested))]` + nested forge method |
 | `mapper.Map(src, dest)` pattern | `ForgeInto(src, [UseExistingValue] dest)` method |
 
 **Common gotchas**:
@@ -271,6 +273,9 @@ internal class ForgeMapMappingService : IMappingService
 
     public TDestination Map<TDestination>(object source)
     {
+        // Handle null source — AutoMapper returns default(TDestination) for null
+        if (source is null) return default!;
+
         // Use pattern matching or a dictionary to dispatch to correct Forge method
         // based on source runtime type and TDestination
         return source switch
@@ -278,7 +283,7 @@ internal class ForgeMapMappingService : IMappingService
             User u when typeof(TDestination) == typeof(UserDto) => (TDestination)(object)_forger.Forge(u),
             Order o when typeof(TDestination) == typeof(OrderDto) => (TDestination)(object)_forger.Forge(o),
             // ... enumerate all mappings
-            _ => throw new NotSupportedException($"No mapping from {source?.GetType().Name} to {typeof(TDestination).Name}")
+            _ => throw new NotSupportedException($"No mapping from {source.GetType().Name} to {typeof(TDestination).Name}")
         };
     }
 

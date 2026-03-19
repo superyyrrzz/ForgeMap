@@ -26,8 +26,8 @@ This reference maps AutoMapper patterns to their ForgeMap equivalents.
 
 | AutoMapper | ForgeMap | Notes |
 |---|---|---|
-| `IValueResolver<S,D,TVal>` | `[ForgeFrom("DestProp", "ResolverMethod")]` | Static/instance method on the forger class |
-| `.MapFrom(s => expr)` | `[ForgeFrom("DestProp", "Method")]` | Resolver method returns value |
+| `IValueResolver<S,D,TVal>` | `[ForgeFrom(nameof(D.DestProp), nameof(ResolverMethod))]` | Static/instance method on the forger class |
+| `.MapFrom(s => expr)` | `[ForgeFrom(nameof(D.DestProp), nameof(Method))]` | Resolver method returns value |
 | `ITypeConverter<S,D>` | `[ConvertWith(typeof(Converter))]` (v1.1+) | Implements `ITypeConverter<S,D>` |
 
 ### Resolver method signatures
@@ -46,7 +46,7 @@ private static decimal ConvertPrice(int priceInCents)
 
 | AutoMapper | ForgeMap | Notes |
 |---|---|---|
-| Auto-detected nested maps | `[ForgeWith("DestProp", "NestedForgeMethod")]` | Must declare a forge method for the nested type |
+| Auto-detected nested maps | `[ForgeWith(nameof(D.DestProp), nameof(NestedForgeMethod))]` | Must declare a forge method for the nested type |
 | `.IncludeMembers(s => s.Inner)` | Not directly supported | Use `[ForgeProperty]` with dot notation instead |
 
 ### Example
@@ -79,8 +79,8 @@ public partial class OrderForger
 
 | AutoMapper | ForgeMap | Notes |
 |---|---|---|
-| `.BeforeMap((s,d) => ...)` | `[BeforeForge("MethodName")]` | `void Method(S source)` |
-| `.AfterMap((s,d) => ...)` | `[AfterForge("MethodName")]` | `void Method(S source, D dest)` |
+| `.BeforeMap((s,d) => ...)` | `[BeforeForge(nameof(MethodName))]` | `void Method(S source)` |
+| `.AfterMap((s,d) => ...)` | `[AfterForge(nameof(MethodName))]` | `void Method(S source, D dest)` |
 
 ## Null Handling
 
