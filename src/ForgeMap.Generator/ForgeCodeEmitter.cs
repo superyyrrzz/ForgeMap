@@ -926,6 +926,11 @@ internal sealed class ForgeCodeEmitter
         if (propertyMappings.TryGetValue(destProp.Name, out var sourcePropName))
         {
             var (sourceExpr, hasNullConditional) = GenerateSourceExpressionWithNullInfo(sourceParam, sourcePropName, sourceType);
+            var sourceLeafType = ResolvePathLeafType(sourcePropName, sourceType);
+            // When null-conditional lifts a non-nullable value type to Nullable<T>, cast back
+            var isLiftedValueType = hasNullConditional && sourceLeafType != null && sourceLeafType.IsValueType && GetNullableUnderlyingType(sourceLeafType) == null;
+            if (isLiftedValueType && destProp.Type.IsValueType && GetNullableUnderlyingType(destProp.Type) == null)
+                return $"({destProp.Type.ToDisplayString()}){sourceExpr}!";
             var nullForgiving = hasNullConditional && destProp.Type.NullableAnnotation != NullableAnnotation.Annotated ? "!" : "";
             return $"{sourceExpr}{nullForgiving}";
         }
@@ -973,7 +978,8 @@ internal sealed class ForgeCodeEmitter
         }
         else
         {
-            var matchingSourceProp = sourceProperties.FirstOrDefault(sp => sp.Name == destProp.Name);
+            var matchingSourceProp = sourceProperties.FirstOrDefault(sp =>
+                string.Equals(sp.Name, destProp.Name, _config.PropertyNameComparison));
             if (matchingSourceProp != null)
             {
                 sourcePropPath = matchingSourceProp.Name;
@@ -1113,6 +1119,13 @@ internal sealed class ForgeCodeEmitter
 
         // Handle nullable-to-non-nullable value type conversion
         if (IsNullableToNonNullableValueType(leafType, destProp.Type))
+            return $"({destProp.Type.ToDisplayString()}){expr}";
+
+        // Handle lifted value type from null-conditional: source.Customer?.Age is int? even
+        // though Age is int. The ! operator suppresses warnings but doesn't cast, so emit
+        // an explicit cast to the destination type.
+        if (expr.Contains("?.") && leafType.IsValueType && GetNullableUnderlyingType(leafType) == null
+            && destProp.Type.IsValueType && GetNullableUnderlyingType(destProp.Type) == null)
             return $"({destProp.Type.ToDisplayString()}){expr}";
 
         return expr;
@@ -1857,7 +1870,8 @@ internal sealed class ForgeCodeEmitter
                 else
                 {
                     // Try to find by same name
-                    var matchingSourceProp = sourceProperties.FirstOrDefault(sp => sp.Name == destProp.Name);
+                    var matchingSourceProp = sourceProperties.FirstOrDefault(sp =>
+                        string.Equals(sp.Name, destProp.Name, _config.PropertyNameComparison));
                     if (matchingSourceProp != null)
                     {
                         sourcePropPath = matchingSourceProp.Name;
@@ -1974,9 +1988,19 @@ internal sealed class ForgeCodeEmitter
             if (propertyMappings.TryGetValue(destProp.Name, out var sourcePropName))
             {
                 var (sourceExpr, hasNullConditional) = GenerateSourceExpressionWithNullInfo(sourceParam, sourcePropName, sourceNamedType);
-                // Add null-forgiving operator if we used null-conditional and dest is non-nullable
-                var nullForgiving = hasNullConditional && destProp.Type.NullableAnnotation != NullableAnnotation.Annotated ? "!" : "";
-                sb.AppendLine($"            {destParam}.{destProp.Name} = {sourceExpr}{nullForgiving};");
+                var sourceLeafType = ResolvePathLeafType(sourcePropName, sourceNamedType);
+                // When null-conditional lifts a non-nullable value type to Nullable<T>, cast back
+                var isLiftedValueType = hasNullConditional && sourceLeafType != null && sourceLeafType.IsValueType && GetNullableUnderlyingType(sourceLeafType) == null;
+                if (isLiftedValueType && destProp.Type.IsValueType && GetNullableUnderlyingType(destProp.Type) == null)
+                {
+                    sb.AppendLine($"            {destParam}.{destProp.Name} = ({destProp.Type.ToDisplayString()}){sourceExpr}!;");
+                }
+                else
+                {
+                    // Add null-forgiving operator if we used null-conditional and dest is non-nullable
+                    var nullForgiving = hasNullConditional && destProp.Type.NullableAnnotation != NullableAnnotation.Annotated ? "!" : "";
+                    sb.AppendLine($"            {destParam}.{destProp.Name} = {sourceExpr}{nullForgiving};");
+                }
                 continue;
             }
 
