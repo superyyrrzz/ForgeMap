@@ -7,6 +7,28 @@ using Microsoft.CodeAnalysis;
 namespace ForgeMap.Generator;
 
 /// <summary>
+/// Resolved configuration for a forger class, combining assembly-level defaults
+/// and class-level [ForgeMap] attribute overrides.
+/// </summary>
+internal sealed class ForgerConfig
+{
+    /// <summary>0 = ReturnNull (default), 1 = ThrowException</summary>
+    public int NullHandling { get; set; }
+
+    /// <summary>0 = ByName (default, case-sensitive), 1 = ByNameCaseInsensitive</summary>
+    public int PropertyMatching { get; set; }
+
+    /// <summary>Whether to generate collection mapping methods. Default true.</summary>
+    public bool GenerateCollectionMappings { get; set; } = true;
+
+    /// <summary>Diagnostic IDs to suppress for this forger (e.g. "FM0005").</summary>
+    public HashSet<string> SuppressDiagnostics { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    public StringComparison PropertyNameComparison =>
+        PropertyMatching == 1 ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+}
+
+/// <summary>
 /// Emits generated forging code for ForgeMap forger classes.
 /// </summary>
 internal sealed class ForgeCodeEmitter
@@ -18,8 +40,10 @@ internal sealed class ForgeCodeEmitter
     private readonly INamedTypeSymbol? _reverseForgeAttributeSymbol;
     private readonly INamedTypeSymbol? _beforeForgeAttributeSymbol;
     private readonly INamedTypeSymbol? _afterForgeAttributeSymbol;
+    private readonly ForgerConfig _assemblyDefaults;
+    private ForgerConfig _config = null!;
 
-    public ForgeCodeEmitter(Compilation compilation)
+    public ForgeCodeEmitter(Compilation compilation, ForgerConfig assemblyDefaults)
     {
         _ignoreAttributeSymbol = compilation.GetTypeByMetadataName("ForgeMap.IgnoreAttribute");
         _forgePropertyAttributeSymbol = compilation.GetTypeByMetadataName("ForgeMap.ForgePropertyAttribute");
@@ -28,10 +52,86 @@ internal sealed class ForgeCodeEmitter
         _reverseForgeAttributeSymbol = compilation.GetTypeByMetadataName("ForgeMap.ReverseForgeAttribute");
         _beforeForgeAttributeSymbol = compilation.GetTypeByMetadataName("ForgeMap.BeforeForgeAttribute");
         _afterForgeAttributeSymbol = compilation.GetTypeByMetadataName("ForgeMap.AfterForgeAttribute");
+        _assemblyDefaults = assemblyDefaults;
+    }
+
+    /// <summary>
+    /// Resolves the effective configuration for a forger class by overlaying
+    /// class-level [ForgeMap] attribute settings on top of assembly defaults.
+    /// </summary>
+    private ForgerConfig ResolveForgerConfig(ForgerInfo forger)
+    {
+        var config = new ForgerConfig
+        {
+            NullHandling = _assemblyDefaults.NullHandling,
+            PropertyMatching = _assemblyDefaults.PropertyMatching,
+            GenerateCollectionMappings = _assemblyDefaults.GenerateCollectionMappings,
+            SuppressDiagnostics = new HashSet<string>(_assemblyDefaults.SuppressDiagnostics, StringComparer.OrdinalIgnoreCase),
+        };
+
+        var attr = forger.ForgeMapAttribute;
+        foreach (var named in attr.NamedArguments)
+        {
+            switch (named.Key)
+            {
+                case "NullHandling":
+                    config.NullHandling = (int)named.Value.Value!;
+                    break;
+                case "PropertyMatching":
+                    config.PropertyMatching = (int)named.Value.Value!;
+                    break;
+                case "SuppressDiagnostics":
+                    if (!named.Value.IsNull)
+                    {
+                        foreach (var item in named.Value.Values)
+                        {
+                            if (item.Value is string s)
+                                config.SuppressDiagnostics.Add(s);
+                        }
+                    }
+                    break;
+            }
+        }
+
+        return config;
+    }
+
+    /// <summary>
+    /// Reports a diagnostic unless it is suppressed by the forger's SuppressDiagnostics config.
+    /// </summary>
+    private void ReportDiagnosticIfNotSuppressed(
+        SourceProductionContext context,
+        DiagnosticDescriptor descriptor,
+        Location? location,
+        params object?[] messageArgs)
+    {
+        if (_config.SuppressDiagnostics.Contains(descriptor.Id))
+            return;
+
+        context.ReportDiagnostic(Diagnostic.Create(descriptor, location, messageArgs));
+    }
+
+    /// <summary>
+    /// Generates the null-check code for source parameter based on NullHandling config.
+    /// For ReturnNull: "if (source == null) return {nullReturn};" (or "return;" if nullReturn is null)
+    /// For ThrowException: "if (source == null) throw new ArgumentNullException(nameof(source));"
+    /// </summary>
+    private string GenerateNullCheck(string sourceParam, string? nullReturn)
+    {
+        if (_config.NullHandling == 1) // ThrowException
+        {
+            return $"            if ({sourceParam} == null) throw new global::System.ArgumentNullException(nameof({sourceParam}));";
+        }
+
+        // ReturnNull (default)
+        if (nullReturn == null)
+            return $"            if ({sourceParam} == null) return;";
+        return $"            if ({sourceParam} == null) return {nullReturn};";
     }
 
     public string GenerateForger(ForgerInfo forger, SourceProductionContext context)
     {
+        _config = ResolveForgerConfig(forger);
         var sb = new StringBuilder();
 
         // File header
@@ -50,7 +150,29 @@ internal sealed class ForgeCodeEmitter
 
         // Class declaration with same accessibility
         var accessibility = GetAccessibilityKeyword(forger.Symbol.DeclaredAccessibility);
-        sb.AppendLine($"    {accessibility} partial class {forger.Symbol.Name}");
+        var className = forger.Symbol.IsGenericType
+            ? $"{forger.Symbol.Name}<{string.Join(", ", forger.Symbol.TypeParameters.Select(tp => tp.Name))}>"
+            : forger.Symbol.Name;
+        sb.AppendLine($"    {accessibility} partial class {className}");
+
+        // Emit type parameter constraints for generic forgers
+        if (forger.Symbol.IsGenericType)
+        {
+            foreach (var tp in forger.Symbol.TypeParameters)
+            {
+                var constraints = new List<string>();
+                if (tp.HasReferenceTypeConstraint) constraints.Add("class");
+                if (tp.HasValueTypeConstraint) constraints.Add("struct");
+                if (tp.HasUnmanagedTypeConstraint) constraints.Add("unmanaged");
+                if (tp.HasNotNullConstraint) constraints.Add("notnull");
+                foreach (var ct in tp.ConstraintTypes)
+                    constraints.Add(ct.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat));
+                if (tp.HasConstructorConstraint) constraints.Add("new()");
+                if (constraints.Count > 0)
+                    sb.AppendLine($"        where {tp.Name} : {string.Join(", ", constraints)}");
+            }
+        }
+
         sb.AppendLine("    {");
 
         // Find and implement partial methods
@@ -243,10 +365,10 @@ internal sealed class ForgeCodeEmitter
         // Emit FM0012 warnings for [ForgeFrom] properties
         foreach (var kvp in forwardResolverMappings)
         {
-            context.ReportDiagnostic(Diagnostic.Create(
+            ReportDiagnosticIfNotSuppressed(context,
                 DiagnosticDescriptors.ForgeFromCannotBeReversed,
                 forwardMethod.Locations.FirstOrDefault(),
-                kvp.Key));
+                kvp.Key);
         }
 
         // Build reverse [ForgeWith] mappings and emit FM0015 warnings where nested method lacks [ReverseForge]
@@ -313,18 +435,18 @@ internal sealed class ForgeCodeEmitter
                 }
                 else
                 {
-                    context.ReportDiagnostic(Diagnostic.Create(
+                    ReportDiagnosticIfNotSuppressed(context,
                         DiagnosticDescriptors.ForgeWithLacksReverseForge,
                         forwardMethod.Locations.FirstOrDefault(),
-                        forgingMethodName));
+                        forgingMethodName);
                 }
             }
             else
             {
-                context.ReportDiagnostic(Diagnostic.Create(
+                ReportDiagnosticIfNotSuppressed(context,
                     DiagnosticDescriptors.ForgeWithLacksReverseForge,
                     forwardMethod.Locations.FirstOrDefault(),
-                    forgingMethodName));
+                    forgingMethodName);
             }
         }
 
@@ -338,11 +460,12 @@ internal sealed class ForgeCodeEmitter
         sb.AppendLine($"        {accessibility} {reverseDestType.ToDisplayString()} {forwardMethod.Name}({reverseSourceType.ToDisplayString()} {sourceParam})");
         sb.AppendLine("        {");
 
-        // Null check (only for reference types)
-        if (reverseSourceType.IsReferenceType)
+        // Null check (for reference types and Nullable<T>)
+        if (reverseSourceType.IsReferenceType ||
+            reverseSourceType.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T)
         {
             var nullReturn = reverseDestType.IsValueType ? "default" : "null!";
-            sb.AppendLine($"            if ({sourceParam} == null) return {nullReturn};");
+            sb.AppendLine(GenerateNullCheck(sourceParam, nullReturn));
             sb.AppendLine();
         }
 
@@ -472,7 +595,7 @@ internal sealed class ForgeCodeEmitter
             else
             {
                 var match = sourceProperties.FirstOrDefault(sp =>
-                    string.Equals(sp.Name, destProp.Name, StringComparison.Ordinal));
+                    string.Equals(sp.Name, destProp.Name, _config.PropertyNameComparison));
                 if (match != null)
                     sourcePropName = match.Name;
             }
@@ -539,7 +662,7 @@ internal sealed class ForgeCodeEmitter
         // Check for collection mapping (List<T>, T[], IEnumerable<T>, etc.)
         var sourceElementType = GetCollectionElementType(sourceType);
         var destElementType = GetCollectionElementType(destinationType);
-        if (sourceElementType != null && destElementType != null)
+        if (sourceElementType != null && destElementType != null && _config.GenerateCollectionMappings)
         {
             ReportHooksNotSupportedIfPresent(method, context);
             return GenerateCollectionForgeMethod(method, sourceType, destinationType, sourceElementType, destElementType, forger, context);
@@ -581,6 +704,13 @@ internal sealed class ForgeCodeEmitter
 
         sb.AppendLine($"        {accessibility} partial {destDisplay} {method.Name}({sourceDisplay} {sourceParam})");
         sb.AppendLine("        {");
+
+        // Add null handling for reference-type inputs (string)
+        if (isSourceString)
+        {
+            sb.AppendLine(GenerateNullCheck(sourceParam, "default"));
+            sb.AppendLine();
+        }
 
         if (isSourceEnum && isDestEnum)
         {
@@ -646,9 +776,13 @@ internal sealed class ForgeCodeEmitter
         sb.AppendLine($"        {accessibility} partial {destinationType.ToDisplayString()} {method.Name}({sourceType.ToDisplayString()} {sourceParam})");
         sb.AppendLine("        {");
 
-        // Null check
-        sb.AppendLine($"            if ({sourceParam} == null) return null!;");
-        sb.AppendLine();
+        // Null check (only for reference types or nullable value types)
+        if (sourceType.IsReferenceType || sourceType.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T)
+        {
+            var nullReturn = destinationType.IsValueType ? "default" : "null!";
+            sb.AppendLine(GenerateNullCheck(sourceParam, nullReturn));
+            sb.AppendLine();
+        }
 
         // [BeforeForge] callbacks
         foreach (var hookName in beforeForgeHooks)
@@ -819,13 +953,18 @@ internal sealed class ForgeCodeEmitter
         if (propertyMappings.TryGetValue(destProp.Name, out var sourcePropName))
         {
             var (sourceExpr, hasNullConditional) = GenerateSourceExpressionWithNullInfo(sourceParam, sourcePropName, sourceType);
+            var sourceLeafType = ResolvePathLeafType(sourcePropName, sourceType);
+            // When null-conditional lifts a non-nullable value type to Nullable<T>, cast back
+            var isLiftedValueType = hasNullConditional && sourceLeafType != null && sourceLeafType.IsValueType && GetNullableUnderlyingType(sourceLeafType) == null;
+            if (isLiftedValueType && destProp.Type.IsValueType && GetNullableUnderlyingType(destProp.Type) == null)
+                return $"({destProp.Type.ToDisplayString()})({sourceExpr})!";
             var nullForgiving = hasNullConditional && destProp.Type.NullableAnnotation != NullableAnnotation.Annotated ? "!" : "";
             return $"{sourceExpr}{nullForgiving}";
         }
 
         // Try to find matching source property by name (convention)
         var sourceProp = sourceProperties.FirstOrDefault(sp =>
-            string.Equals(sp.Name, destProp.Name, StringComparison.Ordinal));
+            string.Equals(sp.Name, destProp.Name, _config.PropertyNameComparison));
 
         if (sourceProp != null && CanAssign(sourceProp.Type, destProp.Type))
         {
@@ -866,7 +1005,8 @@ internal sealed class ForgeCodeEmitter
         }
         else
         {
-            var matchingSourceProp = sourceProperties.FirstOrDefault(sp => sp.Name == destProp.Name);
+            var matchingSourceProp = sourceProperties.FirstOrDefault(sp =>
+                string.Equals(sp.Name, destProp.Name, _config.PropertyNameComparison));
             if (matchingSourceProp != null)
             {
                 sourcePropPath = matchingSourceProp.Name;
@@ -878,10 +1018,10 @@ internal sealed class ForgeCodeEmitter
 
         if (resolverMethod == null)
         {
-            context.ReportDiagnostic(Diagnostic.Create(
+            ReportDiagnosticIfNotSuppressed(context,
                 DiagnosticDescriptors.ResolverMethodNotFound,
                 method.Locations.FirstOrDefault(),
-                resolverMethodName));
+                resolverMethodName);
             return null;
         }
 
@@ -910,10 +1050,10 @@ internal sealed class ForgeCodeEmitter
         }
         else
         {
-            context.ReportDiagnostic(Diagnostic.Create(
+            ReportDiagnosticIfNotSuppressed(context,
                 DiagnosticDescriptors.InvalidResolverSignature,
                 method.Locations.FirstOrDefault(),
-                resolverMethodName));
+                resolverMethodName);
             return null;
         }
     }
@@ -940,7 +1080,7 @@ internal sealed class ForgeCodeEmitter
         else
         {
             var matchingSourceProp = sourceProperties.FirstOrDefault(sp =>
-                string.Equals(sp.Name, destProp.Name, StringComparison.Ordinal));
+                string.Equals(sp.Name, destProp.Name, _config.PropertyNameComparison));
             if (matchingSourceProp != null)
                 forgeWithSourcePropName = matchingSourceProp.Name;
         }
@@ -957,7 +1097,8 @@ internal sealed class ForgeCodeEmitter
                     if (sourcePropertyType.IsReferenceType)
                     {
                         var localVarName = $"__forgeWith_{destProp.Name}";
-                        return $"{sourceExpr} is {{ }} {localVarName} ? {forgingMethodName}({localVarName}) : null!";
+                        var nullFallback = destProp.Type.IsValueType ? "default" : "null!";
+                        return $"{sourceExpr} is {{ }} {localVarName} ? {forgingMethodName}({localVarName}) : {nullFallback}";
                     }
                     else
                     {
@@ -967,10 +1108,10 @@ internal sealed class ForgeCodeEmitter
             }
         }
 
-        context.ReportDiagnostic(Diagnostic.Create(
+        ReportDiagnosticIfNotSuppressed(context,
             DiagnosticDescriptors.ResolverMethodNotFound,
             method.Locations.FirstOrDefault(),
-            forgingMethodName));
+            forgingMethodName);
         return null;
     }
 
@@ -983,7 +1124,14 @@ internal sealed class ForgeCodeEmitter
         ITypeSymbol destPropertyType)
     {
         if (sourcePropertyType != null && IsNullableToNonNullableValueType(sourcePropertyType, destPropertyType))
-            return $"({destPropertyType.ToDisplayString()}){sourceExpression}!";
+            return sourceExpression.Contains("?.") ? $"({destPropertyType.ToDisplayString()})({sourceExpression})!" : $"({destPropertyType.ToDisplayString()}){sourceExpression}!";
+
+        // Handle lifted value type from null-conditional: source.Customer?.Age is int?
+        // even though Age is int — cast back to the destination type
+        if (sourceExpression.Contains("?.") && sourcePropertyType != null
+            && sourcePropertyType.IsValueType && GetNullableUnderlyingType(sourcePropertyType) == null
+            && destPropertyType.IsValueType && GetNullableUnderlyingType(destPropertyType) == null)
+            return $"({destPropertyType.ToDisplayString()})({sourceExpression})!";
 
         return sourceExpression;
     }
@@ -1005,7 +1153,14 @@ internal sealed class ForgeCodeEmitter
 
         // Handle nullable-to-non-nullable value type conversion
         if (IsNullableToNonNullableValueType(leafType, destProp.Type))
-            return $"({destProp.Type.ToDisplayString()}){expr}";
+            return expr.Contains("?.") ? $"({destProp.Type.ToDisplayString()})({expr})" : $"({destProp.Type.ToDisplayString()}){expr}";
+
+        // Handle lifted value type from null-conditional: source.Customer?.Age is int? even
+        // though Age is int. The ! operator suppresses warnings but doesn't cast, so emit
+        // an explicit cast to the destination type.
+        if (expr.Contains("?.") && leafType.IsValueType && GetNullableUnderlyingType(leafType) == null
+            && destProp.Type.IsValueType && GetNullableUnderlyingType(destProp.Type) == null)
+            return $"({destProp.Type.ToDisplayString()})({expr})";
 
         return expr;
     }
@@ -1021,17 +1176,16 @@ internal sealed class ForgeCodeEmitter
         {
             var propName = prop.Name;
             if (destName.Length >= startIndex + propName.Length &&
-                string.Equals(destName.Substring(startIndex, propName.Length), propName, StringComparison.OrdinalIgnoreCase))
+                string.Equals(destName.Substring(startIndex, propName.Length), propName, _config.PropertyNameComparison))
             {
                 var newStartIndex = startIndex + propName.Length;
 
                 if (newStartIndex == destName.Length)
                 {
                     // Full match - this property is the leaf
+                    // Use null-conditional only if the chain already has ?. (ancestor was nullable)
                     string leafExpr;
-                    if (prop.Type.IsReferenceType)
-                        leafExpr = $"{currentExpr}?.{propName}!";
-                    else if (currentExpr.Contains("?."))
+                    if (currentExpr.Contains("?."))
                         leafExpr = $"{currentExpr}?.{propName}!";
                     else
                         leafExpr = $"{currentExpr}.{propName}";
@@ -1077,10 +1231,10 @@ internal sealed class ForgeCodeEmitter
 
         if (constructors.Count == 0)
         {
-            context.ReportDiagnostic(Diagnostic.Create(
+            ReportDiagnosticIfNotSuppressed(context,
                 DiagnosticDescriptors.DestinationTypeHasNoConstructor,
                 method.Locations.FirstOrDefault(),
-                destinationType.Name));
+                destinationType.Name);
             return (null, null);
         }
 
@@ -1158,11 +1312,11 @@ internal sealed class ForgeCodeEmitter
                     || sourcePropertiesList.Any(sp => string.Equals(sp.Name, param.Name, StringComparison.OrdinalIgnoreCase));
                 if (!found)
                 {
-                    context.ReportDiagnostic(Diagnostic.Create(
+                    ReportDiagnosticIfNotSuppressed(context,
                         DiagnosticDescriptors.ConstructorParameterNotMatched,
                         method.Locations.FirstOrDefault(),
                         param.Name,
-                        destinationType.Name));
+                        destinationType.Name);
                 }
             }
             return (null, null);
@@ -1174,10 +1328,10 @@ internal sealed class ForgeCodeEmitter
 
         if (bestMatches.Count > 1)
         {
-            context.ReportDiagnostic(Diagnostic.Create(
+            ReportDiagnosticIfNotSuppressed(context,
                 DiagnosticDescriptors.AmbiguousConstructor,
                 method.Locations.FirstOrDefault(),
-                destinationType.Name));
+                destinationType.Name);
             return (null, null);
         }
 
@@ -1438,10 +1592,10 @@ internal sealed class ForgeCodeEmitter
 
         if (candidates.Count == 0)
         {
-            context.ReportDiagnostic(Diagnostic.Create(
+            ReportDiagnosticIfNotSuppressed(context,
                 DiagnosticDescriptors.HookMethodInvalid,
                 method.Locations.FirstOrDefault(),
-                hookMethodName));
+                hookMethodName);
             return false;
         }
 
@@ -1453,10 +1607,10 @@ internal sealed class ForgeCodeEmitter
             return true;
 
         // Multiple assignable candidates with no exact match — ambiguous
-        context.ReportDiagnostic(Diagnostic.Create(
+        ReportDiagnosticIfNotSuppressed(context,
             DiagnosticDescriptors.HookMethodInvalid,
             method.Locations.FirstOrDefault(),
-            hookMethodName));
+            hookMethodName);
         return false;
     }
 
@@ -1487,10 +1641,10 @@ internal sealed class ForgeCodeEmitter
 
         if (candidates.Count == 0)
         {
-            context.ReportDiagnostic(Diagnostic.Create(
+            ReportDiagnosticIfNotSuppressed(context,
                 DiagnosticDescriptors.HookMethodInvalid,
                 method.Locations.FirstOrDefault(),
-                hookMethodName));
+                hookMethodName);
             return false;
         }
 
@@ -1503,10 +1657,10 @@ internal sealed class ForgeCodeEmitter
             return true;
 
         // Multiple assignable candidates with no exact match — ambiguous
-        context.ReportDiagnostic(Diagnostic.Create(
+        ReportDiagnosticIfNotSuppressed(context,
             DiagnosticDescriptors.HookMethodInvalid,
             method.Locations.FirstOrDefault(),
-            hookMethodName));
+            hookMethodName);
         return false;
     }
 
@@ -1523,9 +1677,9 @@ internal sealed class ForgeCodeEmitter
 
         if (hasHooks)
         {
-            context.ReportDiagnostic(Diagnostic.Create(
+            ReportDiagnosticIfNotSuppressed(context,
                 DiagnosticDescriptors.HooksNotSupportedOnMethodKind,
-                method.Locations.FirstOrDefault()));
+                method.Locations.FirstOrDefault());
         }
     }
 
@@ -1710,7 +1864,10 @@ internal sealed class ForgeCodeEmitter
 
         // Null checks
         sb.AppendLine($"            if ({destParam} == null) throw new global::System.ArgumentNullException(nameof({destParam}));");
-        sb.AppendLine($"            if ({sourceParam} == null) return;");
+        if (sourceType.IsReferenceType || sourceType.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T)
+        {
+            sb.AppendLine(GenerateNullCheck(sourceParam, null));
+        }
         sb.AppendLine();
 
         // [BeforeForge] callbacks
@@ -1746,7 +1903,8 @@ internal sealed class ForgeCodeEmitter
                 else
                 {
                     // Try to find by same name
-                    var matchingSourceProp = sourceProperties.FirstOrDefault(sp => sp.Name == destProp.Name);
+                    var matchingSourceProp = sourceProperties.FirstOrDefault(sp =>
+                        string.Equals(sp.Name, destProp.Name, _config.PropertyNameComparison));
                     if (matchingSourceProp != null)
                     {
                         sourcePropPath = matchingSourceProp.Name;
@@ -1759,10 +1917,10 @@ internal sealed class ForgeCodeEmitter
 
                 if (resolverMethod == null)
                 {
-                    context.ReportDiagnostic(Diagnostic.Create(
+                    ReportDiagnosticIfNotSuppressed(context,
                         DiagnosticDescriptors.ResolverMethodNotFound,
                         method.Locations.FirstOrDefault(),
-                        resolverMethodName));
+                        resolverMethodName);
                     continue;
                 }
 
@@ -1798,10 +1956,10 @@ internal sealed class ForgeCodeEmitter
                 }
                 else
                 {
-                    context.ReportDiagnostic(Diagnostic.Create(
+                    ReportDiagnosticIfNotSuppressed(context,
                         DiagnosticDescriptors.InvalidResolverSignature,
                         method.Locations.FirstOrDefault(),
-                        resolverMethodName));
+                        resolverMethodName);
                     continue;
                 }
 
@@ -1820,7 +1978,7 @@ internal sealed class ForgeCodeEmitter
                 else
                 {
                     var matchingSourceProp = sourceProperties.FirstOrDefault(sp =>
-                        string.Equals(sp.Name, destProp.Name, StringComparison.Ordinal));
+                        string.Equals(sp.Name, destProp.Name, _config.PropertyNameComparison));
                     if (matchingSourceProp != null)
                         forgeWithSourcePropName = matchingSourceProp.Name;
                 }
@@ -1840,7 +1998,8 @@ internal sealed class ForgeCodeEmitter
                                 sb.AppendLine($"            if ({sourceExpr} is {{ }} {localVarName})");
                                 sb.AppendLine($"                {destParam}.{destProp.Name} = {forgingMethodName}({localVarName});");
                                 sb.AppendLine($"            else");
-                                sb.AppendLine($"                {destParam}.{destProp.Name} = null;");
+                                var nullAssign = destProp.Type.IsValueType ? "default" : "null!";
+                                sb.AppendLine($"                {destParam}.{destProp.Name} = {nullAssign};");
                             }
                             else
                             {
@@ -1851,10 +2010,10 @@ internal sealed class ForgeCodeEmitter
                     }
                 }
 
-                context.ReportDiagnostic(Diagnostic.Create(
+                ReportDiagnosticIfNotSuppressed(context,
                     DiagnosticDescriptors.ResolverMethodNotFound,
                     method.Locations.FirstOrDefault(),
-                    forgingMethodName));
+                    forgingMethodName);
                 continue;
             }
 
@@ -1862,14 +2021,24 @@ internal sealed class ForgeCodeEmitter
             if (propertyMappings.TryGetValue(destProp.Name, out var sourcePropName))
             {
                 var (sourceExpr, hasNullConditional) = GenerateSourceExpressionWithNullInfo(sourceParam, sourcePropName, sourceNamedType);
-                // Add null-forgiving operator if we used null-conditional and dest is non-nullable
-                var nullForgiving = hasNullConditional && destProp.Type.NullableAnnotation != NullableAnnotation.Annotated ? "!" : "";
-                sb.AppendLine($"            {destParam}.{destProp.Name} = {sourceExpr}{nullForgiving};");
+                var sourceLeafType = ResolvePathLeafType(sourcePropName, sourceNamedType);
+                // When null-conditional lifts a non-nullable value type to Nullable<T>, cast back
+                var isLiftedValueType = hasNullConditional && sourceLeafType != null && sourceLeafType.IsValueType && GetNullableUnderlyingType(sourceLeafType) == null;
+                if (isLiftedValueType && destProp.Type.IsValueType && GetNullableUnderlyingType(destProp.Type) == null)
+                {
+                    sb.AppendLine($"            {destParam}.{destProp.Name} = ({destProp.Type.ToDisplayString()})({sourceExpr})!;");
+                }
+                else
+                {
+                    // Add null-forgiving operator if we used null-conditional and dest is non-nullable
+                    var nullForgiving = hasNullConditional && destProp.Type.NullableAnnotation != NullableAnnotation.Annotated ? "!" : "";
+                    sb.AppendLine($"            {destParam}.{destProp.Name} = {sourceExpr}{nullForgiving};");
+                }
                 continue;
             }
 
             var sourceProp = sourceProperties.FirstOrDefault(sp =>
-                string.Equals(sp.Name, destProp.Name, StringComparison.Ordinal));
+                string.Equals(sp.Name, destProp.Name, _config.PropertyNameComparison));
 
             if (sourceProp != null && CanAssign(sourceProp.Type, destProp.Type))
             {
@@ -1914,10 +2083,10 @@ internal sealed class ForgeCodeEmitter
         var elementForgeMethod = FindForgingMethod(forger.Symbol, method.Name, sourceElementType, destElementType);
         if (elementForgeMethod == null)
         {
-            context.ReportDiagnostic(Diagnostic.Create(
+            ReportDiagnosticIfNotSuppressed(context,
                 DiagnosticDescriptors.ResolverMethodNotFound,
                 method.Locations.FirstOrDefault(),
-                $"{method.Name}({sourceElementType.ToDisplayString()})"));
+                $"{method.Name}({sourceElementType.ToDisplayString()})");
             return string.Empty;
         }
 
@@ -1930,7 +2099,7 @@ internal sealed class ForgeCodeEmitter
 
         sb.AppendLine($"        {accessibility} partial {destTypeDisplay} {method.Name}({sourceTypeDisplay} {sourceParam})");
         sb.AppendLine("        {");
-        sb.AppendLine($"            if ({sourceParam} == null) return null!;");
+        sb.AppendLine(GenerateNullCheck(sourceParam, "null!"));
         sb.AppendLine();
 
         // Determine the destination collection kind
