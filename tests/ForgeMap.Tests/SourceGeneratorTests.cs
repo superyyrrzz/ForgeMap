@@ -1641,6 +1641,46 @@ public class HookGeneratorTests
         Assert.Equal(DiagnosticSeverity.Warning, warning.Severity);
     }
 
+    [Fact]
+    public void Generator_HooksOnCollectionForge_ReportsFM0018()
+    {
+        var source = """
+            using ForgeMap;
+            using System.Collections.Generic;
+
+            namespace TestNamespace
+            {
+                public class SourceItem
+                {
+                    public int Id { get; set; }
+                }
+
+                public class DestItem
+                {
+                    public int Id { get; set; }
+                }
+
+                [ForgeMap]
+                public partial class TestForger
+                {
+                    [AfterForge(nameof(LogList))]
+                    public partial List<DestItem> Forge(List<SourceItem> source);
+
+                    public partial DestItem Forge(SourceItem source);
+
+                    private static void LogList(List<SourceItem> source, List<DestItem> dest) { }
+                }
+            }
+            """;
+
+        var (diagnostics, _) = RunGenerator(source);
+
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        var warning = diagnostics.FirstOrDefault(d => d.Id == "FM0018");
+        Assert.NotNull(warning);
+        Assert.Equal(DiagnosticSeverity.Warning, warning.Severity);
+    }
+
     private static (IReadOnlyList<Diagnostic> Diagnostics, IReadOnlyList<SyntaxTree> GeneratedTrees) RunGenerator(string source)
     {
         return SourceGeneratorTests.RunGenerator(source);
