@@ -460,8 +460,9 @@ internal sealed class ForgeCodeEmitter
         sb.AppendLine($"        {accessibility} {reverseDestType.ToDisplayString()} {forwardMethod.Name}({reverseSourceType.ToDisplayString()} {sourceParam})");
         sb.AppendLine("        {");
 
-        // Null check (only for reference types)
-        if (reverseSourceType.IsReferenceType)
+        // Null check (for reference types and Nullable<T>)
+        if (reverseSourceType.IsReferenceType ||
+            reverseSourceType.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T)
         {
             var nullReturn = reverseDestType.IsValueType ? "default" : "null!";
             sb.AppendLine(GenerateNullCheck(sourceParam, nullReturn));
