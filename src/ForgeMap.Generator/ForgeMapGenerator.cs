@@ -118,6 +118,9 @@ public sealed class ForgeMapGenerator : IIncrementalGenerator
                 case "PropertyMatching":
                     config.PropertyMatching = (int)named.Value.Value!;
                     break;
+                case "GenerateCollectionMappings":
+                    config.GenerateCollectionMappings = (bool)named.Value.Value!;
+                    break;
             }
         }
 
@@ -168,7 +171,8 @@ public sealed class ForgeMapGenerator : IIncrementalGenerator
 
             var fullyQualifiedName = $"global::{forger.Symbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat.WithGlobalNamespaceStyle(SymbolDisplayGlobalNamespaceStyle.Omitted))}";
 
-            // Determine the best constructor: IServiceProvider > IServiceScopeFactory > parameterless
+            // Prefer explicit factory for IServiceProvider or IServiceScopeFactory single-param ctors;
+            // otherwise register by implementation type and let the container resolve the constructor
             var needsFactory = false;
             string? factoryExpr = null;
 

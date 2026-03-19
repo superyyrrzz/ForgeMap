@@ -18,6 +18,9 @@ internal sealed class ForgerConfig
     /// <summary>0 = ByName (default, case-sensitive), 1 = ByNameCaseInsensitive</summary>
     public int PropertyMatching { get; set; }
 
+    /// <summary>Whether to generate collection mapping methods. Default true.</summary>
+    public bool GenerateCollectionMappings { get; set; } = true;
+
     /// <summary>Diagnostic IDs to suppress for this forger (e.g. "FM0005").</summary>
     public HashSet<string> SuppressDiagnostics { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
@@ -146,7 +149,10 @@ internal sealed class ForgeCodeEmitter
 
         // Class declaration with same accessibility
         var accessibility = GetAccessibilityKeyword(forger.Symbol.DeclaredAccessibility);
-        sb.AppendLine($"    {accessibility} partial class {forger.Symbol.Name}");
+        var className = forger.Symbol.IsGenericType
+            ? $"{forger.Symbol.Name}<{string.Join(", ", forger.Symbol.TypeParameters.Select(tp => tp.Name))}>"
+            : forger.Symbol.Name;
+        sb.AppendLine($"    {accessibility} partial class {className}");
         sb.AppendLine("    {");
 
         // Find and implement partial methods
@@ -635,7 +641,7 @@ internal sealed class ForgeCodeEmitter
         // Check for collection mapping (List<T>, T[], IEnumerable<T>, etc.)
         var sourceElementType = GetCollectionElementType(sourceType);
         var destElementType = GetCollectionElementType(destinationType);
-        if (sourceElementType != null && destElementType != null)
+        if (sourceElementType != null && destElementType != null && _config.GenerateCollectionMappings)
         {
             ReportHooksNotSupportedIfPresent(method, context);
             return GenerateCollectionForgeMethod(method, sourceType, destinationType, sourceElementType, destElementType, forger, context);
