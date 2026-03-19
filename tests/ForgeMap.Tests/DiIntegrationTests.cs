@@ -50,7 +50,7 @@ public class DiIntegrationTests
         var services = new ServiceCollection();
         services.AddForgeMaps();
 
-        var provider = services.BuildServiceProvider();
+        using var provider = services.BuildServiceProvider();
 
         // Should be able to resolve DiSimpleForger
         var simpleForger = provider.GetService<DiSimpleForger>();
@@ -67,7 +67,7 @@ public class DiIntegrationTests
         var services = new ServiceCollection();
         services.AddForgeMaps(ServiceLifetime.Singleton);
 
-        var provider = services.BuildServiceProvider();
+        using var provider = services.BuildServiceProvider();
 
         var forger1 = provider.GetRequiredService<DiSimpleForger>();
         var forger2 = provider.GetRequiredService<DiSimpleForger>();
@@ -81,7 +81,7 @@ public class DiIntegrationTests
         var services = new ServiceCollection();
         services.AddForgeMaps(ServiceLifetime.Scoped);
 
-        var provider = services.BuildServiceProvider();
+        using var provider = services.BuildServiceProvider();
 
         DiSimpleForger forger1;
         DiSimpleForger forger1Again;
@@ -107,7 +107,7 @@ public class DiIntegrationTests
         var services = new ServiceCollection();
         services.AddForgeMaps();
 
-        var provider = services.BuildServiceProvider();
+        using var provider = services.BuildServiceProvider();
         var forger = provider.GetRequiredService<DiSimpleForger>();
 
         var entity = new DiSourceEntity { Id = 42, Name = "Test" };
@@ -124,7 +124,7 @@ public class DiIntegrationTests
         var services = new ServiceCollection();
         services.AddForgeMaps();
 
-        var provider = services.BuildServiceProvider();
+        using var provider = services.BuildServiceProvider();
         var forger = provider.GetRequiredService<DiServiceProviderForger>();
 
         var entity = new DiSourceEntity { Id = 7, Name = "DI Test" };
@@ -142,7 +142,7 @@ public class DiIntegrationTests
         var services = new ServiceCollection();
         services.AddForgeMaps(ServiceLifetime.Transient);
 
-        var provider = services.BuildServiceProvider();
+        using var provider = services.BuildServiceProvider();
 
         var forger1 = provider.GetRequiredService<DiSimpleForger>();
         var forger2 = provider.GetRequiredService<DiSimpleForger>();
