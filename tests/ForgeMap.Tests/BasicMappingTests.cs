@@ -1752,3 +1752,103 @@ public class BeforeAndAfterForgeTests
 #endregion
 
 #endregion
+
+#region Cross-Namespace Enum Mapping
+
+[ForgeMap]
+public partial class CrossNamespaceEnumForger
+{
+    public partial DestNamespace.QuestionDest Forge(SourceNamespace.QuestionSource source);
+}
+
+[ForgeMap]
+public partial class CrossNamespaceNullableEnumForger
+{
+    public partial DestNamespace.NullableEnumDest Forge(SourceNamespace.NullableEnumSource source);
+}
+
+[ForgeMap]
+public partial class CrossNamespaceNullableToNonNullableEnumForger
+{
+    public partial DestNamespace.NonNullableEnumDest Forge(SourceNamespace.NullableEnumSource source);
+}
+
+public class CrossNamespaceEnumMappingTests
+{
+    [Fact]
+    public void CrossNamespaceEnum_IdenticalMembers_ShouldAutoMap()
+    {
+        var forger = new CrossNamespaceEnumForger();
+        var source = new SourceNamespace.QuestionSource
+        {
+            Id = 1,
+            Kind = SourceNamespace.AssessmentQuestionKind.MultiSelect,
+            Title = "Test Question"
+        };
+
+        var dest = forger.Forge(source);
+
+        dest.Id.Should().Be(1);
+        dest.Kind.Should().Be(DestNamespace.AssessmentQuestionKind.MultiSelect);
+        dest.Title.Should().Be("Test Question");
+    }
+
+    [Fact]
+    public void CrossNamespaceEnum_AllValues_ShouldMapCorrectly()
+    {
+        var forger = new CrossNamespaceEnumForger();
+
+        foreach (var sourceKind in Enum.GetValues<SourceNamespace.AssessmentQuestionKind>())
+        {
+            var source = new SourceNamespace.QuestionSource { Kind = sourceKind };
+            var dest = forger.Forge(source);
+            dest.Kind.Should().Be((DestNamespace.AssessmentQuestionKind)(int)sourceKind);
+        }
+    }
+
+    [Fact]
+    public void CrossNamespaceEnum_NullableToNullable_ShouldAutoMap()
+    {
+        var forger = new CrossNamespaceNullableEnumForger();
+        var source = new SourceNamespace.NullableEnumSource
+        {
+            Id = 2,
+            Kind = SourceNamespace.AssessmentQuestionKind.SingleSelectImage
+        };
+
+        var dest = forger.Forge(source);
+
+        dest.Id.Should().Be(2);
+        dest.Kind.Should().Be(DestNamespace.AssessmentQuestionKind.SingleSelectImage);
+    }
+
+    [Fact]
+    public void CrossNamespaceEnum_NullableToNullable_NullValue_ShouldMapNull()
+    {
+        var forger = new CrossNamespaceNullableEnumForger();
+        var source = new SourceNamespace.NullableEnumSource { Id = 3, Kind = null };
+
+        var dest = forger.Forge(source);
+
+        dest.Id.Should().Be(3);
+        dest.Kind.Should().BeNull();
+    }
+
+    [Fact]
+    public void CrossNamespaceEnum_NullableToNonNullable_ShouldAutoMap()
+    {
+        var forger = new CrossNamespaceNullableToNonNullableEnumForger();
+        var source = new SourceNamespace.NullableEnumSource
+        {
+            Id = 4,
+            Kind = SourceNamespace.AssessmentQuestionKind.SingleSelect
+        };
+
+        var dest = forger.Forge(source);
+
+        dest.Id.Should().Be(4);
+        dest.Kind.Should().Be(DestNamespace.AssessmentQuestionKind.SingleSelect);
+    }
+}
+
+#endregion

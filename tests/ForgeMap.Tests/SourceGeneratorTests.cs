@@ -1688,3 +1688,250 @@ public class HookGeneratorTests
 }
 
 #endregion
+
+#region Cross-Namespace Enum Generator Tests
+
+public class CrossNamespaceEnumGeneratorTests
+{
+    [Fact]
+    public void Generator_CrossNamespaceEnum_IdenticalMembers_EmitsCast()
+    {
+        var source = """
+            using ForgeMap;
+
+            namespace SourceNs
+            {
+                public enum Status { Active, Inactive, Pending }
+
+                public class Source
+                {
+                    public int Id { get; set; }
+                    public Status Kind { get; set; }
+                }
+            }
+
+            namespace DestNs
+            {
+                public enum Status { Active, Inactive, Pending }
+
+                public class Dest
+                {
+                    public int Id { get; set; }
+                    public Status Kind { get; set; }
+                }
+            }
+
+            namespace TestNamespace
+            {
+                [ForgeMap]
+                public partial class TestForger
+                {
+                    public partial DestNs.Dest Forge(SourceNs.Source source);
+                }
+            }
+            """;
+
+        var (diagnostics, generatedTrees) = RunGenerator(source);
+
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        Assert.Single(generatedTrees);
+
+        var generatedCode = generatedTrees[0].GetText().ToString();
+        // Should contain the (int) cast for cross-namespace enum
+        Assert.Contains("(DestNs.Status)(int)source.Kind", generatedCode);
+        // Should still have normal assignment for Id
+        Assert.Contains("Id = source.Id,", generatedCode);
+    }
+
+    [Fact]
+    public void Generator_CrossNamespaceEnum_DifferentValues_SkipsProperty()
+    {
+        var source = """
+            using ForgeMap;
+
+            namespace SourceNs
+            {
+                public enum Priority { Low = 0, Medium = 1, High = 2 }
+
+                public class Source
+                {
+                    public int Id { get; set; }
+                    public Priority Level { get; set; }
+                }
+            }
+
+            namespace DestNs
+            {
+                public enum Priority { Low = 0, Medium = 2, High = 1 }
+
+                public class Dest
+                {
+                    public int Id { get; set; }
+                    public Priority Level { get; set; }
+                }
+            }
+
+            namespace TestNamespace
+            {
+                [ForgeMap]
+                public partial class TestForger
+                {
+                    public partial DestNs.Dest Forge(SourceNs.Source source);
+                }
+            }
+            """;
+
+        var (diagnostics, generatedTrees) = RunGenerator(source);
+
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        Assert.Single(generatedTrees);
+
+        var generatedCode = generatedTrees[0].GetText().ToString();
+        // Should NOT contain any assignment for Level (values differ)
+        Assert.DoesNotContain("Level", generatedCode);
+    }
+
+    [Fact]
+    public void Generator_CrossNamespaceEnum_DifferentMemberCount_SkipsProperty()
+    {
+        var source = """
+            using ForgeMap;
+
+            namespace SourceNs
+            {
+                public enum Color { Red, Green, Blue }
+
+                public class Source
+                {
+                    public int Id { get; set; }
+                    public Color Shade { get; set; }
+                }
+            }
+
+            namespace DestNs
+            {
+                public enum Color { Red, Green, Blue, Yellow }
+
+                public class Dest
+                {
+                    public int Id { get; set; }
+                    public Color Shade { get; set; }
+                }
+            }
+
+            namespace TestNamespace
+            {
+                [ForgeMap]
+                public partial class TestForger
+                {
+                    public partial DestNs.Dest Forge(SourceNs.Source source);
+                }
+            }
+            """;
+
+        var (diagnostics, generatedTrees) = RunGenerator(source);
+
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        Assert.Single(generatedTrees);
+
+        var generatedCode = generatedTrees[0].GetText().ToString();
+        // Should NOT contain any assignment for Shade (member count differs)
+        Assert.DoesNotContain("Shade", generatedCode);
+    }
+
+    [Fact]
+    public void Generator_CrossNamespaceEnum_NullableToNullable_EmitsCast()
+    {
+        var source = """
+            using ForgeMap;
+
+            namespace SourceNs
+            {
+                public enum Status { Active, Inactive }
+
+                public class Source
+                {
+                    public int Id { get; set; }
+                    public Status? Kind { get; set; }
+                }
+            }
+
+            namespace DestNs
+            {
+                public enum Status { Active, Inactive }
+
+                public class Dest
+                {
+                    public int Id { get; set; }
+                    public Status? Kind { get; set; }
+                }
+            }
+
+            namespace TestNamespace
+            {
+                [ForgeMap]
+                public partial class TestForger
+                {
+                    public partial DestNs.Dest Forge(SourceNs.Source source);
+                }
+            }
+            """;
+
+        var (diagnostics, generatedTrees) = RunGenerator(source);
+
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        Assert.Single(generatedTrees);
+
+        var generatedCode = generatedTrees[0].GetText().ToString();
+        // Should contain the (int) cast for nullable cross-namespace enum
+        Assert.Contains("(int)source.Kind", generatedCode);
+    }
+
+    [Fact]
+    public void Generator_SameNamespaceEnum_DoesNotEmitCast()
+    {
+        var source = """
+            using ForgeMap;
+
+            namespace TestNamespace
+            {
+                public enum Status { Active, Inactive }
+
+                public class Source
+                {
+                    public int Id { get; set; }
+                    public Status Kind { get; set; }
+                }
+
+                public class Dest
+                {
+                    public int Id { get; set; }
+                    public Status Kind { get; set; }
+                }
+
+                [ForgeMap]
+                public partial class TestForger
+                {
+                    public partial Dest Forge(Source source);
+                }
+            }
+            """;
+
+        var (diagnostics, generatedTrees) = RunGenerator(source);
+
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        Assert.Single(generatedTrees);
+
+        var generatedCode = generatedTrees[0].GetText().ToString();
+        // Same namespace enum should use direct assignment, not (int) cast
+        Assert.Contains("Kind = source.Kind,", generatedCode);
+        Assert.DoesNotContain("(int)", generatedCode);
+    }
+
+    private static (IReadOnlyList<Diagnostic> Diagnostics, IReadOnlyList<SyntaxTree> GeneratedTrees) RunGenerator(string source)
+    {
+        return SourceGeneratorTests.RunGenerator(source);
+    }
+}
+
+#endregion
