@@ -2182,7 +2182,7 @@ public class CompatibleEnumGeneratorTests
         Assert.Single(generatedTrees);
 
         var generatedCode = generatedTrees[0].GetText().ToString();
-        // Nullable<EnumA> -> EnumB: should emit cast with null-forgiving
+        // Nullable<EnumA> -> EnumB: should emit cast using the nullable source's Value
         Assert.Contains("(Dest.Priority)(int)source.Priority.Value", generatedCode);
     }
 
@@ -2230,6 +2230,53 @@ public class CompatibleEnumGeneratorTests
         var generatedCode = generatedTrees[0].GetText().ToString();
         // EnumA -> Nullable<EnumB>: should emit cast
         Assert.Contains("(Dest.Priority?)(int)source.Priority", generatedCode);
+    }
+
+    [Fact]
+    public void Generator_CompatibleEnums_NullableToNullable_EmitsCastWithNullPropagation()
+    {
+        var source = """
+            using ForgeMap;
+
+            namespace Source
+            {
+                public enum Priority { Low, Medium, High }
+
+                public class SourceEntity
+                {
+                    public Priority? Priority { get; set; }
+                }
+            }
+
+            namespace Dest
+            {
+                public enum Priority { Low, Medium, High }
+
+                public class DestDto
+                {
+                    public Priority? Priority { get; set; }
+                }
+            }
+
+            namespace Mappers
+            {
+                [ForgeMap]
+                public partial class TestForger
+                {
+                    public partial Dest.DestDto Forge(Source.SourceEntity source);
+                }
+            }
+            """;
+
+        var (diagnostics, generatedTrees) = RunGenerator(source);
+
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        Assert.Single(generatedTrees);
+
+        var generatedCode = generatedTrees[0].GetText().ToString();
+        // Nullable<EnumA> -> Nullable<EnumB>: should propagate null
+        Assert.Contains("source.Priority.HasValue", generatedCode);
+        Assert.Contains("(Dest.Priority?)(int)source.Priority.Value", generatedCode);
     }
 
     [Fact]

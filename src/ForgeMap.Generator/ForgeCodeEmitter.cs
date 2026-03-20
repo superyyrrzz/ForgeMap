@@ -2408,6 +2408,10 @@ internal sealed class ForgeCodeEmitter
         var underlyingTypeName = srcNamed?.EnumUnderlyingType?.ToDisplayString() ?? "int";
         var destDisplay = destType.ToDisplayString();
 
+        // Nullable<EnumA> -> Nullable<EnumB>: propagate null
+        if (srcUnderlying != null && dstUnderlying != null)
+            return $"{sourceExpr}.HasValue ? ({destDisplay})({underlyingTypeName}){sourceExpr}.Value : null";
+
         // Nullable<EnumA> -> EnumB: unwrap with .Value before casting
         if (srcUnderlying != null && dstUnderlying == null)
             return $"({destDisplay})({underlyingTypeName}){sourceExpr}.Value";
