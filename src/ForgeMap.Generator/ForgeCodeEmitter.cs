@@ -292,7 +292,7 @@ internal sealed class ForgeCodeEmitter
         foreach (var member in forger.Symbol.GetMembers().OfType<IMethodSymbol>())
         {
             // Must be a partial definition with matching method name, one parameter, non-void return
-            if (!member.IsPartialDefinition || member.Parameters.Length < 1 || member.ReturnsVoid)
+            if (!member.IsPartialDefinition || member.Parameters.Length != 1 || member.ReturnsVoid)
                 continue;
 
             // Skip the base method itself
@@ -894,7 +894,15 @@ internal sealed class ForgeCodeEmitter
                     DiagnosticDescriptors.ForgeAllDerivedWithConvertWith,
                     method.Locations.FirstOrDefault(),
                     method.Name);
-                return string.Empty;
+
+                // Emit a minimal throwing body so the partial method still compiles
+                var errAccessibility = GetAccessibilityKeyword(method.DeclaredAccessibility);
+                var errSb = new StringBuilder();
+                errSb.AppendLine($"        {errAccessibility} partial {destinationType.ToDisplayString()} {method.Name}({sourceType.ToDisplayString()} {method.Parameters[0].Name})");
+                errSb.AppendLine("        {");
+                errSb.AppendLine("            throw new global::System.NotSupportedException(\"[ForgeAllDerived] cannot be combined with [ConvertWith].\");");
+                errSb.AppendLine("        }");
+                return errSb.ToString();
             }
         }
 
