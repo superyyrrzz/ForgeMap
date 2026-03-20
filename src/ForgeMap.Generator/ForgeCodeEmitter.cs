@@ -1559,14 +1559,26 @@ internal sealed class ForgeCodeEmitter
     /// </summary>
     private static IMethodSymbol? FindBaseForgeMethod(INamedTypeSymbol forgerType, INamedTypeSymbol baseSourceType, INamedTypeSymbol baseDestType)
     {
-        return forgerType.GetMembers()
+        var methods = forgerType.GetMembers()
             .OfType<IMethodSymbol>()
-            .FirstOrDefault(m =>
-                m.IsPartialDefinition &&
-                !m.ReturnsVoid &&
-                m.Parameters.Length == 1 &&
-                SymbolEqualityComparer.Default.Equals(m.Parameters[0].Type, baseSourceType) &&
-                SymbolEqualityComparer.Default.Equals(m.ReturnType, baseDestType));
+            .Where(m => m.IsPartialDefinition);
+
+        // Prefer return-style: non-void return, single parameter (source), return type = dest
+        var returnStyle = methods.FirstOrDefault(m =>
+            !m.ReturnsVoid &&
+            m.Parameters.Length == 1 &&
+            SymbolEqualityComparer.Default.Equals(m.Parameters[0].Type, baseSourceType) &&
+            SymbolEqualityComparer.Default.Equals(m.ReturnType, baseDestType));
+
+        if (returnStyle != null)
+            return returnStyle;
+
+        // Fall back to ForgeInto-style: void return, two parameters (source, destination)
+        return methods.FirstOrDefault(m =>
+            m.ReturnsVoid &&
+            m.Parameters.Length == 2 &&
+            SymbolEqualityComparer.Default.Equals(m.Parameters[0].Type, baseSourceType) &&
+            SymbolEqualityComparer.Default.Equals(m.Parameters[1].Type, baseDestType));
     }
 
     /// <summary>
@@ -1575,7 +1587,7 @@ internal sealed class ForgeCodeEmitter
     /// </summary>
     private static bool DerivesFrom(INamedTypeSymbol derived, INamedTypeSymbol baseType)
     {
-        var current = derived;
+        INamedTypeSymbol? current = derived;
         while (current != null)
         {
             if (SymbolEqualityComparer.Default.Equals(current, baseType))

@@ -2100,6 +2100,7 @@ public class IncludeBaseForgeTests
         var (diagnostics, generatedTrees) = RunGenerator(source);
 
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        Assert.Single(generatedTrees);
 
         var generatedCode = generatedTrees[0].GetText().ToString();
         var lines = generatedCode.Split('\n');
@@ -2158,6 +2159,7 @@ public class IncludeBaseForgeTests
         var (diagnostics, generatedTrees) = RunGenerator(source);
 
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        Assert.Single(generatedTrees);
 
         var generatedCode = generatedTrees[0].GetText().ToString();
         var lines = generatedCode.Split('\n');
@@ -2225,6 +2227,7 @@ public class IncludeBaseForgeTests
         var (diagnostics, generatedTrees) = RunGenerator(source);
 
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        Assert.Single(generatedTrees);
 
         var generatedCode = generatedTrees[0].GetText().ToString();
         var lines = generatedCode.Split('\n');
@@ -2283,6 +2286,7 @@ public class IncludeBaseForgeTests
         var (diagnostics, generatedTrees) = RunGenerator(source);
 
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        Assert.Single(generatedTrees);
 
         var generatedCode = generatedTrees[0].GetText().ToString();
         var lines = generatedCode.Split('\n');
@@ -2358,6 +2362,7 @@ public class IncludeBaseForgeTests
         var (diagnostics, generatedTrees) = RunGenerator(source);
 
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        Assert.Single(generatedTrees);
 
         var generatedCode = generatedTrees[0].GetText().ToString();
         var lines = generatedCode.Split('\n');
@@ -2516,6 +2521,7 @@ public class IncludeBaseForgeTests
         var (diagnostics, generatedTrees) = RunGenerator(source);
 
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        Assert.Single(generatedTrees);
 
         var generatedCode = generatedTrees[0].GetText().ToString();
         var lines = generatedCode.Split('\n');
