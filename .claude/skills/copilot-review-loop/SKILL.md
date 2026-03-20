@@ -9,7 +9,7 @@ description: >
 
 # Copilot Review Loop
 
-Non-blocking loop: request Copilot review → schedule 5-min cron → fix comments each tick → re-trigger review → repeat until clean.
+Non-blocking loop: request Copilot review → schedule 5-min cron → fix comments each tick → re-trigger review → repeat until Copilot says "generated no comments".
 
 ## Critical: Read `references/copilot-api.md` first
 
@@ -45,13 +45,19 @@ For each unresolved comment:
 - Build and test (`dotnet build && dotnet test` or equivalent)
 - Reply to comment, then resolve thread
 
-After all comments addressed: commit, push, reset clean counter to 0, re-trigger Copilot review (MANDATORY — see step 4).
+After all comments addressed: commit, push, re-trigger Copilot review (MANDATORY — see step 4).
 
-### 3. If no unresolved comments → check review SHA and count clean
+### 3. If no unresolved comments → check Copilot's latest review
 
-Compare HEAD SHA with Copilot's latest review commit (see references).
-- **Match** → confirmed-clean. After 3 consecutive confirmed-clean iterations → cancel cron, report success.
-- **No match** → Copilot hasn't reviewed HEAD yet. Request Copilot review (re-requesting is acceptable even if already pending), do NOT count as clean. **Return immediately** — let the next cron tick check again. Do NOT sleep or poll.
+Fetch Copilot's latest review via REST (see references). Check two things:
+- **`commit_id`** matches HEAD SHA
+- **`body`** contains `"generated no comments"`
+
+If **both** match → Copilot reviewed the latest code and found nothing. **Cancel cron and report success.**
+
+If commit_id does not match HEAD → Copilot hasn't reviewed the latest push yet. Request Copilot review (re-requesting is acceptable even if already pending). **Return immediately** — let the next cron tick check again. Do NOT sleep or poll.
+
+If commit_id matches but body does NOT contain "generated no comments" → Copilot reviewed but found issues. The unresolved threads should have been caught in step 1. If somehow missed, re-fetch threads and process them.
 
 ### 4. Re-trigger Copilot review (MANDATORY after every push)
 
@@ -59,7 +65,6 @@ Never skip this step — it was the #1 failure mode historically.
 
 ## Stop conditions
 
-- 3 consecutive confirmed-clean iterations (with no unresolved threads)
-- 20 total iterations
+- Copilot's latest review on HEAD contains "generated no comments"
 - PR merged/closed
 - User cancels via `CronDelete`

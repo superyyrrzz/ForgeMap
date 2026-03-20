@@ -25,6 +25,15 @@ gh api repos/{OWNER}/{REPO}/pulls/{PR}/reviews \
   --jq '[.[] | select(.user.login == "copilot-pull-request-reviewer[bot]")] | sort_by(.submitted_at) | last | .commit_id'
 ```
 
+## Check if Copilot's latest review found no issues
+
+```bash
+gh api repos/{OWNER}/{REPO}/pulls/{PR}/reviews \
+  --jq '[.[] | select(.user.login == "copilot-pull-request-reviewer[bot]")] | sort_by(.submitted_at) | last | {commit_id: .commit_id, body: .body}'
+```
+
+**Termination signal**: If `commit_id` matches HEAD AND `body` contains `"generated no comments"`, Copilot is satisfied — the loop is done.
+
 ## Fetch unresolved threads (GraphQL)
 
 ```graphql
