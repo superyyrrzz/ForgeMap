@@ -86,7 +86,7 @@ public partial class OrderForger
 
 | AutoMapper | ForgeMap | Notes |
 |---|---|---|
-| Default: returns `null` for null source | `NullHandling.ReturnNull` (default) | Same behavior |
+| Default: returns `default(TDestination)` for null source | `NullHandling.ReturnNull` (default) | Same behavior (default/null depending on destination type) |
 | Custom null handling | `NullHandling.ThrowException` | Set on `[ForgeMap]` or `[ForgeMapDefaults]` |
 | `.NullSubstitute(value)` | Not directly supported | Use `[AfterForge]` hook to substitute |
 
