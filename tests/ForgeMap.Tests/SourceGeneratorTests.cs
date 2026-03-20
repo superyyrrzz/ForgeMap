@@ -1932,6 +1932,55 @@ public class InheritedPropertyResolutionTests
         Assert.Contains("Detail = source.Detail,", generatedCode);
     }
 
+    [Fact]
+    public void Generator_InheritedProperties_DestinationGetOnlyProperty_IsIgnored()
+    {
+        var source = """
+            using ForgeMap;
+
+            namespace TestNamespace
+            {
+                public class SourceEntity
+                {
+                    public int Id { get; set; }
+                    public string Name { get; set; }
+                    public string Detail { get; set; }
+                }
+
+                public class BaseDto
+                {
+                    public int Id { get; set; }
+                    public string Name { get; set; }
+
+                    // This inherited property is get-only and must not be assigned by the generator.
+                    public string Computed => $"{Name}-{Id}";
+                }
+
+                public class DerivedDto : BaseDto
+                {
+                    public string Detail { get; set; }
+                }
+
+                [ForgeMap]
+                public partial class TestForger
+                {
+                    public partial DerivedDto Forge(SourceEntity source);
+                }
+            }
+            """;
+
+        var (diagnostics, generatedTrees) = RunGenerator(source);
+
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        Assert.Single(generatedTrees);
+
+        var generatedCode = generatedTrees[0].GetText().ToString();
+        Assert.Contains("Id = source.Id,", generatedCode);
+        Assert.Contains("Name = source.Name,", generatedCode);
+        Assert.Contains("Detail = source.Detail,", generatedCode);
+        Assert.DoesNotContain("Computed =", generatedCode);
+    }
+
     private static (IReadOnlyList<Diagnostic> Diagnostics, IReadOnlyList<SyntaxTree> GeneratedTrees) RunGenerator(string source)
     {
         return SourceGeneratorTests.RunGenerator(source);
