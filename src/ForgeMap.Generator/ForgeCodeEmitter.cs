@@ -1564,21 +1564,32 @@ internal sealed class ForgeCodeEmitter
             .Where(m => m.IsPartialDefinition);
 
         // Prefer return-style: non-void return, single parameter (source), return type = dest
-        var returnStyle = methods.FirstOrDefault(m =>
-            !m.ReturnsVoid &&
-            m.Parameters.Length == 1 &&
-            SymbolEqualityComparer.Default.Equals(m.Parameters[0].Type, baseSourceType) &&
-            SymbolEqualityComparer.Default.Equals(m.ReturnType, baseDestType));
+        // Use stable ordering by name for deterministic resolution when multiple candidates exist
+        var returnStyle = methods
+            .Where(m =>
+                !m.ReturnsVoid &&
+                m.Parameters.Length == 1 &&
+                SymbolEqualityComparer.Default.Equals(m.Parameters[0].Type, baseSourceType) &&
+                SymbolEqualityComparer.Default.Equals(m.ReturnType, baseDestType))
+            .OrderBy(m => m.Name, StringComparer.Ordinal)
+            .FirstOrDefault();
 
         if (returnStyle != null)
             return returnStyle;
 
-        // Fall back to ForgeInto-style: void return, two parameters (source, destination)
-        return methods.FirstOrDefault(m =>
-            m.ReturnsVoid &&
-            m.Parameters.Length == 2 &&
-            SymbolEqualityComparer.Default.Equals(m.Parameters[0].Type, baseSourceType) &&
-            SymbolEqualityComparer.Default.Equals(m.Parameters[1].Type, baseDestType));
+        // Fall back to ForgeInto-style: void return, two parameters where the destination
+        // parameter is marked with [UseExistingValue] and matches baseDestType
+        return methods
+            .Where(m =>
+                m.ReturnsVoid &&
+                m.Parameters.Length == 2 &&
+                SymbolEqualityComparer.Default.Equals(m.Parameters[0].Type, baseSourceType) &&
+                m.Parameters.Any(p =>
+                    SymbolEqualityComparer.Default.Equals(p.Type, baseDestType) &&
+                    p.GetAttributes().Any(a =>
+                        string.Equals(a.AttributeClass?.Name, "UseExistingValueAttribute", StringComparison.Ordinal))))
+            .OrderBy(m => m.Name, StringComparer.Ordinal)
+            .FirstOrDefault();
     }
 
     /// <summary>
