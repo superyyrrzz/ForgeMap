@@ -223,8 +223,9 @@ public partial AddressDto ForgeAddress(Address source);
 public partial IReadOnlyList<LineItemDto> ForgeLineItems(IReadOnlyList<LineItem> source);
 
 // The collection forge method above is auto-implemented by the generator
-// (when GenerateCollectionMappings = true) using this element forge method:
-public partial LineItemDto ForgeItem(LineItem source);
+// (when GenerateCollectionMappings = true) using this element forge method.
+// IMPORTANT: the element method must share the same name as the collection method.
+public partial LineItemDto ForgeLineItems(LineItem source);
 ```
 
 ### Pattern 5: DI registration

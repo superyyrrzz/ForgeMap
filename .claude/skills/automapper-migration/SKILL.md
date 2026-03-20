@@ -263,7 +263,7 @@ For each AutoMapper `Profile`, create a corresponding `[ForgeMap]` partial class
 | `.AfterMap(...)` | `[AfterForge(nameof(MethodName))]` |
 | `.ForMember(d => d.X, o => o.MapFrom(s => expr))` | `[ForgeFrom(nameof(D.X), nameof(ResolverMethod))]` + static method |
 | Nested `CreateMap<A,B>()` used in parent | `[ForgeWith(nameof(D.Prop), nameof(ForgeNested))]` + nested forge method | For single nested objects only |
-| Nested collection (e.g., `List<A>` → `List<B>`) | `[ForgeWith]` referencing a collection-level forge method + element forge method | Declare `partial List<BDto> ForgeItems(List<B> source)` (auto-implemented when element forge exists and `GenerateCollectionMappings = true`); collection properties are NOT auto-mapped on a parent object |
+| Nested collection (e.g., `List<A>` → `List<B>`) | `[ForgeWith]` referencing a collection-level forge method + element forge method | Element method must share the same name as the collection method (overload resolution); collection properties are NOT auto-mapped on a parent object |
 | `mapper.Map(src, dest)` pattern | A void partial method with a `[UseExistingValue]` destination parameter (e.g., `ForgeInto(src, [UseExistingValue] dest)`). The name `ForgeInto` is a convention, not required |
 
 **Common gotchas**:
@@ -305,7 +305,11 @@ public class ForgeMapMappingService : IMappingService
 
     public void Map<TSource, TDestination>(TSource source, TDestination destination)
     {
-        // Dispatch to ForgeInto methods
+        // Dispatch to the appropriate Forge "Into" methods, similar to Map<TDestination> above.
+        // If not needed, throw so failures are explicit rather than silent no-ops.
+        throw new NotSupportedException(
+            $"Map-into-existing-object not configured for {typeof(TSource).Name} -> {typeof(TDestination).Name}. " +
+            "Add dispatch to the ForgeInto method here.");
     }
 }
 ```
