@@ -2391,7 +2391,7 @@ internal sealed class ForgeCodeEmitter
 
     /// <summary>
     /// Tries to generate a compatible enum cast expression. Returns null if not applicable.
-    /// Handles EnumA→EnumB, Nullable&lt;EnumA&gt;→EnumB, and EnumA→Nullable&lt;EnumB&gt;.
+    /// Handles EnumA→EnumB, Nullable&lt;EnumA&gt;→EnumB, EnumA→Nullable&lt;EnumB&gt;, and Nullable&lt;EnumA&gt;→Nullable&lt;EnumB&gt;.
     /// Uses the actual enum underlying type instead of hardcoding int.
     /// </summary>
     private static string? TryGenerateCompatibleEnumCast(ITypeSymbol sourceType, ITypeSymbol destType, string sourceExpr)

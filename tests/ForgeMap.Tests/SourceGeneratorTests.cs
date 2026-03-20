@@ -2326,6 +2326,102 @@ public class CompatibleEnumGeneratorTests
         Assert.DoesNotContain("Status = source.Status,", generatedCode);
     }
 
+    [Fact]
+    public void Generator_CompatibleEnums_ForgeInto_EmitsCast()
+    {
+        var source = """
+            using ForgeMap;
+
+            namespace Source
+            {
+                public enum Priority { Low, Medium, High }
+
+                public class SourceEntity
+                {
+                    public int Id { get; set; }
+                    public Priority Priority { get; set; }
+                }
+            }
+
+            namespace Dest
+            {
+                public enum Priority { Low, Medium, High }
+
+                public class DestDto
+                {
+                    public int Id { get; set; }
+                    public Priority Priority { get; set; }
+                }
+            }
+
+            namespace Mappers
+            {
+                [ForgeMap]
+                public partial class TestForger
+                {
+                    public partial Dest.DestDto Forge(Source.SourceEntity source);
+                    public partial void ForgeInto(Source.SourceEntity source, Dest.DestDto dest);
+                }
+            }
+            """;
+
+        var (diagnostics, generatedTrees) = RunGenerator(source);
+
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        Assert.Single(generatedTrees);
+
+        var generatedCode = generatedTrees[0].GetText().ToString();
+        // ForgeInto path should also emit compatible enum cast
+        Assert.Contains("(Dest.Priority)(int)source.Priority", generatedCode);
+    }
+
+    [Fact]
+    public void Generator_CompatibleEnums_LongUnderlyingType_EmitsCastWithLong()
+    {
+        var source = """
+            using ForgeMap;
+
+            namespace Source
+            {
+                public enum BigId : long { A = 0, B = 1, C = 2 }
+
+                public class SourceEntity
+                {
+                    public BigId BigId { get; set; }
+                }
+            }
+
+            namespace Dest
+            {
+                public enum BigId : long { A = 0, B = 1, C = 2 }
+
+                public class DestDto
+                {
+                    public BigId BigId { get; set; }
+                }
+            }
+
+            namespace Mappers
+            {
+                [ForgeMap]
+                public partial class TestForger
+                {
+                    public partial Dest.DestDto Forge(Source.SourceEntity source);
+                }
+            }
+            """;
+
+        var (diagnostics, generatedTrees) = RunGenerator(source);
+
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        Assert.Single(generatedTrees);
+
+        var generatedCode = generatedTrees[0].GetText().ToString();
+        // Should use 'long' not 'int' for underlying type
+        Assert.Contains("(Dest.BigId)(long)source.BigId", generatedCode);
+        Assert.DoesNotContain("(Dest.BigId)(int)source.BigId", generatedCode);
+    }
+
     private static (IReadOnlyList<Diagnostic> Diagnostics, IReadOnlyList<SyntaxTree> GeneratedTrees) RunGenerator(string source)
     {
         return SourceGeneratorTests.RunGenerator(source);
