@@ -308,9 +308,8 @@ internal sealed class ForgeCodeEmitter
             if (!DerivesFrom(memberSourceType, baseSourceType))
                 continue;
 
-            // Return type must derive from or equal the base return type
-            if (!SymbolEqualityComparer.Default.Equals(memberReturnType, baseDestinationType) &&
-                !DerivesFrom(memberReturnType, baseDestinationType))
+            // Return type must be assignable to the base return type (supports interfaces and NRT)
+            if (!CanAssign(memberReturnType, baseDestinationType))
                 continue;
 
             // Method name must match the base method
@@ -964,7 +963,7 @@ internal sealed class ForgeCodeEmitter
             else
             {
                 sb.AppendLine("            // Polymorphic dispatch — most-derived types checked first");
-                var usedNames = new HashSet<string>(StringComparer.Ordinal) { sourceParam };
+                var usedNames = new HashSet<string>(StringComparer.Ordinal) { sourceParam, "result" };
                 foreach (var derived in derivedMethods)
                 {
                     var derivedSourceDisplay = derived.Parameters[0].Type.ToDisplayString();
