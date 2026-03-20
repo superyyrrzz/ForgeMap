@@ -16,9 +16,20 @@ Copilot auto-review is enabled on this repo. Reviews are triggered automatically
 ```bash
 HEAD_SHA=$(gh pr view {PR} --json headRefOid --jq '.headRefOid')
 
-gh api repos/{OWNER}/{REPO}/pulls/{PR}/reviews \
+gh api repos/{OWNER}/{REPO}/pulls/{PR}/reviews --paginate \
   --jq '[.[] | select(.user.login == "copilot-pull-request-reviewer[bot]")] | sort_by(.submitted_at) | last | .commit_id'
 ```
+
+**Note on `--paginate`**: `gh api --paginate` concatenates JSON array responses across pages into a single array before applying `--jq`, so `sort_by | last` correctly operates on all reviews. Do NOT use `--slurp` — it is not a valid `gh api` flag.
+
+## Check if Copilot's latest review found no issues
+
+```bash
+gh api repos/{OWNER}/{REPO}/pulls/{PR}/reviews --paginate \
+  --jq '[.[] | select(.user.login == "copilot-pull-request-reviewer[bot]")] | sort_by(.submitted_at) | last | {commit_id: .commit_id, body: .body}'
+```
+
+**Termination signal**: If `commit_id` matches HEAD AND `body` contains `"generated no comments"`, Copilot is satisfied — the loop is done.
 
 ## Fetch unresolved threads (GraphQL)
 

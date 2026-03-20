@@ -9,7 +9,7 @@ description: >
 
 # Copilot Review Loop
 
-Non-blocking loop: schedule 5-min cron → fix Copilot comments each tick → repeat until clean. Copilot auto-review is enabled on this repo, so reviews are triggered automatically on each push — no manual review requests needed.
+Non-blocking loop: schedule 5-min cron → fix Copilot comments each tick → repeat until Copilot says "generated no comments". Copilot auto-review is enabled on this repo, so reviews are triggered automatically on each push — no manual review requests needed.
 
 ## Critical: Read `references/copilot-api.md` first
 
@@ -24,6 +24,10 @@ It contains exact API commands, correct author logins per API, and GraphQL queri
 4. Report to user and **return immediately** — never block/poll
 
 ## Each cron iteration
+
+### CRITICAL: No blocking, no sleeping, no polling
+
+Each iteration MUST be non-blocking. Check the state once, act or skip, and return immediately. **NEVER use `sleep` or poll in a loop waiting for Copilot to finish reviewing.** The cron fires every 5 minutes — if Copilot hasn't reviewed yet, simply skip the iteration and let the next cron tick handle it. This is the entire point of using a cron-based approach.
 
 ### 1. Always fetch unresolved Copilot threads first
 
@@ -40,17 +44,25 @@ For each unresolved comment:
 - Build and test (`dotnet build && dotnet test` or equivalent)
 - Reply to comment, then resolve thread
 
-After all comments addressed: commit, push, reset clean counter to 0. Copilot will automatically review the new push.
+After all comments addressed: commit and push. Copilot will automatically review the new push.
 
-### 3. If no unresolved comments → check review SHA and count clean
+### 3. If no unresolved comments → check Copilot's latest review
 
-Compare HEAD SHA with Copilot's latest review commit (see references).
-- **Match or Copilot has no pending review** → confirmed-clean. After 3 consecutive confirmed-clean iterations → cancel cron, report success.
-- **No match** → Copilot has not reviewed yet, do NOT count as clean (wait for next iteration).
+Fetch Copilot's latest review via REST (see references). Check two things:
+- **`commit_id`** matches HEAD SHA
+- **`body`** contains `"generated no comments"`
+
+If **both** match → Copilot reviewed the latest code and found nothing. **Cancel cron and report success.**
+
+If commit_id does not match HEAD → Copilot hasn't reviewed the latest push yet. **Return immediately** — let the next cron tick check again. Do NOT sleep or poll.
+
+If commit_id matches but body does NOT contain "generated no comments" → Copilot reviewed but found issues:
+- Re-fetch unresolved threads. If threads now exist, process them as in step 2.
+- If **no inline threads exist**, Copilot's feedback is only in the top-level review body. Surface the body text to the user, **cancel the cron via `CronDelete`**, and hand control back to the user — do not keep looping expecting inline comments that may never appear.
 
 ## Stop conditions
 
-- 3 consecutive confirmed-clean iterations (with no unresolved threads)
-- 20 total iterations
+- Copilot's latest review on HEAD contains "generated no comments"
 - PR merged/closed
 - User cancels via `CronDelete`
+- **Safety valve**: CronCreate auto-expires recurring jobs after 3 days. As an additional guard, stop after 20 cron iterations and surface a warning to the user if termination conditions were never met.
