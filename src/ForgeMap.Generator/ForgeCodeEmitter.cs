@@ -967,10 +967,17 @@ internal sealed class ForgeCodeEmitter
             else
             {
                 sb.AppendLine("            // Polymorphic dispatch — most-derived types checked first");
+                var usedNames = new HashSet<string>(StringComparer.Ordinal) { sourceParam };
                 foreach (var derived in derivedMethods)
                 {
                     var derivedSourceDisplay = derived.Parameters[0].Type.ToDisplayString();
                     var varName = GenerateSafeVariableName(derived.Parameters[0].Type);
+                    if (!usedNames.Add(varName))
+                    {
+                        var baseName = varName;
+                        var suffix = 2;
+                        do { varName = baseName + suffix++; } while (!usedNames.Add(varName));
+                    }
                     sb.AppendLine($"            if ({sourceParam} is {derivedSourceDisplay} {varName}) return {method.Name}({varName});");
                 }
                 sb.AppendLine();
