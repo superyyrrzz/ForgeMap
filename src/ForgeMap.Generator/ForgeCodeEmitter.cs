@@ -394,13 +394,11 @@ internal sealed class ForgeCodeEmitter
             // Use type-based matching (like FindForgingMethod) to resolve the correct overload,
             // since forgers commonly overload Forge(...) for multiple type pairs.
             // The forward nested method takes forwardSourcePropType and returns forwardDestPropType.
-            var forwardDestPropType = forwardDestType.GetMembers(forwardDestPropName)
-                .OfType<IPropertySymbol>()
-                .FirstOrDefault()?.Type;
+            var forwardDestPropType = GetMappableProperties(forwardDestType)
+                .FirstOrDefault(p => p.Name == forwardDestPropName)?.Type;
             var forwardSourcePropType = reverseDestPropName != null
-                ? forwardSourceType.GetMembers(reverseDestPropName)
-                    .OfType<IPropertySymbol>()
-                    .FirstOrDefault()?.Type
+                ? GetMappableProperties(forwardSourceType)
+                    .FirstOrDefault(p => p.Name == reverseDestPropName)?.Type
                 : null;
 
             IMethodSymbol? nestedMethod = null;
@@ -2243,12 +2241,50 @@ internal sealed class ForgeCodeEmitter
         if (type == null)
             return Enumerable.Empty<IPropertySymbol>();
 
-        return type.GetMembers()
-            .OfType<IPropertySymbol>()
-            .Where(p => p.DeclaredAccessibility == Accessibility.Public &&
-                       !p.IsStatic &&
-                       !p.IsIndexer &&
-                       p.GetMethod != null);
+        // Walk the full BaseType chain to collect properties from the entire
+        // inheritance hierarchy (including compiled/metadata references).
+        // Properties are returned base-first; if a derived type new-shadows
+        // a base property, the derived declaration wins.
+        var levels = new List<INamedTypeSymbol>();
+        var current = type;
+        while (current != null && current.SpecialType != SpecialType.System_Object)
+        {
+            levels.Add(current);
+            current = current.BaseType;
+        }
+
+        // Reverse so base properties come first
+        levels.Reverse();
+
+        var seen = new HashSet<string>();
+        var result = new List<IPropertySymbol>();
+
+        foreach (var level in levels)
+        {
+            foreach (var prop in level.GetMembers().OfType<IPropertySymbol>())
+            {
+                if (prop.DeclaredAccessibility == Accessibility.Public &&
+                    !prop.IsStatic &&
+                    !prop.IsIndexer &&
+                    prop.GetMethod != null)
+                {
+                    if (seen.Contains(prop.Name))
+                    {
+                        // Derived shadows base — replace the earlier entry
+                        var idx = result.FindIndex(p => p.Name == prop.Name);
+                        if (idx >= 0)
+                            result[idx] = prop;
+                    }
+                    else
+                    {
+                        seen.Add(prop.Name);
+                        result.Add(prop);
+                    }
+                }
+            }
+        }
+
+        return result;
     }
 
     private static bool CanAssign(ITypeSymbol source, ITypeSymbol dest)
