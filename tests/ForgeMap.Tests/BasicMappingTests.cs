@@ -1498,6 +1498,8 @@ public class ReverseForgeTests
     }
 }
 
+#endregion
+
 #region v0.6 Test Models
 
 public class OrderEntityV6
@@ -1748,8 +1750,6 @@ public class BeforeAndAfterForgeTests
         existing.Name.Should().Be("Original");
     }
 }
-
-#endregion
 
 #endregion
 
