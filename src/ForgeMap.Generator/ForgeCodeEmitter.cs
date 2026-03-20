@@ -1132,6 +1132,13 @@ internal sealed class ForgeCodeEmitter
         if (sourcePropertyType != null && IsNullableToNonNullableValueType(sourcePropertyType, destPropertyType))
             return sourceExpression.Contains("?.") ? $"({destPropertyType.ToDisplayString()})({sourceExpression})!" : $"({destPropertyType.ToDisplayString()}){sourceExpression}!";
 
+        // Handle lifted value type from null-conditional: source.Customer?.Age is int?
+        // even though Age is int — cast back to the destination type
+        if (sourceExpression.Contains("?.") && sourcePropertyType != null
+            && sourcePropertyType.IsValueType && GetNullableUnderlyingType(sourcePropertyType) == null
+            && destPropertyType.IsValueType && GetNullableUnderlyingType(destPropertyType) == null)
+            return $"({destPropertyType.ToDisplayString()})({sourceExpression})!";
+
         // Compatible enum cast for constructor parameters
         if (sourcePropertyType != null)
         {
@@ -1139,13 +1146,6 @@ internal sealed class ForgeCodeEmitter
             if (enumCastExpr != null)
                 return enumCastExpr;
         }
-
-        // Handle lifted value type from null-conditional: source.Customer?.Age is int?
-        // even though Age is int — cast back to the destination type
-        if (sourceExpression.Contains("?.") && sourcePropertyType != null
-            && sourcePropertyType.IsValueType && GetNullableUnderlyingType(sourcePropertyType) == null
-            && destPropertyType.IsValueType && GetNullableUnderlyingType(destPropertyType) == null)
-            return $"({destPropertyType.ToDisplayString()})({sourceExpression})!";
 
         return sourceExpression;
     }
@@ -2428,16 +2428,20 @@ internal sealed class ForgeCodeEmitter
         var underlyingTypeName = srcNamed?.EnumUnderlyingType?.ToDisplayString() ?? "int";
         var destDisplay = destType.ToDisplayString();
 
+        // Wrap sourceExpr in parentheses to handle null-conditional chains (e.g. source.Customer?.Priority)
+        // Without parens, appending .HasValue/.Value extends the ?. chain with wrong semantics
+        var safeExpr = sourceExpr.Contains("?.") ? $"({sourceExpr})" : sourceExpr;
+
         // Nullable<EnumA> -> Nullable<EnumB>: propagate null
         if (srcUnderlying != null && dstUnderlying != null)
-            return $"{sourceExpr}.HasValue ? ({destDisplay})({underlyingTypeName}){sourceExpr}.Value : null";
+            return $"{safeExpr}.HasValue ? ({destDisplay})({underlyingTypeName}){safeExpr}.Value : null";
 
         // Nullable<EnumA> -> EnumB: unwrap with .Value before casting (! suppresses CS8629)
         if (srcUnderlying != null && dstUnderlying == null)
-            return $"({destDisplay})({underlyingTypeName}){sourceExpr}!.Value";
+            return $"({destDisplay})({underlyingTypeName}){safeExpr}!.Value";
 
         // EnumA -> EnumB or EnumA -> Nullable<EnumB>
-        return $"({destDisplay})({underlyingTypeName}){sourceExpr}";
+        return $"({destDisplay})({underlyingTypeName}){safeExpr}";
     }
 
     /// <summary>
