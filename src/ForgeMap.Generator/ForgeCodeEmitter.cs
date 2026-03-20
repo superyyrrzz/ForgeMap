@@ -291,7 +291,11 @@ internal sealed class ForgeCodeEmitter
             if (SymbolEqualityComparer.Default.Equals(member, baseMethod))
                 continue;
 
-            if (!member.IsPartialDefinition || member.ReturnsVoid || member.Parameters.Length < 1)
+            // Only consider overloads of the same method name with exactly one parameter
+            if (!string.Equals(member.Name, baseMethod.Name, StringComparison.Ordinal))
+                continue;
+
+            if (!member.IsPartialDefinition || member.ReturnsVoid || member.Parameters.Length != 1)
                 continue;
 
             // Skip ForgeInto pattern methods
