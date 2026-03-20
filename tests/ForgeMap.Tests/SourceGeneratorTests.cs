@@ -2475,6 +2475,101 @@ public class CompatibleEnumGeneratorTests
         Assert.Contains("(Dest.Priority)(int)source.Priority", generatedCode);
     }
 
+    [Fact]
+    public void Generator_CompatibleEnums_ForgeProperty_EmitsCast()
+    {
+        var source = """
+            using ForgeMap;
+
+            namespace Source
+            {
+                public enum Priority { Low, Medium, High }
+                public class SourceEntity
+                {
+                    public int Id { get; set; }
+                    public Priority SourcePriority { get; set; }
+                }
+            }
+
+            namespace Dest
+            {
+                public enum Priority { Low, Medium, High }
+                public class DestDto
+                {
+                    public int Id { get; set; }
+                    public Priority Priority { get; set; }
+                }
+            }
+
+            namespace TestMappers
+            {
+                [ForgeMap]
+                public partial class TestForger
+                {
+                    [ForgeProperty("SourcePriority", "Priority")]
+                    public partial Dest.DestDto Forge(Source.SourceEntity source);
+                }
+            }
+            """;
+
+        var (diagnostics, generatedTrees) = RunGenerator(source);
+
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        Assert.Single(generatedTrees);
+
+        var generatedCode = generatedTrees[0].GetText().ToString();
+        // [ForgeProperty] path should emit compatible enum cast
+        Assert.Contains("(Dest.Priority)(int)", generatedCode);
+        Assert.Contains("source.SourcePriority", generatedCode);
+    }
+
+    [Fact]
+    public void Generator_CompatibleEnums_DifferentUnderlyingTypes_NoCast()
+    {
+        var source = """
+            using ForgeMap;
+
+            namespace Source
+            {
+                public enum Priority : byte { Low, Medium, High }
+                public class SourceEntity
+                {
+                    public int Id { get; set; }
+                    public Priority Priority { get; set; }
+                }
+            }
+
+            namespace Dest
+            {
+                public enum Priority : int { Low, Medium, High }
+                public class DestDto
+                {
+                    public int Id { get; set; }
+                    public Priority Priority { get; set; }
+                }
+            }
+
+            namespace TestMappers
+            {
+                [ForgeMap]
+                public partial class TestForger
+                {
+                    public partial Dest.DestDto Forge(Source.SourceEntity source);
+                }
+            }
+            """;
+
+        var (diagnostics, generatedTrees) = RunGenerator(source);
+
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        Assert.Single(generatedTrees);
+
+        var generatedCode = generatedTrees[0].GetText().ToString();
+        // Different underlying types (byte vs int) should NOT produce a compatible enum cast
+        Assert.DoesNotContain("(Dest.Priority)(byte)", generatedCode);
+        Assert.DoesNotContain("(Dest.Priority)(int)", generatedCode);
+    }
+
     private static (IReadOnlyList<Diagnostic> Diagnostics, IReadOnlyList<SyntaxTree> GeneratedTrees) RunGenerator(string source)
     {
         return SourceGeneratorTests.RunGenerator(source);

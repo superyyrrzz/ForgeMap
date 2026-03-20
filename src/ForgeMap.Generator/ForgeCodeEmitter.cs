@@ -955,7 +955,23 @@ internal sealed class ForgeCodeEmitter
             // When null-conditional lifts a non-nullable value type to Nullable<T>, cast back
             var isLiftedValueType = hasNullConditional && sourceLeafType != null && sourceLeafType.IsValueType && GetNullableUnderlyingType(sourceLeafType) == null;
             if (isLiftedValueType && destProp.Type.IsValueType && GetNullableUnderlyingType(destProp.Type) == null)
+            {
+                // Check compatible enum before falling back to plain cast
+                if (sourceLeafType != null)
+                {
+                    var enumCast = TryGenerateCompatibleEnumCast(sourceLeafType, destProp.Type, $"({sourceExpr})!");
+                    if (enumCast != null)
+                        return enumCast;
+                }
                 return $"({destProp.Type.ToDisplayString()})({sourceExpr})!";
+            }
+            // Compatible enum cast for [ForgeProperty]-mapped properties
+            if (sourceLeafType != null)
+            {
+                var enumCast = TryGenerateCompatibleEnumCast(sourceLeafType, destProp.Type, sourceExpr);
+                if (enumCast != null)
+                    return enumCast;
+            }
             var nullForgiving = hasNullConditional && destProp.Type.NullableAnnotation != NullableAnnotation.Annotated ? "!" : "";
             return $"{sourceExpr}{nullForgiving}";
         }
@@ -2041,10 +2057,30 @@ internal sealed class ForgeCodeEmitter
                 var isLiftedValueType = hasNullConditional && sourceLeafType != null && sourceLeafType.IsValueType && GetNullableUnderlyingType(sourceLeafType) == null;
                 if (isLiftedValueType && destProp.Type.IsValueType && GetNullableUnderlyingType(destProp.Type) == null)
                 {
+                    // Check compatible enum before falling back to plain cast
+                    if (sourceLeafType != null)
+                    {
+                        var enumCast = TryGenerateCompatibleEnumCast(sourceLeafType, destProp.Type, $"({sourceExpr})!");
+                        if (enumCast != null)
+                        {
+                            sb.AppendLine($"            {destParam}.{destProp.Name} = {enumCast};");
+                            continue;
+                        }
+                    }
                     sb.AppendLine($"            {destParam}.{destProp.Name} = ({destProp.Type.ToDisplayString()})({sourceExpr})!;");
                 }
                 else
                 {
+                    // Compatible enum cast for [ForgeProperty]-mapped properties
+                    if (sourceLeafType != null)
+                    {
+                        var enumCast = TryGenerateCompatibleEnumCast(sourceLeafType, destProp.Type, sourceExpr);
+                        if (enumCast != null)
+                        {
+                            sb.AppendLine($"            {destParam}.{destProp.Name} = {enumCast};");
+                            continue;
+                        }
+                    }
                     // Add null-forgiving operator if we used null-conditional and dest is non-nullable
                     var nullForgiving = hasNullConditional && destProp.Type.NullableAnnotation != NullableAnnotation.Annotated ? "!" : "";
                     sb.AppendLine($"            {destParam}.{destProp.Name} = {sourceExpr}{nullForgiving};");
@@ -2377,6 +2413,14 @@ internal sealed class ForgeCodeEmitter
 
         // Already identical types — not a "compatible enum" case
         if (SymbolEqualityComparer.Default.Equals(source, dest))
+            return false;
+
+        var srcNamed = (INamedTypeSymbol)source;
+        var dstNamed = (INamedTypeSymbol)dest;
+
+        // Underlying types must match — boxed constant Equals() is type-sensitive
+        // (e.g., ((int)0).Equals((byte)0) is false), so require same underlying type.
+        if (srcNamed.EnumUnderlyingType?.SpecialType != dstNamed.EnumUnderlyingType?.SpecialType)
             return false;
 
         var sourceMembers = source.GetMembers().OfType<IFieldSymbol>()
