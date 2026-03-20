@@ -24,7 +24,7 @@ When the destination (or source) type comes from a compiled assembly (NuGet pack
 
 ### Solution
 
-The generator must walk the full `INamedTypeSymbol.BaseType` chain to collect all accessible properties (public getters/setters), regardless of whether the type is from source or a metadata reference (compiled assembly).
+The generator must walk the full `INamedTypeSymbol.BaseType` chain to collect all accessible properties (those with public getters on source types and public setters on destination types), regardless of whether the type is from source or a metadata reference (compiled assembly).
 
 This is a **generator bugfix** — no new attributes or API surface. Existing forge methods that target types with inherited properties will automatically pick up the full hierarchy.
 
@@ -36,7 +36,7 @@ This is a **generator bugfix** — no new attributes or API surface. Existing fo
 | **Accessibility** | Include properties with public getters (for source) or public setters (for destination) |
 | **Shadowing** | If a derived type `new`-shadows a base property, use the derived declaration |
 | **Ordering** | Properties are assigned in declaration order, base-first (base properties before derived) |
-| **Existing behavior** | Source types from syntax trees already work correctly; this fix only affects metadata references |
+| **Existing behavior** | Property discovery currently uses `INamedTypeSymbol.GetMembers()` without walking `BaseType`, so inherited properties are not discovered for either syntax-tree source types or metadata references |
 
 ### Generated Code Example
 
@@ -254,8 +254,9 @@ When `[ForgeAllDerived]` is on a base forge method and a collection forge method
 [ForgeAllDerived]
 public partial BaseDto Forge(BaseEntity source);
 public partial DerivedDto Forge(DerivedEntity source);
+public partial List<BaseDto> Forge(List<BaseEntity> source); // collection-typed partial signature
 
-// Auto-generated collection method calls the polymorphic Forge(BaseEntity):
+// Auto-generated body for the collection method calls the polymorphic Forge(BaseEntity):
 public partial List<BaseDto> Forge(List<BaseEntity> source)
 {
     if (source == null) return null;
