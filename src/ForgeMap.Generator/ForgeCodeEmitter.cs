@@ -2471,9 +2471,9 @@ internal sealed class ForgeCodeEmitter
         // Without parens, appending .HasValue/.Value extends the ?. chain with wrong semantics
         var safeExpr = sourceExpr.Contains("?.") ? $"({sourceExpr})" : sourceExpr;
 
-        // Nullable source -> Nullable dest: propagate null
+        // Nullable source -> Nullable dest: propagate null via pattern match (single evaluation)
         if (srcIsNullable && dstUnderlying != null)
-            return $"{safeExpr}.HasValue ? ({destDisplay})({underlyingTypeName}){safeExpr}.Value : null";
+            return $"{safeExpr} is {{ }} __v ? ({destDisplay})({underlyingTypeName})__v : null";
 
         // Nullable source -> non-nullable dest: unwrap with .Value before casting (! suppresses CS8629)
         if (srcIsNullable && dstUnderlying == null)
