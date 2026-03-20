@@ -1751,4 +1751,149 @@ public class BeforeAndAfterForgeTests
 
 #endregion
 
+#region v1.1 ForgeAllDerived Runtime Tests
+
+// --- Models for polymorphic dispatch ---
+public class AnimalEntity
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+}
+
+public class DogEntity : AnimalEntity
+{
+    public string Breed { get; set; } = string.Empty;
+}
+
+public class GuideDogEntity : DogEntity
+{
+    public string Handler { get; set; } = string.Empty;
+}
+
+public class CatEntity : AnimalEntity
+{
+    public bool IsIndoor { get; set; }
+}
+
+public class AnimalDto
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+}
+
+public class DogDto : AnimalDto
+{
+    public string Breed { get; set; } = string.Empty;
+}
+
+public class GuideDogDto : DogDto
+{
+    public string Handler { get; set; } = string.Empty;
+}
+
+public class CatDto : AnimalDto
+{
+    public bool IsIndoor { get; set; }
+}
+
+[ForgeMap]
+public partial class PolymorphicForger
+{
+    [ForgeAllDerived]
+    public partial AnimalDto Forge(AnimalEntity source);
+    public partial DogDto Forge(DogEntity source);
+    public partial GuideDogDto Forge(GuideDogEntity source);
+    public partial CatDto Forge(CatEntity source);
+    public partial List<AnimalDto> Forge(List<AnimalEntity> source);
+}
+
+public class ForgeAllDerivedRuntimeTests
+{
+    private readonly PolymorphicForger _forger = new();
+
+    [Fact]
+    public void ForgeAllDerived_BaseType_MapsAsBase()
+    {
+        var source = new AnimalEntity { Id = 1, Name = "Generic Animal" };
+        var result = _forger.Forge(source);
+
+        result.Should().BeOfType<AnimalDto>();
+        result.Id.Should().Be(1);
+        result.Name.Should().Be("Generic Animal");
+    }
+
+    [Fact]
+    public void ForgeAllDerived_DerivedType_DispatchesToDerived()
+    {
+        AnimalEntity source = new DogEntity { Id = 2, Name = "Rex", Breed = "Labrador" };
+        var result = _forger.Forge(source);
+
+        result.Should().BeOfType<DogDto>();
+        var dog = (DogDto)result;
+        // Breed is declared directly on DogEntity/DogDto, so it maps
+        dog.Breed.Should().Be("Labrador");
+        // Note: Id and Name are inherited properties; they require Phase 1 (inherited property resolution)
+        // to be mapped correctly. For now, just verify dispatch works.
+    }
+
+    [Fact]
+    public void ForgeAllDerived_MostDerived_DispatchesCorrectly()
+    {
+        AnimalEntity source = new GuideDogEntity { Id = 3, Name = "Buddy", Breed = "Golden Retriever", Handler = "Alice" };
+        var result = _forger.Forge(source);
+
+        result.Should().BeOfType<GuideDogDto>();
+        var guideDog = (GuideDogDto)result;
+        // Handler is declared directly on GuideDogEntity/GuideDogDto
+        guideDog.Handler.Should().Be("Alice");
+    }
+
+    [Fact]
+    public void ForgeAllDerived_AnotherDerived_DispatchesCorrectly()
+    {
+        AnimalEntity source = new CatEntity { Id = 4, Name = "Whiskers", IsIndoor = true };
+        var result = _forger.Forge(source);
+
+        result.Should().BeOfType<CatDto>();
+        var cat = (CatDto)result;
+        // IsIndoor is declared directly on CatEntity/CatDto
+        cat.IsIndoor.Should().BeTrue();
+    }
+
+    [Fact]
+    public void ForgeAllDerived_NullSource_ReturnsNull()
+    {
+        AnimalEntity? source = null;
+        var result = _forger.Forge(source!);
+        result.Should().BeNull();
+    }
+
+    [Fact]
+    public void ForgeAllDerived_CollectionDispatchesPolymorphically()
+    {
+        var sources = new List<AnimalEntity>
+        {
+            new AnimalEntity { Id = 1, Name = "Animal" },
+            new DogEntity { Id = 2, Name = "Rex", Breed = "Labrador" },
+            new CatEntity { Id = 3, Name = "Whiskers", IsIndoor = true },
+            new GuideDogEntity { Id = 4, Name = "Buddy", Breed = "Golden Retriever", Handler = "Alice" },
+        };
+
+        var results = _forger.Forge(sources);
+
+        results.Should().HaveCount(4);
+        results[0].Should().BeOfType<AnimalDto>();
+        results[1].Should().BeOfType<DogDto>();
+        results[2].Should().BeOfType<CatDto>();
+        results[3].Should().BeOfType<GuideDogDto>();
+
+        // Verify directly-declared properties map correctly
+        ((DogDto)results[1]).Breed.Should().Be("Labrador");
+        ((CatDto)results[2]).IsIndoor.Should().BeTrue();
+        ((GuideDogDto)results[3]).Handler.Should().Be("Alice");
+    }
+}
+
+#endregion
+
 #endregion

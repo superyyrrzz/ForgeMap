@@ -1688,3 +1688,320 @@ public class HookGeneratorTests
 }
 
 #endregion
+
+#region v1.1 ForgeAllDerived Tests
+
+public class ForgeAllDerivedGeneratorTests
+{
+    [Fact]
+    public void Generator_ForgeAllDerived_GeneratesPolymorphicDispatch()
+    {
+        var source = """
+            using ForgeMap;
+
+            namespace TestNamespace
+            {
+                public class BaseEntity { public int Id { get; set; } }
+                public class DerivedAEntity : BaseEntity { public string NameA { get; set; } }
+                public class DerivedBEntity : BaseEntity { public string NameB { get; set; } }
+
+                public class BaseDto { public int Id { get; set; } }
+                public class DerivedADto : BaseDto { public string NameA { get; set; } }
+                public class DerivedBDto : BaseDto { public string NameB { get; set; } }
+
+                [ForgeMap]
+                public partial class TestForger
+                {
+                    [ForgeAllDerived]
+                    public partial BaseDto Forge(BaseEntity source);
+                    public partial DerivedADto Forge(DerivedAEntity source);
+                    public partial DerivedBDto Forge(DerivedBEntity source);
+                }
+            }
+            """;
+
+        var (diagnostics, generatedTrees) = RunGenerator(source);
+
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        Assert.Single(generatedTrees);
+
+        var generatedCode = generatedTrees[0].GetText().ToString();
+
+        // Verify polymorphic dispatch is generated in the base method
+        Assert.Contains("source is TestNamespace.DerivedAEntity", generatedCode);
+        Assert.Contains("source is TestNamespace.DerivedBEntity", generatedCode);
+        Assert.Contains("return Forge(", generatedCode);
+
+        // Verify base mapping fallback still exists
+        Assert.Contains("Id = source.Id,", generatedCode);
+    }
+
+    [Fact]
+    public void Generator_ForgeAllDerived_MostDerivedFirst()
+    {
+        var source = """
+            using ForgeMap;
+
+            namespace TestNamespace
+            {
+                public class BaseEntity { public int Id { get; set; } }
+                public class ChildEntity : BaseEntity { public string Name { get; set; } }
+                public class GrandChildEntity : ChildEntity { public string Extra { get; set; } }
+
+                public class BaseDto { public int Id { get; set; } }
+                public class ChildDto : BaseDto { public string Name { get; set; } }
+                public class GrandChildDto : ChildDto { public string Extra { get; set; } }
+
+                [ForgeMap]
+                public partial class TestForger
+                {
+                    [ForgeAllDerived]
+                    public partial BaseDto Forge(BaseEntity source);
+                    public partial ChildDto Forge(ChildEntity source);
+                    public partial GrandChildDto Forge(GrandChildEntity source);
+                }
+            }
+            """;
+
+        var (diagnostics, generatedTrees) = RunGenerator(source);
+
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        Assert.Single(generatedTrees);
+
+        var generatedCode = generatedTrees[0].GetText().ToString();
+
+        // GrandChild should be checked before Child (most-derived first)
+        var grandChildIndex = generatedCode.IndexOf("source is TestNamespace.GrandChildEntity");
+        var childIndex = generatedCode.IndexOf("source is TestNamespace.ChildEntity");
+        Assert.True(grandChildIndex >= 0, "GrandChildEntity dispatch not found");
+        Assert.True(childIndex >= 0, "ChildEntity dispatch not found");
+        Assert.True(grandChildIndex < childIndex, "GrandChild should be checked before Child (most-derived first)");
+    }
+
+    [Fact]
+    public void Generator_ForgeAllDerived_NoDerivedMethods_ReportsWarning()
+    {
+        var source = """
+            using ForgeMap;
+
+            namespace TestNamespace
+            {
+                public class BaseEntity { public int Id { get; set; } }
+                public class BaseDto { public int Id { get; set; } }
+
+                [ForgeMap]
+                public partial class TestForger
+                {
+                    [ForgeAllDerived]
+                    public partial BaseDto Forge(BaseEntity source);
+                }
+            }
+            """;
+
+        var (diagnostics, _) = RunGenerator(source);
+
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        var warning = diagnostics.FirstOrDefault(d => d.Id == "FM0022");
+        Assert.NotNull(warning);
+        Assert.Equal(DiagnosticSeverity.Warning, warning.Severity);
+    }
+
+    [Fact]
+    public void Generator_ForgeAllDerived_WithConvertWith_ReportsError()
+    {
+        var source = """
+            using ForgeMap;
+
+            namespace TestNamespace
+            {
+                public class BaseEntity { public int Id { get; set; } }
+                public class BaseDto { public int Id { get; set; } }
+
+                public class MyConverter : ITypeConverter<BaseEntity, BaseDto>
+                {
+                    public BaseDto Convert(BaseEntity source) => new BaseDto { Id = source.Id };
+                }
+
+                [ForgeMap]
+                public partial class TestForger
+                {
+                    [ForgeAllDerived]
+                    [ConvertWith(typeof(MyConverter))]
+                    public partial BaseDto Forge(BaseEntity source);
+                }
+            }
+            """;
+
+        var (diagnostics, _) = RunGenerator(source);
+
+        var error = diagnostics.FirstOrDefault(d => d.Id == "FM0023");
+        Assert.NotNull(error);
+        Assert.Equal(DiagnosticSeverity.Error, error.Severity);
+    }
+
+    [Fact]
+    public void Generator_ForgeAllDerived_SameDepthAlphabeticalOrder()
+    {
+        var source = """
+            using ForgeMap;
+
+            namespace TestNamespace
+            {
+                public class BaseEntity { public int Id { get; set; } }
+                public class ZebraEntity : BaseEntity { public string Z { get; set; } }
+                public class AlphaEntity : BaseEntity { public string A { get; set; } }
+
+                public class BaseDto { public int Id { get; set; } }
+                public class ZebraDto : BaseDto { public string Z { get; set; } }
+                public class AlphaDto : BaseDto { public string A { get; set; } }
+
+                [ForgeMap]
+                public partial class TestForger
+                {
+                    [ForgeAllDerived]
+                    public partial BaseDto Forge(BaseEntity source);
+                    public partial ZebraDto Forge(ZebraEntity source);
+                    public partial AlphaDto Forge(AlphaEntity source);
+                }
+            }
+            """;
+
+        var (diagnostics, generatedTrees) = RunGenerator(source);
+
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        Assert.Single(generatedTrees);
+
+        var generatedCode = generatedTrees[0].GetText().ToString();
+
+        // Same depth: AlphaEntity < ZebraEntity alphabetically
+        var alphaIndex = generatedCode.IndexOf("source is TestNamespace.AlphaEntity");
+        var zebraIndex = generatedCode.IndexOf("source is TestNamespace.ZebraEntity");
+        Assert.True(alphaIndex >= 0, "AlphaEntity dispatch not found");
+        Assert.True(zebraIndex >= 0, "ZebraEntity dispatch not found");
+        Assert.True(alphaIndex < zebraIndex, "Alpha should come before Zebra (alphabetical at same depth)");
+    }
+
+    [Fact]
+    public void Generator_ForgeAllDerived_IgnoresNonDerivedMethods()
+    {
+        var source = """
+            using ForgeMap;
+
+            namespace TestNamespace
+            {
+                public class BaseEntity { public int Id { get; set; } }
+                public class DerivedEntity : BaseEntity { public string Name { get; set; } }
+                public class UnrelatedEntity { public string Foo { get; set; } }
+
+                public class BaseDto { public int Id { get; set; } }
+                public class DerivedDto : BaseDto { public string Name { get; set; } }
+                public class UnrelatedDto { public string Foo { get; set; } }
+
+                [ForgeMap]
+                public partial class TestForger
+                {
+                    [ForgeAllDerived]
+                    public partial BaseDto Forge(BaseEntity source);
+                    public partial DerivedDto Forge(DerivedEntity source);
+                    public partial UnrelatedDto Forge(UnrelatedEntity source);
+                }
+            }
+            """;
+
+        var (diagnostics, generatedTrees) = RunGenerator(source);
+
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        Assert.Single(generatedTrees);
+
+        var generatedCode = generatedTrees[0].GetText().ToString();
+
+        // Only DerivedEntity should appear in dispatch, not UnrelatedEntity
+        Assert.Contains("source is TestNamespace.DerivedEntity", generatedCode);
+        Assert.DoesNotContain("source is TestNamespace.UnrelatedEntity", generatedCode);
+    }
+
+    [Fact]
+    public void Generator_ForgeAllDerived_ReturnTypeMustDeriveFromBase()
+    {
+        var source = """
+            using ForgeMap;
+
+            namespace TestNamespace
+            {
+                public class BaseEntity { public int Id { get; set; } }
+                public class DerivedEntity : BaseEntity { public string Name { get; set; } }
+
+                public class BaseDto { public int Id { get; set; } }
+                public class OtherDto { public string Name { get; set; } }
+
+                [ForgeMap]
+                public partial class TestForger
+                {
+                    [ForgeAllDerived]
+                    public partial BaseDto Forge(BaseEntity source);
+                    public partial OtherDto Forge(DerivedEntity source);
+                }
+            }
+            """;
+
+        var (diagnostics, generatedTrees) = RunGenerator(source);
+
+        Assert.Single(generatedTrees);
+
+        var generatedCode = generatedTrees[0].GetText().ToString();
+
+        // DerivedEntity should NOT appear in dispatch because OtherDto doesn't derive from BaseDto
+        Assert.DoesNotContain("source is TestNamespace.DerivedEntity", generatedCode);
+
+        // FM0022 warning should be emitted since no valid derived methods were found
+        var warning = diagnostics.FirstOrDefault(d => d.Id == "FM0022");
+        Assert.NotNull(warning);
+    }
+
+    [Fact]
+    public void Generator_ForgeAllDerived_WithCollectionInterop()
+    {
+        var source = """
+            using ForgeMap;
+            using System.Collections.Generic;
+
+            namespace TestNamespace
+            {
+                public class BaseEntity { public int Id { get; set; } }
+                public class DerivedEntity : BaseEntity { public string Name { get; set; } }
+
+                public class BaseDto { public int Id { get; set; } }
+                public class DerivedDto : BaseDto { public string Name { get; set; } }
+
+                [ForgeMap]
+                public partial class TestForger
+                {
+                    [ForgeAllDerived]
+                    public partial BaseDto Forge(BaseEntity source);
+                    public partial DerivedDto Forge(DerivedEntity source);
+                    public partial List<BaseDto> Forge(List<BaseEntity> source);
+                }
+            }
+            """;
+
+        var (diagnostics, generatedTrees) = RunGenerator(source);
+
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        Assert.Single(generatedTrees);
+
+        var generatedCode = generatedTrees[0].GetText().ToString();
+
+        // The collection method should call Forge(item) which dispatches polymorphically
+        Assert.Contains("Forge(item)", generatedCode);
+
+        // The base Forge method should have polymorphic dispatch
+        Assert.Contains("source is TestNamespace.DerivedEntity", generatedCode);
+    }
+
+    private static (IReadOnlyList<Diagnostic> Diagnostics, IReadOnlyList<SyntaxTree> GeneratedTrees) RunGenerator(string source)
+    {
+        return SourceGeneratorTests.RunGenerator(source);
+    }
+}
+
+#endregion
