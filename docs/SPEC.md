@@ -17,7 +17,7 @@
 
 1. Not a drop-in replacement for AutoMapper (similar patterns, different API)
 2. No runtime/dynamic mapping (compile-time only)
-3. No support for mapping configurations that require runtime type discovery
+3. No support for mapping configurations that require runtime type discovery (polymorphic dispatch via `[ForgeAllDerived]` uses compile-time-known type sets)
 
 ---
 
@@ -32,8 +32,9 @@
 | **v0.5** | `[ReverseForge]` |
 | **v0.6** | `[BeforeForge]`, `[AfterForge]`, `ForgeInto()` |
 | **v1.0** | DI integration, full diagnostics, NuGet publish |
-| **v1.1** | `[ConvertWith]`, `ITypeConverter<S,D>` |
-| **v2.0** | `ProjectTo<T>()`, mapping inheritance |
+| **v1.1** | Mapping inheritance, polymorphic dispatch, inherited property resolution ([spec](SPEC-v1.1-inheritance.md)) |
+| *Future* | `[ConvertWith]`, `ITypeConverter<S,D>` |
+| *Future* | `ProjectTo<T>()` |
 
 ---
 
@@ -352,9 +353,9 @@ public partial class AppForger
 
 **Note:** Since the null check runs first, `[BeforeForge]` callbacks are guaranteed to receive a non-null source when `NullHandling.ReturnNull` is set. With `NullHandling.ThrowException`, an exception is thrown before callbacks execute.
 
-#### 2.10 `[ConvertWith]` - Method Level *(v1.1)*
+#### 2.10 `[ConvertWith]` - Method Level *(Future)*
 
-> **Note:** This feature is available in ForgeMap v1.1+. For v1.0, use `[ForgeFrom]` with a static method that contains the conversion logic.
+> **Note:** This feature is planned for a future version. For v1.0, use `[ForgeFrom]` with a static method that contains the conversion logic.
 
 Uses a custom converter class for complex type transformations. This is the ForgeMap equivalent of AutoMapper's `ITypeConverter` and `ConvertUsing()`.
 
@@ -745,6 +746,12 @@ The generator produces compile-time diagnostics for common issues:
 | `FM0015` | Warning | `[ForgeWith]` nested method lacks `[ReverseForge]` |
 | `FM0016` | Error | Hook method not found or has invalid signature |
 | `FM0017` | Error | `[UseExistingValue]` on non-reference type or method returns non-void |
+| `FM0018` | Warning | `[BeforeForge]`/`[AfterForge]` not supported on enum or collection forge methods |
+| `FM0019` | Error | `[IncludeBaseForge]` base forge method not found *(v1.1)* |
+| `FM0020` | Error | `[IncludeBaseForge]` type mismatch: not an inheritance relationship *(v1.1)* |
+| `FM0021` | Info | `[IncludeBaseForge]` inherited attribute overridden by explicit attribute *(v1.1)* |
+| `FM0022` | Warning | `[ForgeAllDerived]` found no derived forge methods *(v1.1)* |
+| `FM0023` | Error | `[ForgeAllDerived]` cannot be combined with `[ConvertWith]` *(v1.1)* |
 
 ### Suppressing Warnings
 
@@ -846,9 +853,12 @@ public partial DestType Forge(SourceType source)
 | `.ForMember(d => d.X, o => o.Ignore())` | `[Ignore(nameof(D.X))]` |
 | `.ForMember(d => d.X, o => o.MapFrom(s => s.Y))` | `[ForgeProperty(nameof(S.Y), nameof(D.X))]` |
 | `.ForMember(d => d.X, o => o.MapFrom(s => Calc(s)))` | `[ForgeFrom(nameof(D.X), nameof(Calc))]` |
-| `.ConvertUsing<TConverter>()` | `[ConvertWith(typeof(TConverter))]` *(v1.1+)* |
-| `.ConvertUsing(new Converter())` | `[ConvertWith(typeof(Converter))]` *(v1.1+)* |
-| `ITypeConverter<S, D>` | `ITypeConverter<S, D>` *(v1.1+)* |
+| `.ConvertUsing<TConverter>()` | `[ConvertWith(typeof(TConverter))]` *(future)* |
+| `.ConvertUsing(new Converter())` | `[ConvertWith(typeof(Converter))]` *(future)* |
+| `ITypeConverter<S, D>` | `ITypeConverter<S, D>` *(future)* |
+| `.IncludeBase<TBaseSrc, TBaseDst>()` | `[IncludeBaseForge(typeof(TBaseSrc), typeof(TBaseDst))]` *(v1.1)* |
+| `.Include<TDerivedSrc, TDerivedDst>()` | Auto-discovered by `[ForgeAllDerived]` *(v1.1)* |
+| `.IncludeAllDerived()` | `[ForgeAllDerived]` *(v1.1)* |
 | `.ReverseMap()` | `[ReverseForge]` |
 | `.AfterMap((s, d) => { ... })` | `[AfterForge(nameof(Method))]` |
 | `.BeforeMap((s, d) => { ... })` | `[BeforeForge(nameof(Method))]` |
@@ -859,7 +869,8 @@ public partial DestType Forge(SourceType source)
 
 - Simple property-access `MapFrom(s => s.Y)` maps to `[ForgeProperty]`.
 - Computed `MapFrom` lambdas map to `[ForgeFrom]`.
-- Converter-based AutoMapper features require ForgeMap v1.1+.
+- Converter-based AutoMapper features are planned for a future version.
+- Inheritance/polymorphism features (`[IncludeBaseForge]`, `[ForgeAllDerived]`) are available in v1.1.
 
 ### Example Migration
 
@@ -948,11 +959,11 @@ The following AutoMapper features are **not supported** in v1.0:
 |---------|--------|------------|
 | Runtime type mapping | Requires reflection | Use explicit generic methods |
 | Open generics | Complex source generation | Define concrete mappings |
-| `IValueResolver` with DI | Compile-time limitation | Use `[ForgeFrom]` with static method; `[ConvertWith]` in v1.1 |
+| `IValueResolver` with DI | Compile-time limitation | Use `[ForgeFrom]` with static method; `[ConvertWith]` in a future version |
 | Conditional mapping | Complex to generate | Use `[ForgeFrom]` with logic |
 | `ProjectTo<T>()` for EF | Requires expression trees | Future version |
 | Inline configuration | Compile-time only | Use attributes |
-| Mapping inheritance (`IncludeBase`) | Complex to generate | Duplicate mappings or use `[ForgeWith]` |
+| Mapping inheritance (`IncludeBase`) | Complex to generate | v1.1: `[IncludeBaseForge]`, `[ForgeAllDerived]` |
 
 ---
 
@@ -1150,7 +1161,6 @@ All forging behaviors are controlled by attributes. New features should:
 |----------------|-----------------|
 | ProjectTo support | Add `IQueryable` return type detection |
 | Conditional mapping | Add `[ForgeWhen]` attribute |
-| Mapping inheritance | Add `[IncludeBase]` attribute |
 | Custom naming conventions | Add `PropertyMatching.Custom` with delegate |
 | Async converters | Add `IAsyncTypeConverter<S, D>` interface |
 
