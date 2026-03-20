@@ -270,7 +270,7 @@ For each AutoMapper `Profile`, create a corresponding `[ForgeMap]` partial class
 - AutoMapper is case-insensitive by default; ForgeMap is case-sensitive. Add `PropertyMatching = PropertyMatching.ByNameCaseInsensitive` if the project relies on case-insensitive matching.
 - AutoMapper auto-flattens (e.g., `Order.Customer.Name` → `CustomerName`). ForgeMap also auto-flattens by default (via `TryAutoFlatten`), but if auto-flatten fails to match, use explicit `[ForgeProperty("Customer.Name", nameof(OrderDto.CustomerName))]`.
 - AutoMapper auto-discovers nested maps. ForgeMap requires explicit `[ForgeWith]`.
-- `ProjectTo<T>()` has NO ForgeMap equivalent. These call sites must be rewritten to materialize the query first, then map in-memory: `query.ToList().Select(x => forger.Forge(x)).ToList()`. Warn the user about potential performance implications.
+- `ProjectTo<T>()` has NO ForgeMap equivalent. These call sites must be rewritten to materialize the query first, then map in-memory, for example: `var entities = query.ToList(); var dtos = entities.Select(x => forger.Forge(x)).ToList();`. Warn the user about potential performance implications.
 
 #### 3.3 Create ForgeMapMappingService
 
