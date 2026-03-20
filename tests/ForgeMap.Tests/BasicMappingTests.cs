@@ -1752,3 +1752,195 @@ public class BeforeAndAfterForgeTests
 #endregion
 
 #endregion
+
+#region v1.1 IncludeBaseForge Models and Tests
+
+// v1.1 Inheritance hierarchy test models
+
+public class BaseEntity
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string AuditTrail { get; set; } = string.Empty;
+}
+
+public class BaseDto
+{
+    public int Uid { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string AuditTrail { get; set; } = string.Empty;
+}
+
+public class DerivedEntity : BaseEntity
+{
+    public string Email { get; set; } = string.Empty;
+    public string StatusCode { get; set; } = string.Empty;
+}
+
+public class DerivedDto : BaseDto
+{
+    public string Email { get; set; } = string.Empty;
+    public string Status { get; set; } = string.Empty;
+}
+
+public class LeafEntity : DerivedEntity
+{
+    public int Score { get; set; }
+}
+
+public class LeafDto : DerivedDto
+{
+    public int Score { get; set; }
+}
+
+// Forger with [IncludeBaseForge] — single-level
+[ForgeMap]
+public partial class InheritanceForger
+{
+    [Ignore(nameof(BaseDto.AuditTrail))]
+    [ForgeProperty(nameof(BaseEntity.Id), nameof(BaseDto.Uid))]
+    public partial BaseDto Forge(BaseEntity source);
+
+    [IncludeBaseForge(typeof(BaseEntity), typeof(BaseDto))]
+    public partial DerivedDto Forge(DerivedEntity source);
+}
+
+// Forger with [IncludeBaseForge] — chained through two levels
+[ForgeMap]
+public partial class ChainedInheritanceForger
+{
+    [Ignore(nameof(BaseDto.AuditTrail))]
+    [ForgeProperty(nameof(BaseEntity.Id), nameof(BaseDto.Uid))]
+    public partial BaseDto Forge(BaseEntity source);
+
+    [IncludeBaseForge(typeof(BaseEntity), typeof(BaseDto))]
+    public partial DerivedDto Forge(DerivedEntity source);
+
+    [IncludeBaseForge(typeof(DerivedEntity), typeof(DerivedDto))]
+    public partial LeafDto Forge(LeafEntity source);
+}
+
+// Forger with override: derived [ForgeProperty] overrides inherited [Ignore]
+[ForgeMap]
+public partial class OverrideInheritanceForger
+{
+    [Ignore(nameof(BaseDto.AuditTrail))]
+    [ForgeProperty(nameof(BaseEntity.Id), nameof(BaseDto.Uid))]
+    public partial BaseDto Forge(BaseEntity source);
+
+    [IncludeBaseForge(typeof(BaseEntity), typeof(BaseDto))]
+    [ForgeProperty(nameof(DerivedEntity.StatusCode), nameof(DerivedDto.Status))]
+    public partial DerivedDto Forge(DerivedEntity source);
+}
+
+public class IncludeBaseForgeBasicTests
+{
+    private readonly InheritanceForger _forger = new();
+
+    [Fact]
+    public void IncludeBaseForge_InheritsIgnore_SkipsAuditTrail()
+    {
+        var entity = new DerivedEntity { Id = 1, Name = "Test", AuditTrail = "secret", Email = "a@b.com", StatusCode = "active" };
+        var dto = _forger.Forge(entity);
+
+        dto.AuditTrail.Should().BeEmpty("AuditTrail ignore should be inherited from base");
+    }
+
+    [Fact]
+    public void IncludeBaseForge_InheritsForgeProperty_MapsIdToUid()
+    {
+        var entity = new DerivedEntity { Id = 42, Name = "Test", Email = "a@b.com" };
+        var dto = _forger.Forge(entity);
+
+        dto.Uid.Should().Be(42, "Uid mapping from Id should be inherited from base");
+    }
+
+    [Fact]
+    public void IncludeBaseForge_MapsOwnProperties()
+    {
+        var entity = new DerivedEntity { Id = 1, Name = "Test", Email = "a@b.com" };
+        var dto = _forger.Forge(entity);
+
+        dto.Name.Should().Be("Test");
+        dto.Email.Should().Be("a@b.com");
+    }
+
+    [Fact]
+    public void IncludeBaseForge_BaseMethodStillWorksIndependently()
+    {
+        var entity = new BaseEntity { Id = 10, Name = "Base", AuditTrail = "secret" };
+        var dto = _forger.Forge(entity);
+
+        dto.Uid.Should().Be(10);
+        dto.Name.Should().Be("Base");
+        dto.AuditTrail.Should().BeEmpty();
+    }
+}
+
+public class IncludeBaseForgeChainedTests
+{
+    private readonly ChainedInheritanceForger _forger = new();
+
+    [Fact]
+    public void ChainedIncludeBaseForge_LeafInheritsBaseIgnore()
+    {
+        var entity = new LeafEntity { Id = 1, Name = "Leaf", AuditTrail = "secret", Email = "a@b.com", Score = 100 };
+        var dto = _forger.Forge(entity);
+
+        dto.AuditTrail.Should().BeEmpty("AuditTrail ignore should chain from base through middle to leaf");
+    }
+
+    [Fact]
+    public void ChainedIncludeBaseForge_LeafInheritsForgeProperty()
+    {
+        var entity = new LeafEntity { Id = 99, Name = "Leaf", Email = "a@b.com", Score = 100 };
+        var dto = _forger.Forge(entity);
+
+        dto.Uid.Should().Be(99, "Uid mapping should chain from base through middle to leaf");
+    }
+
+    [Fact]
+    public void ChainedIncludeBaseForge_LeafMapsOwnProperties()
+    {
+        var entity = new LeafEntity { Id = 1, Name = "Leaf", Email = "a@b.com", Score = 100 };
+        var dto = _forger.Forge(entity);
+
+        dto.Score.Should().Be(100);
+        dto.Email.Should().Be("a@b.com");
+    }
+}
+
+public class IncludeBaseForgeOverrideTests
+{
+    private readonly OverrideInheritanceForger _forger = new();
+
+    [Fact]
+    public void OverrideInheritance_ExplicitForgePropertyOverridesInheritedIgnore()
+    {
+        // Base ignores AuditTrail, but derived still inherits this
+        var entity = new DerivedEntity { Id = 1, Name = "Test", AuditTrail = "secret", StatusCode = "active" };
+        var dto = _forger.Forge(entity);
+
+        dto.AuditTrail.Should().BeEmpty("AuditTrail should still be ignored since derived doesn't override it");
+    }
+
+    [Fact]
+    public void OverrideInheritance_DerivedForgePropertyMapsStatusCodeToStatus()
+    {
+        var entity = new DerivedEntity { Id = 1, StatusCode = "active" };
+        var dto = _forger.Forge(entity);
+
+        dto.Status.Should().Be("active", "Explicit [ForgeProperty] on derived should map StatusCode → Status");
+    }
+
+    [Fact]
+    public void OverrideInheritance_InheritedForgePropertyStillWorks()
+    {
+        var entity = new DerivedEntity { Id = 77 };
+        var dto = _forger.Forge(entity);
+
+        dto.Uid.Should().Be(77, "Inherited [ForgeProperty] Id → Uid should still work");
+    }
+}
+
+#endregion

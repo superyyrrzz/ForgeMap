@@ -1688,3 +1688,293 @@ public class HookGeneratorTests
 }
 
 #endregion
+
+#region v1.1 IncludeBaseForge Generator Tests
+
+public class IncludeBaseForgeGeneratorTests
+{
+    [Fact]
+    public void Generator_IncludeBaseForge_InheritsIgnore()
+    {
+        var source = """
+            using ForgeMap;
+
+            namespace TestNamespace
+            {
+                public class BaseEntity
+                {
+                    public int Id { get; set; }
+                    public string Name { get; set; }
+                    public string Secret { get; set; }
+                }
+
+                public class BaseDto
+                {
+                    public int Id { get; set; }
+                    public string Name { get; set; }
+                    public string Secret { get; set; }
+                }
+
+                public class DerivedEntity : BaseEntity
+                {
+                    public string Email { get; set; }
+                }
+
+                public class DerivedDto : BaseDto
+                {
+                    public string Email { get; set; }
+                }
+
+                [ForgeMap]
+                public partial class TestForger
+                {
+                    [Ignore(nameof(BaseDto.Secret))]
+                    public partial BaseDto Forge(BaseEntity source);
+
+                    [IncludeBaseForge(typeof(BaseEntity), typeof(BaseDto))]
+                    public partial DerivedDto Forge(DerivedEntity source);
+                }
+            }
+            """;
+
+        var (diagnostics, generatedTrees) = RunGenerator(source);
+
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        Assert.Single(generatedTrees);
+
+        var generatedCode = generatedTrees[0].GetText().ToString();
+
+        // The derived method should NOT contain Secret assignment (inherited [Ignore])
+        var derivedMethodStart = generatedCode.IndexOf("DerivedDto Forge(");
+        Assert.True(derivedMethodStart >= 0, "Should contain DerivedDto Forge method");
+        var derivedMethodCode = generatedCode.Substring(derivedMethodStart);
+
+        Assert.DoesNotContain("Secret = source.Secret", derivedMethodCode);
+        Assert.Contains("Email = source.Email", derivedMethodCode);
+    }
+
+    [Fact]
+    public void Generator_IncludeBaseForge_InheritsForgeProperty()
+    {
+        var source = """
+            using ForgeMap;
+
+            namespace TestNamespace
+            {
+                public class BaseEntity
+                {
+                    public int Ident { get; set; }
+                    public string Name { get; set; }
+                }
+
+                public class BaseDto
+                {
+                    public int Id { get; set; }
+                    public string Name { get; set; }
+                }
+
+                public class DerivedEntity : BaseEntity
+                {
+                    public string Tag { get; set; }
+                }
+
+                public class DerivedDto : BaseDto
+                {
+                    public string Tag { get; set; }
+                }
+
+                [ForgeMap]
+                public partial class TestForger
+                {
+                    [ForgeProperty(nameof(BaseEntity.Ident), nameof(BaseDto.Id))]
+                    public partial BaseDto Forge(BaseEntity source);
+
+                    [IncludeBaseForge(typeof(BaseEntity), typeof(BaseDto))]
+                    public partial DerivedDto Forge(DerivedEntity source);
+                }
+            }
+            """;
+
+        var (diagnostics, generatedTrees) = RunGenerator(source);
+
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+
+        var generatedCode = generatedTrees[0].GetText().ToString();
+        var derivedMethodStart = generatedCode.IndexOf("DerivedDto Forge(");
+        var derivedMethodCode = generatedCode.Substring(derivedMethodStart);
+
+        // Inherited [ForgeProperty] should map Ident → Id
+        Assert.Contains("Id = source.Ident", derivedMethodCode);
+    }
+
+    [Fact]
+    public void Generator_IncludeBaseForge_FM0019_BaseMethodNotFound()
+    {
+        var source = """
+            using ForgeMap;
+
+            namespace TestNamespace
+            {
+                public class SomeEntity
+                {
+                    public int Id { get; set; }
+                }
+
+                public class SomeDto
+                {
+                    public int Id { get; set; }
+                }
+
+                public class DerivedEntity : SomeEntity
+                {
+                    public string Tag { get; set; }
+                }
+
+                public class DerivedDto : SomeDto
+                {
+                    public string Tag { get; set; }
+                }
+
+                [ForgeMap]
+                public partial class TestForger
+                {
+                    // No base method for SomeEntity → SomeDto exists!
+                    [IncludeBaseForge(typeof(SomeEntity), typeof(SomeDto))]
+                    public partial DerivedDto Forge(DerivedEntity source);
+                }
+            }
+            """;
+
+        var (diagnostics, _) = RunGenerator(source);
+
+        var fm0019 = diagnostics.FirstOrDefault(d => d.Id == "FM0019");
+        Assert.NotNull(fm0019);
+        Assert.Equal(DiagnosticSeverity.Error, fm0019.Severity);
+    }
+
+    [Fact]
+    public void Generator_IncludeBaseForge_FM0020_TypeMismatch()
+    {
+        var source = """
+            using ForgeMap;
+
+            namespace TestNamespace
+            {
+                public class BaseEntity
+                {
+                    public int Id { get; set; }
+                }
+
+                public class BaseDto
+                {
+                    public int Id { get; set; }
+                }
+
+                // UnrelatedEntity does NOT derive from BaseEntity
+                public class UnrelatedEntity
+                {
+                    public int Id { get; set; }
+                    public string Tag { get; set; }
+                }
+
+                public class UnrelatedDto
+                {
+                    public int Id { get; set; }
+                    public string Tag { get; set; }
+                }
+
+                [ForgeMap]
+                public partial class TestForger
+                {
+                    public partial BaseDto Forge(BaseEntity source);
+
+                    // UnrelatedEntity doesn't inherit from BaseEntity — FM0020
+                    [IncludeBaseForge(typeof(BaseEntity), typeof(BaseDto))]
+                    public partial UnrelatedDto Forge(UnrelatedEntity source);
+                }
+            }
+            """;
+
+        var (diagnostics, _) = RunGenerator(source);
+
+        var fm0020 = diagnostics.FirstOrDefault(d => d.Id == "FM0020");
+        Assert.NotNull(fm0020);
+        Assert.Equal(DiagnosticSeverity.Error, fm0020.Severity);
+    }
+
+    [Fact]
+    public void Generator_IncludeBaseForge_Chaining_InheritsAcrossLevels()
+    {
+        var source = """
+            using ForgeMap;
+
+            namespace TestNamespace
+            {
+                public class BaseEntity
+                {
+                    public int Id { get; set; }
+                    public string Secret { get; set; }
+                }
+
+                public class BaseDto
+                {
+                    public int Id { get; set; }
+                    public string Secret { get; set; }
+                }
+
+                public class MiddleEntity : BaseEntity
+                {
+                    public string Tag { get; set; }
+                }
+
+                public class MiddleDto : BaseDto
+                {
+                    public string Tag { get; set; }
+                }
+
+                public class LeafEntity : MiddleEntity
+                {
+                    public int Score { get; set; }
+                }
+
+                public class LeafDto : MiddleDto
+                {
+                    public int Score { get; set; }
+                }
+
+                [ForgeMap]
+                public partial class TestForger
+                {
+                    [Ignore(nameof(BaseDto.Secret))]
+                    public partial BaseDto Forge(BaseEntity source);
+
+                    [IncludeBaseForge(typeof(BaseEntity), typeof(BaseDto))]
+                    public partial MiddleDto Forge(MiddleEntity source);
+
+                    [IncludeBaseForge(typeof(MiddleEntity), typeof(MiddleDto))]
+                    public partial LeafDto Forge(LeafEntity source);
+                }
+            }
+            """;
+
+        var (diagnostics, generatedTrees) = RunGenerator(source);
+
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+
+        var generatedCode = generatedTrees[0].GetText().ToString();
+
+        // Leaf should inherit the [Ignore] from Base via Middle
+        var leafMethodStart = generatedCode.IndexOf("LeafDto Forge(");
+        Assert.True(leafMethodStart >= 0);
+        var leafMethodCode = generatedCode.Substring(leafMethodStart);
+        Assert.DoesNotContain("Secret = source.Secret", leafMethodCode);
+        Assert.Contains("Score = source.Score", leafMethodCode);
+    }
+
+    private static (IReadOnlyList<Diagnostic> Diagnostics, IReadOnlyList<SyntaxTree> GeneratedTrees) RunGenerator(string source)
+    {
+        return SourceGeneratorTests.RunGenerator(source);
+    }
+}
+
+#endregion

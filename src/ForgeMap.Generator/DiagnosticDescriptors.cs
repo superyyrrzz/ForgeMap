@@ -152,4 +152,28 @@ internal static class DiagnosticDescriptors
         category: Category,
         defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor IncludeBaseForgeMethodNotFound = new(
+        id: "FM0019",
+        title: "[IncludeBaseForge] references missing base forge method",
+        messageFormat: "No forge method mapping '{0}' → '{1}' was found in this forger",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor IncludeBaseForgeTypeMismatch = new(
+        id: "FM0020",
+        title: "[IncludeBaseForge] type inheritance mismatch",
+        messageFormat: "Type '{0}' does not derive from '{1}' specified in [IncludeBaseForge]",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor IncludeBaseForgeAttributeOverridden = new(
+        id: "FM0021",
+        title: "Inherited attribute overridden by explicit attribute",
+        messageFormat: "Inherited configuration for property '{0}' is overridden by an explicit attribute on this method",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Info,
+        isEnabledByDefault: true);
 }

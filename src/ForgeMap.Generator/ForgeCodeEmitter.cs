@@ -40,6 +40,7 @@ internal sealed class ForgeCodeEmitter
     private readonly INamedTypeSymbol? _reverseForgeAttributeSymbol;
     private readonly INamedTypeSymbol? _beforeForgeAttributeSymbol;
     private readonly INamedTypeSymbol? _afterForgeAttributeSymbol;
+    private readonly INamedTypeSymbol? _includeBaseForgeAttributeSymbol;
     private readonly ForgerConfig _assemblyDefaults;
     private ForgerConfig _config = null!;
 
@@ -52,6 +53,7 @@ internal sealed class ForgeCodeEmitter
         _reverseForgeAttributeSymbol = compilation.GetTypeByMetadataName("ForgeMap.ReverseForgeAttribute");
         _beforeForgeAttributeSymbol = compilation.GetTypeByMetadataName("ForgeMap.BeforeForgeAttribute");
         _afterForgeAttributeSymbol = compilation.GetTypeByMetadataName("ForgeMap.AfterForgeAttribute");
+        _includeBaseForgeAttributeSymbol = compilation.GetTypeByMetadataName("ForgeMap.IncludeBaseForgeAttribute");
         _assemblyDefaults = assemblyDefaults;
     }
 
@@ -756,6 +758,10 @@ internal sealed class ForgeCodeEmitter
 
         // Get [ForgeWith] mappings for nested object forging
         var forgeWithMappings = GetForgeWithMappings(method);
+
+        // Merge inherited configuration from [IncludeBaseForge] attributes
+        MergeBaseForgeConfig(method, forger, context, sourceType, destinationType,
+            ignoredProperties, propertyMappings, resolverMappings, forgeWithMappings);
 
         // Get [BeforeForge] and [AfterForge] hooks
         var beforeForgeHooks = GetBeforeForgeHooks(method);
@@ -1571,6 +1577,211 @@ internal sealed class ForgeCodeEmitter
     }
 
     /// <summary>
+    /// Merges inherited configuration from [IncludeBaseForge] attributes into the current method's
+    /// configuration collections. Base attributes are added first with derived overrides taking precedence.
+    /// Supports chaining through multiple levels of [IncludeBaseForge].
+    /// </summary>
+    private void MergeBaseForgeConfig(
+        IMethodSymbol method,
+        ForgerInfo forger,
+        SourceProductionContext context,
+        INamedTypeSymbol sourceType,
+        INamedTypeSymbol destinationType,
+        HashSet<string> ignoredProperties,
+        Dictionary<string, string> propertyMappings,
+        Dictionary<string, string> resolverMappings,
+        Dictionary<string, string> forgeWithMappings)
+    {
+        if (_includeBaseForgeAttributeSymbol == null)
+            return;
+
+        var includeBaseForgeAttrs = method.GetAttributes()
+            .Where(a => SymbolEqualityComparer.Default.Equals(a.AttributeClass, _includeBaseForgeAttributeSymbol))
+            .ToList();
+
+        if (includeBaseForgeAttrs.Count == 0)
+            return;
+
+        // Snapshot the explicitly declared configs so we can detect overrides
+        var explicitIgnored = new HashSet<string>(ignoredProperties, StringComparer.Ordinal);
+        var explicitPropertyMappings = new Dictionary<string, string>(propertyMappings, StringComparer.Ordinal);
+        var explicitResolverMappings = new Dictionary<string, string>(resolverMappings, StringComparer.Ordinal);
+        var explicitForgeWithMappings = new Dictionary<string, string>(forgeWithMappings, StringComparer.Ordinal);
+
+        foreach (var attr in includeBaseForgeAttrs)
+        {
+            if (attr.ConstructorArguments.Length < 2)
+                continue;
+
+            var baseSourceTypeSymbol = attr.ConstructorArguments[0].Value as INamedTypeSymbol;
+            var baseDestTypeSymbol = attr.ConstructorArguments[1].Value as INamedTypeSymbol;
+
+            if (baseSourceTypeSymbol == null || baseDestTypeSymbol == null)
+                continue;
+
+            // Validate: source type must derive from base source type
+            if (!InheritsFrom(sourceType, baseSourceTypeSymbol))
+            {
+                ReportDiagnosticIfNotSuppressed(context,
+                    DiagnosticDescriptors.IncludeBaseForgeTypeMismatch,
+                    method.Locations.FirstOrDefault(),
+                    sourceType.ToDisplayString(),
+                    baseSourceTypeSymbol.ToDisplayString());
+                continue;
+            }
+
+            // Validate: destination type must derive from base destination type
+            if (!InheritsFrom(destinationType, baseDestTypeSymbol))
+            {
+                ReportDiagnosticIfNotSuppressed(context,
+                    DiagnosticDescriptors.IncludeBaseForgeTypeMismatch,
+                    method.Locations.FirstOrDefault(),
+                    destinationType.ToDisplayString(),
+                    baseDestTypeSymbol.ToDisplayString());
+                continue;
+            }
+
+            // Find the base forge method in this forger
+            var baseMethod = FindBaseForgeMethod(forger, baseSourceTypeSymbol, baseDestTypeSymbol);
+            if (baseMethod == null)
+            {
+                ReportDiagnosticIfNotSuppressed(context,
+                    DiagnosticDescriptors.IncludeBaseForgeMethodNotFound,
+                    method.Locations.FirstOrDefault(),
+                    baseSourceTypeSymbol.ToDisplayString(),
+                    baseDestTypeSymbol.ToDisplayString());
+                continue;
+            }
+
+            // Recursively collect base configs (supports chaining)
+            var baseIgnored = GetIgnoredProperties(baseMethod);
+            var basePropMappings = GetPropertyMappings(baseMethod);
+            var baseResolverMappings = GetResolverMappings(baseMethod);
+            var baseForgeWithMappings = GetForgeWithMappings(baseMethod);
+
+            // Recurse: the base method itself may have [IncludeBaseForge]
+            MergeBaseForgeConfig(baseMethod, forger, context, baseSourceTypeSymbol, baseDestTypeSymbol,
+                baseIgnored, basePropMappings, baseResolverMappings, baseForgeWithMappings);
+
+            // Merge base into current, with explicit attrs taking precedence
+            // Merge [Ignore] — add base ignores unless the property is explicitly configured on derived
+            foreach (var prop in baseIgnored)
+            {
+                if (explicitIgnored.Contains(prop) ||
+                    explicitPropertyMappings.ContainsKey(prop) ||
+                    explicitResolverMappings.ContainsKey(prop) ||
+                    explicitForgeWithMappings.ContainsKey(prop))
+                {
+                    // Explicit attribute overrides inherited ignore
+                    ReportDiagnosticIfNotSuppressed(context,
+                        DiagnosticDescriptors.IncludeBaseForgeAttributeOverridden,
+                        method.Locations.FirstOrDefault(),
+                        prop);
+                    continue;
+                }
+                ignoredProperties.Add(prop);
+            }
+
+            // Merge [ForgeProperty] — add base property mappings unless explicitly set on derived
+            foreach (var kvp in basePropMappings)
+            {
+                if (explicitPropertyMappings.ContainsKey(kvp.Key) ||
+                    explicitIgnored.Contains(kvp.Key) ||
+                    explicitResolverMappings.ContainsKey(kvp.Key) ||
+                    explicitForgeWithMappings.ContainsKey(kvp.Key))
+                {
+                    ReportDiagnosticIfNotSuppressed(context,
+                        DiagnosticDescriptors.IncludeBaseForgeAttributeOverridden,
+                        method.Locations.FirstOrDefault(),
+                        kvp.Key);
+                    continue;
+                }
+                if (!propertyMappings.ContainsKey(kvp.Key))
+                    propertyMappings[kvp.Key] = kvp.Value;
+            }
+
+            // Merge [ForgeFrom] — add base resolvers unless explicitly set on derived
+            foreach (var kvp in baseResolverMappings)
+            {
+                if (explicitResolverMappings.ContainsKey(kvp.Key) ||
+                    explicitIgnored.Contains(kvp.Key) ||
+                    explicitPropertyMappings.ContainsKey(kvp.Key) ||
+                    explicitForgeWithMappings.ContainsKey(kvp.Key))
+                {
+                    ReportDiagnosticIfNotSuppressed(context,
+                        DiagnosticDescriptors.IncludeBaseForgeAttributeOverridden,
+                        method.Locations.FirstOrDefault(),
+                        kvp.Key);
+                    continue;
+                }
+                if (!resolverMappings.ContainsKey(kvp.Key))
+                    resolverMappings[kvp.Key] = kvp.Value;
+            }
+
+            // Merge [ForgeWith] — add base forge-with mappings unless explicitly set on derived
+            foreach (var kvp in baseForgeWithMappings)
+            {
+                if (explicitForgeWithMappings.ContainsKey(kvp.Key) ||
+                    explicitIgnored.Contains(kvp.Key) ||
+                    explicitPropertyMappings.ContainsKey(kvp.Key) ||
+                    explicitResolverMappings.ContainsKey(kvp.Key))
+                {
+                    ReportDiagnosticIfNotSuppressed(context,
+                        DiagnosticDescriptors.IncludeBaseForgeAttributeOverridden,
+                        method.Locations.FirstOrDefault(),
+                        kvp.Key);
+                    continue;
+                }
+                if (!forgeWithMappings.ContainsKey(kvp.Key))
+                    forgeWithMappings[kvp.Key] = kvp.Value;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Finds a forge method in the forger that maps baseSourceType → baseDestType.
+    /// </summary>
+    private static IMethodSymbol? FindBaseForgeMethod(
+        ForgerInfo forger,
+        INamedTypeSymbol baseSourceType,
+        INamedTypeSymbol baseDestType)
+    {
+        return forger.Symbol.GetMembers()
+            .OfType<IMethodSymbol>()
+            .Where(m => m.IsPartialDefinition && m.Parameters.Length >= 1)
+            .FirstOrDefault(m =>
+            {
+                var paramType = m.Parameters[0].Type as INamedTypeSymbol;
+                var returnType = m.ReturnType as INamedTypeSymbol;
+                if (paramType == null || returnType == null)
+                    return false;
+
+                return SymbolEqualityComparer.Default.Equals(paramType, baseSourceType) &&
+                       SymbolEqualityComparer.Default.Equals(returnType, baseDestType);
+            });
+    }
+
+    /// <summary>
+    /// Returns true if <paramref name="derived"/> derives from <paramref name="baseType"/>,
+    /// or if they are the same type (identity is allowed for [IncludeBaseForge] since
+    /// the types may be identical when only config inheritance is needed).
+    /// </summary>
+    private static bool InheritsFrom(INamedTypeSymbol derived, INamedTypeSymbol baseType)
+    {
+        if (SymbolEqualityComparer.Default.Equals(derived, baseType))
+            return true;
+
+        var current = derived.BaseType;
+        while (current != null)
+        {
+            if (SymbolEqualityComparer.Default.Equals(current, baseType))
+                return true;
+            current = current.BaseType;
+        }
+        return false;
+    }
+
+    /// <summary>
     /// Validates a BeforeForge hook method. Must be void with a single parameter matching the source type.
     /// </summary>
     private bool ValidateBeforeForgeHook(
@@ -1844,6 +2055,10 @@ internal sealed class ForgeCodeEmitter
 
         // Get [ForgeWith] mappings for nested object forging
         var forgeWithMappings = GetForgeWithMappings(method);
+
+        // Merge inherited configuration from [IncludeBaseForge] attributes
+        MergeBaseForgeConfig(method, forger, context, sourceNamedType, destinationType,
+            ignoredProperties, propertyMappings, resolverMappings, forgeWithMappings);
 
         // Get [BeforeForge] and [AfterForge] hooks
         var beforeForgeHooks = GetBeforeForgeHooks(method);
@@ -2243,12 +2458,60 @@ internal sealed class ForgeCodeEmitter
         if (type == null)
             return Enumerable.Empty<IPropertySymbol>();
 
-        return type.GetMembers()
-            .OfType<IPropertySymbol>()
-            .Where(p => p.DeclaredAccessibility == Accessibility.Public &&
-                       !p.IsStatic &&
-                       !p.IsIndexer &&
-                       p.GetMethod != null);
+        // Walk the full BaseType chain to collect all accessible properties,
+        // including those from base types in compiled assemblies (v1.1 Feature 1).
+        // If a derived type shadows a base property (new keyword), the derived declaration wins.
+        var levels = new List<List<IPropertySymbol>>();
+
+        var current = type;
+        while (current != null && current.SpecialType != SpecialType.System_Object)
+        {
+            var levelProps = new List<IPropertySymbol>();
+            foreach (var prop in current.GetMembers().OfType<IPropertySymbol>())
+            {
+                if (prop.DeclaredAccessibility == Accessibility.Public &&
+                    !prop.IsStatic &&
+                    !prop.IsIndexer &&
+                    prop.GetMethod != null)
+                {
+                    levelProps.Add(prop);
+                }
+            }
+            levels.Add(levelProps);
+            current = current.BaseType;
+        }
+
+        // Build result base-first, with derived shadowing base for same-named properties
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var result = new List<IPropertySymbol>();
+
+        // First pass: collect which property names are shadowed by derived types
+        // (derived = lower index in levels). The derived declaration wins.
+        var shadowedProps = new Dictionary<string, IPropertySymbol>(StringComparer.Ordinal);
+        for (int i = 0; i < levels.Count; i++)
+        {
+            foreach (var prop in levels[i])
+            {
+                // First occurrence (lowest depth / most derived) wins
+                if (!shadowedProps.ContainsKey(prop.Name))
+                    shadowedProps[prop.Name] = prop;
+            }
+        }
+
+        // Second pass: iterate base-first (reverse order), emit using the winning declaration
+        for (int i = levels.Count - 1; i >= 0; i--)
+        {
+            foreach (var prop in levels[i])
+            {
+                if (seen.Add(prop.Name))
+                {
+                    // Use the most-derived declaration (shadowing)
+                    result.Add(shadowedProps[prop.Name]);
+                }
+            }
+        }
+
+        return result;
     }
 
     private static bool CanAssign(ITypeSymbol source, ITypeSymbol dest)
