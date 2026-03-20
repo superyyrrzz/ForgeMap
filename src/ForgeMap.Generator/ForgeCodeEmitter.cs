@@ -1132,6 +1132,14 @@ internal sealed class ForgeCodeEmitter
         if (sourcePropertyType != null && IsNullableToNonNullableValueType(sourcePropertyType, destPropertyType))
             return sourceExpression.Contains("?.") ? $"({destPropertyType.ToDisplayString()})({sourceExpression})!" : $"({destPropertyType.ToDisplayString()}){sourceExpression}!";
 
+        // Compatible enum cast for constructor parameters
+        if (sourcePropertyType != null)
+        {
+            var enumCastExpr = TryGenerateCompatibleEnumCast(sourcePropertyType, destPropertyType, sourceExpression);
+            if (enumCastExpr != null)
+                return enumCastExpr;
+        }
+
         // Handle lifted value type from null-conditional: source.Customer?.Age is int?
         // even though Age is int — cast back to the destination type
         if (sourceExpression.Contains("?.") && sourcePropertyType != null
@@ -1291,7 +1299,8 @@ internal sealed class ForgeCodeEmitter
                     }
                 }
 
-                if (sourceExpr != null && sourcePropType != null && CanAssign(sourcePropType, param.Type))
+                if (sourceExpr != null && sourcePropType != null &&
+                    (CanAssign(sourcePropType, param.Type) || IsCompatibleEnumPair(sourcePropType, param.Type)))
                 {
                     mappings.Add(new CtorParamMapping(param.Name, matchedDestPropName!, sourceExpr, sourcePropType, param.Type));
                 }
@@ -2387,6 +2396,17 @@ internal sealed class ForgeCodeEmitter
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// Checks if source and dest types are compatible enums (possibly wrapped in Nullable).
+    /// Used for ctor param matching where CanAssign returns false for cross-namespace enums.
+    /// </summary>
+    private static bool IsCompatibleEnumPair(ITypeSymbol source, ITypeSymbol dest)
+    {
+        var srcEnum = GetNullableUnderlyingType(source) ?? source;
+        var dstEnum = GetNullableUnderlyingType(dest) ?? dest;
+        return AreCompatibleEnums(srcEnum, dstEnum);
     }
 
     /// <summary>

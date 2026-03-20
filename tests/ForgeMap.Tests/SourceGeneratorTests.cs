@@ -2422,6 +2422,59 @@ public class CompatibleEnumGeneratorTests
         Assert.DoesNotContain("(Dest.BigId)(int)source.BigId", generatedCode);
     }
 
+    [Fact]
+    public void Generator_CompatibleEnums_CtorParam_EmitsCast()
+    {
+        var source = """
+            using ForgeMap;
+
+            namespace Source
+            {
+                public enum Priority { Low, Medium, High }
+
+                public class SourceEntity
+                {
+                    public int Id { get; set; }
+                    public Priority Priority { get; set; }
+                }
+            }
+
+            namespace Dest
+            {
+                public enum Priority { Low, Medium, High }
+
+                public class DestDto
+                {
+                    public int Id { get; }
+                    public Priority Priority { get; }
+                    public DestDto(int id, Priority priority)
+                    {
+                        Id = id;
+                        Priority = priority;
+                    }
+                }
+            }
+
+            namespace Mappers
+            {
+                [ForgeMap]
+                public partial class TestForger
+                {
+                    public partial Dest.DestDto Forge(Source.SourceEntity source);
+                }
+            }
+            """;
+
+        var (diagnostics, generatedTrees) = RunGenerator(source);
+
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        Assert.Single(generatedTrees);
+
+        var generatedCode = generatedTrees[0].GetText().ToString();
+        // Ctor param path should emit compatible enum cast
+        Assert.Contains("(Dest.Priority)(int)source.Priority", generatedCode);
+    }
+
     private static (IReadOnlyList<Diagnostic> Diagnostics, IReadOnlyList<SyntaxTree> GeneratedTrees) RunGenerator(string source)
     {
         return SourceGeneratorTests.RunGenerator(source);
