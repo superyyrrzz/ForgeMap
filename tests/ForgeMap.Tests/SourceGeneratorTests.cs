@@ -1790,6 +1790,9 @@ public class InheritedPropertyResolutionTests
     [Fact]
     public void Generator_InheritedProperties_ShadowedPropertyUsesDerived()
     {
+        // The base declares Label as object; derived shadows it as string.
+        // If the generator incorrectly uses the base declaration, the generated
+        // code would fail because object cannot be assigned to string without a cast.
         var source = """
             using ForgeMap;
 
@@ -1798,7 +1801,7 @@ public class InheritedPropertyResolutionTests
                 public class BaseEntity
                 {
                     public int Id { get; set; }
-                    public virtual string Label { get; set; }
+                    public object Label { get; set; }
                 }
 
                 public class DerivedEntity : BaseEntity
@@ -1829,6 +1832,8 @@ public class InheritedPropertyResolutionTests
 
         var generatedCode = generatedTrees[0].GetText().ToString();
         Assert.Contains("Id = source.Id,", generatedCode);
+        // Label must appear — if generator used base object type, it would be skipped
+        // due to type mismatch (object vs string)
         Assert.Contains("Label = source.Label,", generatedCode);
         Assert.Contains("Extra = source.Extra,", generatedCode);
     }

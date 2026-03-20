@@ -2256,7 +2256,7 @@ internal sealed class ForgeCodeEmitter
         // Reverse so base properties come first
         levels.Reverse();
 
-        var seen = new Dictionary<string, int>();
+        var seen = new Dictionary<string, int>(StringComparer.Ordinal);
         var result = new List<IPropertySymbol>();
 
         foreach (var level in levels)
