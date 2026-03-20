@@ -1564,7 +1564,7 @@ internal sealed class ForgeCodeEmitter
             .FirstOrDefault(m =>
                 m.IsPartialDefinition &&
                 !m.ReturnsVoid &&
-                m.Parameters.Length >= 1 &&
+                m.Parameters.Length == 1 &&
                 SymbolEqualityComparer.Default.Equals(m.Parameters[0].Type, baseSourceType) &&
                 SymbolEqualityComparer.Default.Equals(m.ReturnType, baseDestType));
     }
@@ -1599,12 +1599,41 @@ internal sealed class ForgeCodeEmitter
         Dictionary<string, string> resolverMappings,
         Dictionary<string, string> forgeWithMappings)
     {
+        ResolveInheritedConfig(method, forger, context, ignoredProperties, propertyMappings, resolverMappings, forgeWithMappings, new HashSet<string>());
+    }
+
+    private void ResolveInheritedConfig(
+        IMethodSymbol method,
+        ForgerInfo forger,
+        SourceProductionContext context,
+        HashSet<string> ignoredProperties,
+        Dictionary<string, string> propertyMappings,
+        Dictionary<string, string> resolverMappings,
+        Dictionary<string, string> forgeWithMappings,
+        HashSet<string> visited)
+    {
         var includeBaseForges = GetIncludeBaseForgeAttributes(method);
         if (includeBaseForges.Count == 0)
             return;
 
         var sourceType = method.Parameters[0].Type as INamedTypeSymbol;
-        var destType = method.ReturnType as INamedTypeSymbol;
+
+        // For ForgeInto methods (void return with [UseExistingValue] param), derive destType
+        // from the [UseExistingValue] parameter instead of ReturnType.
+        INamedTypeSymbol? destType;
+        if (method.ReturnsVoid)
+        {
+            var useExistingParam = method.Parameters.FirstOrDefault(p =>
+                p.GetAttributes().Any(a =>
+                    a.AttributeClass?.Name == "UseExistingValueAttribute" ||
+                    a.AttributeClass?.ToDisplayString() == "ForgeMap.UseExistingValueAttribute"));
+            destType = useExistingParam?.Type as INamedTypeSymbol;
+        }
+        else
+        {
+            destType = method.ReturnType as INamedTypeSymbol;
+        }
+
         if (sourceType == null || destType == null)
             return;
 
@@ -1617,6 +1646,11 @@ internal sealed class ForgeCodeEmitter
 
         foreach (var (baseSourceType, baseDestType, attrData) in includeBaseForges)
         {
+            // Cycle detection: build a key from (source, dest) type pair
+            var pairKey = $"{baseSourceType.ToDisplayString()}->{baseDestType.ToDisplayString()}";
+            if (!visited.Add(pairKey))
+                continue; // Already visited this pair — skip to avoid infinite recursion
+
             // Validate: source type must derive from base source type
             if (!DerivesFrom(sourceType, baseSourceType))
             {
@@ -1653,7 +1687,7 @@ internal sealed class ForgeCodeEmitter
             var basePropertyMappings = GetPropertyMappings(baseMethod);
             var baseResolverMappings = GetResolverMappings(baseMethod);
             var baseForgeWithMappings = GetForgeWithMappings(baseMethod);
-            ResolveInheritedConfig(baseMethod, forger, context, baseIgnored, basePropertyMappings, baseResolverMappings, baseForgeWithMappings);
+            ResolveInheritedConfig(baseMethod, forger, context, baseIgnored, basePropertyMappings, baseResolverMappings, baseForgeWithMappings, visited);
 
             // Merge base [Ignore] into derived
             foreach (var propName in baseIgnored)
