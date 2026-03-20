@@ -2275,8 +2275,9 @@ public class CompatibleEnumGeneratorTests
 
         var generatedCode = generatedTrees[0].GetText().ToString();
         // Nullable<EnumA> -> Nullable<EnumB>: should propagate null via pattern match (single evaluation)
-        Assert.Contains("source.Priority is { } __v", generatedCode);
-        Assert.Contains("(Dest.Priority?)(int)__v", generatedCode);
+        // Assert on structure, not the temporary variable name (implementation detail)
+        Assert.Contains("source.Priority is { }", generatedCode);
+        Assert.Contains("(Dest.Priority?)(int)", generatedCode);
     }
 
     [Fact]
