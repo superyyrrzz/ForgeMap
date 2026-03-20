@@ -1,7 +1,7 @@
 ---
 name: copilot-review-loop
 description: >
-  Request GitHub Copilot to review a PR and iterate on feedback automatically.
+  Monitor a PR for GitHub Copilot review feedback and iterate on it automatically.
   Use when user says "copilot review", "review loop", "watch this PR",
   "monitor PR for Copilot comments", "iterate on Copilot feedback", or
   "keep fixing Copilot comments".

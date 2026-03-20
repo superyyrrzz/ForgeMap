@@ -297,7 +297,7 @@ public partial class AppForger
 |-----------|-----------|
 | No derived forge methods found for this base type | `FM0022` (Warning) |
 | Base source type is abstract and no derived methods cover all known subtypes | `FM0022` (Warning) |
-| Combined with `[ConvertWith]` | `FM0023` (Error) — mutually exclusive |
+| Combined with `[ConvertWith]` | `FM0023` (Error) — mutually exclusive; reserved for when `[ConvertWith]` ships in a future version, the generator will recognize and reject this combination early |
 
 ---
 
@@ -309,7 +309,7 @@ public partial class AppForger
 | `FM0020` | Error | `[IncludeBaseForge]` type mismatch: types are not in an inheritance relationship |
 | `FM0021` | Info | `[IncludeBaseForge]` inherited attribute overridden by explicit attribute on derived method |
 | `FM0022` | Warning | `[ForgeAllDerived]` found no derived forge methods, or abstract base type may have unmatched subtypes at runtime |
-| `FM0023` | Error | `[ForgeAllDerived]` cannot be combined with `[ConvertWith]` |
+| `FM0023` | Error | `[ForgeAllDerived]` cannot be combined with `[ConvertWith]` (forward-looking; diagnostic ID reserved for when `[ConvertWith]` ships) |
 
 ---
 
