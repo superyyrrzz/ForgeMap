@@ -30,6 +30,7 @@ AutoMapper's `IMapper.Map<TDest>(object source)` accepts untyped `object` and us
 ```csharp
 // This is NOT manual mapping — each arm delegates to ForgeMap's generated code.
 // This shim is deleted entirely in commit 4.
+if (source is null) return default!; // AutoMapper returns default(TDestination) for null
 return source switch
 {
     User u when typeof(TDestination) == typeof(UserDto) => (TDestination)(object)_forger.Forge(u),
