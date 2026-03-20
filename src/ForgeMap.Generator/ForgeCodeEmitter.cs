@@ -41,6 +41,8 @@ internal sealed class ForgeCodeEmitter
     private readonly INamedTypeSymbol? _beforeForgeAttributeSymbol;
     private readonly INamedTypeSymbol? _afterForgeAttributeSymbol;
     private readonly INamedTypeSymbol? _includeBaseForgeAttributeSymbol;
+    private readonly INamedTypeSymbol? _forgeAllDerivedAttributeSymbol;
+    private readonly INamedTypeSymbol? _convertWithAttributeSymbol;
     private readonly ForgerConfig _assemblyDefaults;
     private ForgerConfig _config = null!;
 
@@ -54,6 +56,8 @@ internal sealed class ForgeCodeEmitter
         _beforeForgeAttributeSymbol = compilation.GetTypeByMetadataName("ForgeMap.BeforeForgeAttribute");
         _afterForgeAttributeSymbol = compilation.GetTypeByMetadataName("ForgeMap.AfterForgeAttribute");
         _includeBaseForgeAttributeSymbol = compilation.GetTypeByMetadataName("ForgeMap.IncludeBaseForgeAttribute");
+        _forgeAllDerivedAttributeSymbol = compilation.GetTypeByMetadataName("ForgeMap.ForgeAllDerivedAttribute");
+        _convertWithAttributeSymbol = compilation.GetTypeByMetadataName("ForgeMap.ConvertWithAttribute");
         _assemblyDefaults = assemblyDefaults;
     }
 
@@ -252,6 +256,142 @@ internal sealed class ForgeCodeEmitter
 
         return method.GetAttributes().Any(a =>
             SymbolEqualityComparer.Default.Equals(a.AttributeClass, _reverseForgeAttributeSymbol));
+    }
+
+    private bool HasForgeAllDerivedAttribute(IMethodSymbol method)
+    {
+        if (_forgeAllDerivedAttributeSymbol == null)
+            return false;
+
+        return method.GetAttributes().Any(a =>
+            SymbolEqualityComparer.Default.Equals(a.AttributeClass, _forgeAllDerivedAttributeSymbol));
+    }
+
+    private bool HasConvertWithAttribute(IMethodSymbol method)
+    {
+        if (_convertWithAttributeSymbol == null)
+            return false;
+
+        return method.GetAttributes().Any(a =>
+            SymbolEqualityComparer.Default.Equals(a.AttributeClass, _convertWithAttributeSymbol));
+    }
+
+    /// <summary>
+    /// Discovers all forge methods in the same forger class whose source type derives from
+    /// the base source type and whose return type derives from (or equals) the base return type.
+    /// Results are ordered most-derived first; ties broken alphabetically by fully qualified name.
+    /// </summary>
+    private static List<IMethodSymbol> DiscoverDerivedForgeMethods(
+        IMethodSymbol baseMethod,
+        INamedTypeSymbol baseSourceType,
+        INamedTypeSymbol baseDestinationType,
+        ForgerInfo forger)
+    {
+        var candidates = new List<(IMethodSymbol Method, int Depth)>();
+
+        foreach (var member in forger.Symbol.GetMembers().OfType<IMethodSymbol>())
+        {
+            // Must be a partial definition with matching method name, one parameter, non-void return
+            if (!member.IsPartialDefinition || member.Parameters.Length < 1 || member.ReturnsVoid)
+                continue;
+
+            // Skip the base method itself
+            if (SymbolEqualityComparer.Default.Equals(member, baseMethod))
+                continue;
+
+            var memberSourceType = member.Parameters[0].Type as INamedTypeSymbol;
+            var memberReturnType = member.ReturnType as INamedTypeSymbol;
+            if (memberSourceType == null || memberReturnType == null)
+                continue;
+
+            // Source param type must derive from base source type
+            if (!DerivesFrom(memberSourceType, baseSourceType))
+                continue;
+
+            // Return type must derive from or equal the base return type
+            if (!SymbolEqualityComparer.Default.Equals(memberReturnType, baseDestinationType) &&
+                !DerivesFrom(memberReturnType, baseDestinationType))
+                continue;
+
+            // Method name must match the base method
+            if (member.Name != baseMethod.Name)
+                continue;
+
+            var depth = GetInheritanceDepth(memberSourceType, baseSourceType);
+            candidates.Add((member, depth));
+        }
+
+        // Sort: most-derived first (highest depth), then alphabetical by source type FQN
+        candidates.Sort((a, b) =>
+        {
+            var depthCmp = b.Depth.CompareTo(a.Depth);
+            if (depthCmp != 0) return depthCmp;
+            var aName = a.Method.Parameters[0].Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+            var bName = b.Method.Parameters[0].Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+            return string.Compare(aName, bName, StringComparison.Ordinal);
+        });
+
+        return candidates.Select(c => c.Method).ToList();
+    }
+
+    /// <summary>
+    /// Returns true if <paramref name="derived"/> inherits from <paramref name="baseType"/>
+    /// anywhere in its BaseType chain (not including equality).
+    /// </summary>
+    private static bool DerivesFrom(INamedTypeSymbol derived, INamedTypeSymbol baseType)
+    {
+        var current = derived.BaseType;
+        while (current != null)
+        {
+            if (SymbolEqualityComparer.Default.Equals(current, baseType))
+                return true;
+            current = current.BaseType;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Counts how many steps from <paramref name="derived"/> up the BaseType chain to reach <paramref name="baseType"/>.
+    /// Returns 0 if they are the same type.
+    /// </summary>
+    private static int GetInheritanceDepth(INamedTypeSymbol derived, INamedTypeSymbol baseType)
+    {
+        int depth = 0;
+        var current = derived;
+        while (current != null)
+        {
+            if (SymbolEqualityComparer.Default.Equals(current, baseType))
+                return depth;
+            depth++;
+            current = current.BaseType;
+        }
+        return depth; // shouldn't reach here if DerivesFrom was true
+    }
+
+    /// <summary>
+    /// Generates a safe local variable name from a type name (camelCase, avoiding C# keywords).
+    /// </summary>
+    private static string GenerateSafeVariableName(ITypeSymbol type)
+    {
+        var name = type.Name;
+        if (string.IsNullOrEmpty(name))
+            return "value";
+
+        // camelCase the type name
+        var varName = char.ToLowerInvariant(name[0]) + name.Substring(1);
+
+        // Avoid C# keywords
+        if (varName is "class" or "struct" or "enum" or "interface" or "delegate" or "event"
+            or "object" or "string" or "int" or "bool" or "float" or "double" or "decimal"
+            or "byte" or "char" or "long" or "short" or "void" or "null" or "true" or "false"
+            or "is" or "as" or "in" or "out" or "ref" or "new" or "this" or "base" or "return"
+            or "if" or "else" or "for" or "foreach" or "while" or "do" or "switch" or "case"
+            or "break" or "continue" or "default" or "source" or "result" or "value")
+        {
+            varName = varName + "Value";
+        }
+
+        return varName;
     }
 
     private static string GetMethodSignatureKey(IMethodSymbol method)
@@ -742,6 +882,22 @@ internal sealed class ForgeCodeEmitter
         if (sourceType == null)
             return string.Empty;
 
+        // Check for [ForgeAllDerived] — polymorphic dispatch
+        var hasForgeAllDerived = HasForgeAllDerivedAttribute(method);
+
+        if (hasForgeAllDerived)
+        {
+            // FM0023: [ForgeAllDerived] cannot be combined with [ConvertWith]
+            if (HasConvertWithAttribute(method))
+            {
+                ReportDiagnosticIfNotSuppressed(context,
+                    DiagnosticDescriptors.ForgeAllDerivedWithConvertWith,
+                    method.Locations.FirstOrDefault(),
+                    method.Name);
+                return string.Empty;
+            }
+        }
+
         var sb = new StringBuilder();
         var sourceParam = method.Parameters[0].Name;
 
@@ -785,6 +941,32 @@ internal sealed class ForgeCodeEmitter
             var nullReturn = destinationType.IsValueType ? "default" : "null!";
             sb.AppendLine(GenerateNullCheck(sourceParam, nullReturn));
             sb.AppendLine();
+        }
+
+        // [ForgeAllDerived] — polymorphic dispatch is-cascade
+        if (hasForgeAllDerived)
+        {
+            var derivedMethods = DiscoverDerivedForgeMethods(method, sourceType, destinationType, forger);
+
+            if (derivedMethods.Count == 0)
+            {
+                // FM0022: no derived forge methods found
+                ReportDiagnosticIfNotSuppressed(context,
+                    DiagnosticDescriptors.ForgeAllDerivedNoDerivedMethods,
+                    method.Locations.FirstOrDefault(),
+                    method.Name);
+            }
+            else
+            {
+                sb.AppendLine("            // Polymorphic dispatch — most-derived types checked first");
+                foreach (var derived in derivedMethods)
+                {
+                    var derivedSourceDisplay = derived.Parameters[0].Type.ToDisplayString();
+                    var varName = GenerateSafeVariableName(derived.Parameters[0].Type);
+                    sb.AppendLine($"            if ({sourceParam} is {derivedSourceDisplay} {varName}) return {method.Name}({varName});");
+                }
+                sb.AppendLine();
+            }
         }
 
         // [BeforeForge] callbacks
