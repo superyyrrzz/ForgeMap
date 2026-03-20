@@ -73,7 +73,7 @@ public interface IMappingService
     [return: System.Diagnostics.CodeAnalysis.MaybeNull]
     TDestination Map<TSource, TDestination>(TSource? source);
 
-    void Map<TSource, TDestination>(TSource source, TDestination destination);
+    void Map<TSource, TDestination>(TSource? source, TDestination destination);
     // Only include overloads that are actually called in the codebase
 }
 ```
@@ -95,7 +95,7 @@ public class AutoMapperMappingService : IMappingService
 
     public TDestination Map<TDestination>(object? source) => _mapper.Map<TDestination>(source);
     public TDestination Map<TSource, TDestination>(TSource? source) => _mapper.Map<TSource, TDestination>(source);
-    public void Map<TSource, TDestination>(TSource source, TDestination destination) => _mapper.Map(source, destination);
+    public void Map<TSource, TDestination>(TSource? source, TDestination destination) => _mapper.Map(source, destination);
 }
 ```
 
@@ -303,7 +303,7 @@ public class ForgeMapMappingService : IMappingService
         return Map<TDestination>((object)source);
     }
 
-    public void Map<TSource, TDestination>(TSource source, TDestination destination)
+    public void Map<TSource, TDestination>(TSource? source, TDestination destination)
     {
         // Dispatch to the appropriate Forge "Into" methods, similar to Map<TDestination> above.
         // If not needed, throw so failures are explicit rather than silent no-ops.
@@ -474,4 +474,4 @@ Common issues:
 Categorize each failure:
 1. **Configuration error** (typo, missing attribute) → fix the forger
 2. **Behavioral difference** (legitimate) → adjust test + document
-3. **ForgeMap bug** → file issue, add `[Skip]` with issue link, proceed
+3. **ForgeMap bug** → file issue, keep the failing test as a known failure (or move it to a dedicated "known gaps" suite), and only proceed once parity is restored or the team explicitly accepts the behavioral change with documentation
