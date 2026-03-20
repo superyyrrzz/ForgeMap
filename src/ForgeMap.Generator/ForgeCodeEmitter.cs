@@ -369,7 +369,8 @@ internal sealed class ForgeCodeEmitter
     }
 
     /// <summary>
-    /// Generates a safe local variable name from a type name (camelCase, avoiding C# keywords).
+    /// Generates a safe local variable name from a type name (camelCase, prefixed with @ if it
+    /// collides with a C# keyword so that any valid type name yields a valid identifier).
     /// </summary>
     private static string GenerateSafeVariableName(ITypeSymbol type)
     {
@@ -380,15 +381,11 @@ internal sealed class ForgeCodeEmitter
         // camelCase the type name
         var varName = char.ToLowerInvariant(name[0]) + name.Substring(1);
 
-        // Avoid C# keywords
-        if (varName is "class" or "struct" or "enum" or "interface" or "delegate" or "event"
-            or "object" or "string" or "int" or "bool" or "float" or "double" or "decimal"
-            or "byte" or "char" or "long" or "short" or "void" or "null" or "true" or "false"
-            or "is" or "as" or "in" or "out" or "ref" or "new" or "this" or "base" or "return"
-            or "if" or "else" or "for" or "foreach" or "while" or "do" or "switch" or "case"
-            or "break" or "continue" or "default" or "source" or "result" or "value")
+        // Use SyntaxFacts to detect all reserved and contextual keywords
+        if (Microsoft.CodeAnalysis.CSharp.SyntaxFacts.GetKeywordKind(varName) != Microsoft.CodeAnalysis.CSharp.SyntaxKind.None
+            || Microsoft.CodeAnalysis.CSharp.SyntaxFacts.GetContextualKeywordKind(varName) != Microsoft.CodeAnalysis.CSharp.SyntaxKind.None)
         {
-            varName = varName + "Value";
+            varName = "@" + varName;
         }
 
         return varName;
