@@ -1,8 +1,15 @@
 # Copilot API Reference
 
-## Auto-review
+## Requesting a Copilot review
 
-Copilot auto-review is enabled on this repo. Reviews are triggered automatically on each push — no manual `requested_reviewers` API calls needed.
+Copilot does NOT auto-review on push for personal/free GitHub plans. You must manually request a review after each push:
+
+```bash
+gh api repos/{OWNER}/{REPO}/pulls/{PR}/requested_reviewers \
+  -f "reviewers[]=copilot-pull-request-reviewer[bot]"
+```
+
+This must be called after every push to trigger a new Copilot review.
 
 ## Author login per API
 

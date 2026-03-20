@@ -9,7 +9,7 @@ description: >
 
 # Copilot Review Loop
 
-Non-blocking loop: schedule 5-min cron → fix Copilot comments each tick → repeat until Copilot says "generated no comments". Copilot auto-review is enabled on this repo, so reviews are triggered automatically on each push — no manual review requests needed.
+Non-blocking loop: schedule 5-min cron → fix Copilot comments each tick → repeat until Copilot says "generated no comments". After each push, you MUST manually request a Copilot review via the API (see `references/copilot-api.md`) — `review_on_push` rulesets do not work on personal/free GitHub plans.
 
 ## Critical: Read `references/copilot-api.md` first
 
@@ -44,7 +44,7 @@ For each unresolved comment:
 - Build and test (`dotnet build && dotnet test` or equivalent)
 - Reply to comment, then resolve thread
 
-After all comments addressed: commit and push. Copilot will automatically review the new push.
+After all comments addressed: commit and push. Then **manually request a Copilot review** using the API call in `references/copilot-api.md`.
 
 ### 3. If no unresolved comments → check Copilot's latest review
 
