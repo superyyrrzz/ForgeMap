@@ -21,14 +21,14 @@ gh api repos/{OWNER}/{REPO}/pulls/{PR}/requested_reviewers \
 ```bash
 HEAD_SHA=$(gh pr view {PR} --json headRefOid --jq '.headRefOid')
 
-gh api repos/{OWNER}/{REPO}/pulls/{PR}/reviews \
+gh api repos/{OWNER}/{REPO}/pulls/{PR}/reviews --paginate \
   --jq '[.[] | select(.user.login == "copilot-pull-request-reviewer[bot]")] | sort_by(.submitted_at) | last | .commit_id'
 ```
 
 ## Check if Copilot's latest review found no issues
 
 ```bash
-gh api repos/{OWNER}/{REPO}/pulls/{PR}/reviews \
+gh api repos/{OWNER}/{REPO}/pulls/{PR}/reviews --paginate \
   --jq '[.[] | select(.user.login == "copilot-pull-request-reviewer[bot]")] | sort_by(.submitted_at) | last | {commit_id: .commit_id, body: .body}'
 ```
 
