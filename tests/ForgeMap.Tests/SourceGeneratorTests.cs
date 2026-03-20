@@ -1780,8 +1780,8 @@ public class InheritedPropertyResolutionTests
 
         var generatedCode = generatedTrees[0].GetText().ToString();
         // Base property (Id) should appear before derived property (Value)
-        var idIndex = generatedCode.IndexOf("Id = source.Id,");
-        var valueIndex = generatedCode.IndexOf("Value = source.Value,");
+        var idIndex = generatedCode.IndexOf("Id = source.Id", StringComparison.Ordinal);
+        var valueIndex = generatedCode.IndexOf("Value = source.Value", StringComparison.Ordinal);
         Assert.True(idIndex >= 0, "Id property assignment not found in generated code");
         Assert.True(valueIndex >= 0, "Value property assignment not found in generated code");
         Assert.True(idIndex < valueIndex, "Base property (Id) should appear before derived property (Value)");

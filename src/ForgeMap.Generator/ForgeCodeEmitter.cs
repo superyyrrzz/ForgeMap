@@ -2256,7 +2256,7 @@ internal sealed class ForgeCodeEmitter
         // Reverse so base properties come first
         levels.Reverse();
 
-        var seen = new HashSet<string>();
+        var seen = new Dictionary<string, int>();
         var result = new List<IPropertySymbol>();
 
         foreach (var level in levels)
@@ -2268,16 +2268,14 @@ internal sealed class ForgeCodeEmitter
                     !prop.IsIndexer &&
                     prop.GetMethod != null)
                 {
-                    if (seen.Contains(prop.Name))
+                    if (seen.TryGetValue(prop.Name, out var idx))
                     {
                         // Derived shadows base — replace the earlier entry
-                        var idx = result.FindIndex(p => p.Name == prop.Name);
-                        if (idx >= 0)
-                            result[idx] = prop;
+                        result[idx] = prop;
                     }
                     else
                     {
-                        seen.Add(prop.Name);
+                        seen[prop.Name] = result.Count;
                         result.Add(prop);
                     }
                 }
