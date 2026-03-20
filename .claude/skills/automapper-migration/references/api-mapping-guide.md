@@ -143,7 +143,7 @@ public partial class OrderForger
 | AutoMapper Feature | Workaround |
 |---|---|
 | `ProjectTo<T>()` (IQueryable) | Map in-memory after materializing the query |
-| `ConstructUsing()` | Use record types with constructor mapping (auto-detected) |
+| `ConstructUsing()` | No direct equivalent. ForgeMap maps constructor/record parameters when the destination has an accessible constructor; for custom factory logic, adjust destination constructors/records where possible or create the destination manually (e.g., in calling code, a `[ForgeFrom]` resolver, or a `[BeforeForge]` hook). |
 | Conditional mapping (`.PreCondition()`) | Use `[BeforeForge]` to validate, or `[ForgeFrom]` with conditional logic |
 | Value converters (global type conversion) | `[ForgeFrom]` resolvers per method | No global type converter support; use per-method `[ForgeFrom]` resolvers |
 | Mapping inheritance (`.Include<>()`, `.IncludeBase<>()`) | Declare separate forge methods, use `[ForgeWith]` for shared parts |

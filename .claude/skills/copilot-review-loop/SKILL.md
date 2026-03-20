@@ -59,7 +59,7 @@ If commit_id does not match HEAD → Copilot hasn't reviewed the latest push yet
 
 If commit_id matches but body does NOT contain "generated no comments" → Copilot reviewed but found issues:
 - Re-fetch unresolved threads. If threads now exist, process them as in step 2.
-- If **no inline threads exist**, Copilot's feedback is only in the top-level review body. Surface the body text to the user and pause — do not keep looping expecting inline comments that may never appear.
+- If **no inline threads exist**, Copilot's feedback is only in the top-level review body. Surface the body text to the user, **cancel the cron via `CronDelete`**, and hand control back to the user — do not keep looping expecting inline comments that may never appear.
 
 ### 4. Re-trigger Copilot review (MANDATORY after every push)
 
