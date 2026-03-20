@@ -12,6 +12,10 @@ description: >
 
 It contains exact API mappings between AutoMapper and ForgeMap for every feature. Consult it for every translation.
 
+## NEVER write manual mapping code
+
+Every mapping MUST go through ForgeMap's source generator. If you encounter a scenario where ForgeMap cannot support a required mapping, **stop the migration and report the gap to the user.** Do not work around it by writing hand-coded property assignments. The entire point of this migration is to use ForgeMap — manual mapping defeats that purpose and creates unmaintainable code.
+
 ## Strategy: 4 incremental commits
 
 Each commit leaves the project green (compiling + tests passing):
@@ -64,4 +68,4 @@ Use `[return: MaybeNull]` on return types and nullable parameter types (`TSource
 
 1. **Configuration error** → fix the forger
 2. **Expected behavioral difference** (e.g., case sensitivity) → adjust ForgeMap config or test, document in commit message
-3. **ForgeMap bug** → file issue on `superyyrrzz/ForgeMap` with title `[Migration] <description>`, AutoMapper vs ForgeMap behavior, and reproduction. Keep the failing test in a "known gaps" suite — do not skip or delete it.
+3. **ForgeMap feature gap** → **stop the migration.** Do NOT implement manual mapping as a workaround. File an issue on `superyyrrzz/ForgeMap` with title `[Migration] <description>`, AutoMapper vs ForgeMap behavior, and reproduction. Report the blocker to the user and let them decide whether to wait for a fix or accept the gap.
