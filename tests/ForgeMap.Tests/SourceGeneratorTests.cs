@@ -2182,8 +2182,8 @@ public class CompatibleEnumGeneratorTests
         Assert.Single(generatedTrees);
 
         var generatedCode = generatedTrees[0].GetText().ToString();
-        // Nullable<EnumA> -> EnumB: should emit cast using the nullable source's Value
-        Assert.Contains("(Dest.Priority)(int)source.Priority.Value", generatedCode);
+        // Nullable<EnumA> -> EnumB: should emit cast using the nullable source's Value with ! to suppress CS8629
+        Assert.Contains("(Dest.Priority)(int)source.Priority!.Value", generatedCode);
     }
 
     [Fact]

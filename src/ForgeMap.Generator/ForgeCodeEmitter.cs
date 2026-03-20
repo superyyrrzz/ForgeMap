@@ -2412,9 +2412,9 @@ internal sealed class ForgeCodeEmitter
         if (srcUnderlying != null && dstUnderlying != null)
             return $"{sourceExpr}.HasValue ? ({destDisplay})({underlyingTypeName}){sourceExpr}.Value : null";
 
-        // Nullable<EnumA> -> EnumB: unwrap with .Value before casting
+        // Nullable<EnumA> -> EnumB: unwrap with .Value before casting (! suppresses CS8629)
         if (srcUnderlying != null && dstUnderlying == null)
-            return $"({destDisplay})({underlyingTypeName}){sourceExpr}.Value";
+            return $"({destDisplay})({underlyingTypeName}){sourceExpr}!.Value";
 
         // EnumA -> EnumB or EnumA -> Nullable<EnumB>
         return $"({destDisplay})({underlyingTypeName}){sourceExpr}";
