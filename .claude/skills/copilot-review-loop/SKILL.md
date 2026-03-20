@@ -57,7 +57,9 @@ If **both** match → Copilot reviewed the latest code and found nothing. **Canc
 
 If commit_id does not match HEAD → Copilot hasn't reviewed the latest push yet. Request Copilot review (re-requesting is acceptable even if already pending). **Return immediately** — let the next cron tick check again. Do NOT sleep or poll.
 
-If commit_id matches but body does NOT contain "generated no comments" → Copilot reviewed but found issues. The unresolved threads should have been caught in step 1. If somehow missed, re-fetch threads and process them.
+If commit_id matches but body does NOT contain "generated no comments" → Copilot reviewed but found issues:
+- Re-fetch unresolved threads. If threads now exist, process them as in step 2.
+- If **no inline threads exist**, Copilot's feedback is only in the top-level review body. Surface the body text to the user and pause — do not keep looping expecting inline comments that may never appear.
 
 ### 4. Re-trigger Copilot review (MANDATORY after every push)
 
@@ -68,3 +70,4 @@ Never skip this step — it was the #1 failure mode historically.
 - Copilot's latest review on HEAD contains "generated no comments"
 - PR merged/closed
 - User cancels via `CronDelete`
+- **Safety valve**: CronCreate auto-expires recurring jobs after 3 days. As an additional guard, stop after 20 cron iterations and surface a warning to the user if termination conditions were never met.
