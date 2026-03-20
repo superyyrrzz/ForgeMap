@@ -2183,7 +2183,7 @@ public class CompatibleEnumGeneratorTests
 
         var generatedCode = generatedTrees[0].GetText().ToString();
         // Nullable<EnumA> -> EnumB: should emit cast with null-forgiving
-        Assert.Contains("(Dest.Priority)(int)source.Priority!", generatedCode);
+        Assert.Contains("(Dest.Priority)(int)source.Priority.Value", generatedCode);
     }
 
     [Fact]
