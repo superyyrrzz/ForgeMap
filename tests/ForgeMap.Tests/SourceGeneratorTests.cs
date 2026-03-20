@@ -2570,6 +2570,60 @@ public class CompatibleEnumGeneratorTests
         Assert.DoesNotContain("(Dest.Priority)(int)", generatedCode);
     }
 
+    [Fact]
+    public void Generator_CompatibleEnums_ForgeProperty_NestedNullConditional_EmitsCorrectCast()
+    {
+        var source = """
+            using ForgeMap;
+
+            namespace Source
+            {
+                public enum Priority { Low, Medium, High }
+                public class Customer
+                {
+                    public Priority Priority { get; set; }
+                }
+                public class SourceEntity
+                {
+                    public int Id { get; set; }
+                    public Customer? Customer { get; set; }
+                }
+            }
+
+            namespace Dest
+            {
+                public enum Priority { Low, Medium, High }
+                public class DestDto
+                {
+                    public int Id { get; set; }
+                    public Priority Priority { get; set; }
+                }
+            }
+
+            namespace TestMappers
+            {
+                [ForgeMap]
+                public partial class TestForger
+                {
+                    [ForgeProperty("Customer.Priority", "Priority")]
+                    public partial Dest.DestDto Forge(Source.SourceEntity source);
+                }
+            }
+            """;
+
+        var (diagnostics, generatedTrees) = RunGenerator(source);
+
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        Assert.Single(generatedTrees);
+
+        var generatedCode = generatedTrees[0].GetText().ToString();
+        // Lifted enum from null-conditional should use .HasValue/.Value or !.Value pattern
+        Assert.Contains("(Dest.Priority)(int)", generatedCode);
+        // Must NOT produce a plain cast like (Dest.Priority)(int)source.Customer?.Priority
+        // which would fail because the expression is actually Priority? due to ?. lifting
+        Assert.DoesNotContain("(int)source.Customer?.Priority;", generatedCode);
+    }
+
     private static (IReadOnlyList<Diagnostic> Diagnostics, IReadOnlyList<SyntaxTree> GeneratedTrees) RunGenerator(string source)
     {
         return SourceGeneratorTests.RunGenerator(source);
