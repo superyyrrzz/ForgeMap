@@ -1720,7 +1720,7 @@ internal sealed class ForgeCodeEmitter
                 {
                     ReportDiagnosticIfNotSuppressed(context,
                         DiagnosticDescriptors.IncludeBaseForgeOverridden,
-                        method.Locations.FirstOrDefault(),
+                        attrData.ApplicationSyntaxReference?.GetSyntax().GetLocation() ?? method.Locations.FirstOrDefault(),
                         propName);
                     continue;
                 }
@@ -1735,7 +1735,7 @@ internal sealed class ForgeCodeEmitter
                 {
                     ReportDiagnosticIfNotSuppressed(context,
                         DiagnosticDescriptors.IncludeBaseForgeOverridden,
-                        method.Locations.FirstOrDefault(),
+                        attrData.ApplicationSyntaxReference?.GetSyntax().GetLocation() ?? method.Locations.FirstOrDefault(),
                         kvp.Key);
                     continue;
                 }
@@ -1751,7 +1751,7 @@ internal sealed class ForgeCodeEmitter
                 {
                     ReportDiagnosticIfNotSuppressed(context,
                         DiagnosticDescriptors.IncludeBaseForgeOverridden,
-                        method.Locations.FirstOrDefault(),
+                        attrData.ApplicationSyntaxReference?.GetSyntax().GetLocation() ?? method.Locations.FirstOrDefault(),
                         kvp.Key);
                     continue;
                 }
@@ -1767,7 +1767,7 @@ internal sealed class ForgeCodeEmitter
                 {
                     ReportDiagnosticIfNotSuppressed(context,
                         DiagnosticDescriptors.IncludeBaseForgeOverridden,
-                        method.Locations.FirstOrDefault(),
+                        attrData.ApplicationSyntaxReference?.GetSyntax().GetLocation() ?? method.Locations.FirstOrDefault(),
                         kvp.Key);
                     continue;
                 }
