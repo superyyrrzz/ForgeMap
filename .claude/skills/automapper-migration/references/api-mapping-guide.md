@@ -28,7 +28,7 @@ This reference maps AutoMapper patterns to their ForgeMap equivalents.
 |---|---|---|
 | `IValueResolver<S,D,TVal>` | `[ForgeFrom(nameof(D.DestProp), nameof(ResolverMethod))]` | Static/instance method on the forger class |
 | `.MapFrom(s => expr)` | `[ForgeFrom(nameof(D.DestProp), nameof(Method))]` | Resolver method returns value |
-| `ITypeConverter<S,D>` | `[ConvertWith(typeof(Converter))]` | Implements `ITypeConverter<S,D>`. **Requires ForgeMap 1.1+** — use `[ForgeFrom]` resolvers on 1.0 |
+| `ITypeConverter<S,D>` | `[ForgeFrom]` resolver methods | No built-in `[ConvertWith]` in current ForgeMap; model type conversions with `[ForgeFrom]` resolver methods on the forger class |
 
 ### Resolver method signatures
 
@@ -145,7 +145,7 @@ public partial class OrderForger
 | `ProjectTo<T>()` (IQueryable) | Map in-memory after materializing the query |
 | `ConstructUsing()` | Use record types with constructor mapping (auto-detected) |
 | Conditional mapping (`.PreCondition()`) | Use `[BeforeForge]` to validate, or `[ForgeFrom]` with conditional logic |
-| Value converters (global type conversion) | `[ConvertWith]` per method (**requires v1.1+**), or `[ForgeFrom]` resolvers (v1.0) |
+| Value converters (global type conversion) | `[ForgeFrom]` resolvers per method | No global type converter support; use per-method `[ForgeFrom]` resolvers |
 | Mapping inheritance (`.Include<>()`, `.IncludeBase<>()`) | Declare separate forge methods, use `[ForgeWith]` for shared parts |
 | Dynamic/runtime mapping | Not supported — ForgeMap is compile-time only |
 

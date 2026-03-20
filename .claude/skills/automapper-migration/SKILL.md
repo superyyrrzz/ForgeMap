@@ -243,7 +243,7 @@ Swap the `AutoMapperMappingService` implementation with a `ForgeMapMappingServic
 
 Pin to a specific known-good version for reproducible builds. Update intentionally when needed.
 
-**NOTE**: Some features in the API mapping reference (e.g., `[ConvertWith]`) require ForgeMap 1.1+. If you need those features, pin to the minimum version that includes them. The reference guide marks version requirements where they differ from 1.0.
+**NOTE**: If your project already depends on ForgeMap features that require a version higher than 1.0.0, pin to the minimum version that supports those features based on ForgeMap's release notes.
 
 Remove the AutoMapper package reference ONLY after all tests pass. For now, keep both.
 
