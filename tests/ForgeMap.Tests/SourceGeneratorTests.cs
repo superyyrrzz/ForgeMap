@@ -2619,9 +2619,12 @@ public class CompatibleEnumGeneratorTests
         var generatedCode = generatedTrees[0].GetText().ToString();
         // Lifted enum from null-conditional should use .HasValue/.Value or !.Value pattern
         Assert.Contains("(Dest.Priority)(int)", generatedCode);
-        // Must NOT produce a plain cast like (Dest.Priority)(int)source.Customer?.Priority
-        // which would fail because the expression is actually Priority? due to ?. lifting
-        Assert.DoesNotContain("(int)source.Customer?.Priority;", generatedCode);
+        // Must NOT directly cast the lifted null-conditional expression without
+        // parenthesizing it first — source.Customer?.Priority is Priority? at runtime,
+        // so casting it directly (without .Value/.HasValue) is incorrect.
+        Assert.DoesNotContain("(int)source.Customer?.Priority", generatedCode);
+        // The expression must be wrapped in parens to break the ?. chain
+        Assert.Contains("(source.Customer?.Priority)", generatedCode);
     }
 
     private static (IReadOnlyList<Diagnostic> Diagnostics, IReadOnlyList<SyntaxTree> GeneratedTrees) RunGenerator(string source)
