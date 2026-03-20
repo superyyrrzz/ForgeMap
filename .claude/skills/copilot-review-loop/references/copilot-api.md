@@ -1,20 +1,15 @@
 # Copilot API Reference
 
+## Auto-review
+
+Copilot auto-review is enabled on this repo. Reviews are triggered automatically on each push — no manual `requested_reviewers` API calls needed.
+
 ## Author login per API
 
 | API | Login |
 |-----|-------|
-| REST (reviews, requesting) | `copilot-pull-request-reviewer[bot]` |
+| REST (reviews) | `copilot-pull-request-reviewer[bot]` |
 | GraphQL (reviewThreads) | `copilot-pull-request-reviewer` |
-
-## Request review
-
-```bash
-gh api repos/{OWNER}/{REPO}/pulls/{PR}/requested_reviewers \
-  -f "reviewers[]=copilot-pull-request-reviewer[bot]" --method POST
-```
-
-**Using just `"copilot"` silently returns 200 but does nothing.**
 
 ## Check if Copilot reviewed a specific commit
 
