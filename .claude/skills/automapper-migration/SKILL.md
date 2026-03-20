@@ -274,25 +274,30 @@ For each AutoMapper `Profile`, create a corresponding `[ForgeMap]` partial class
 
 #### 3.3 Create ForgeMapMappingService
 
+**IMPORTANT**: This class is NOT doing manual mapping. It is a thin **routing shim** that bridges the untyped `IMappingService` interface (which accepts `object` like AutoMapper's `IMapper`) to ForgeMap's strongly-typed `Forge()` methods. All actual mapping logic is handled by ForgeMap's source-generated forger — this class only dispatches to the correct overload.
+
+This shim is **temporary** — it exists only for this commit so tests can run against the same `IMappingService` interface. It will be deleted entirely in commit 4 when code switches to calling `_forger.Forge(source)` directly.
+
 ```csharp
 public class ForgeMapMappingService : IMappingService
 {
-    private readonly AppForger _forger; // or multiple forgers
+    private readonly AppForger _forger; // all mapping is done by ForgeMap's generated code
 
     public ForgeMapMappingService(AppForger forger) => _forger = forger;
 
+    // This method dispatches untyped calls to the correct ForgeMap Forge() overload.
+    // It does NOT contain any mapping logic — ForgeMap handles all property mapping.
     public TDestination Map<TDestination>(object? source)
     {
-        // Handle null source — AutoMapper returns default(TDestination) for null
         if (source is null) return default!;
 
-        // Use pattern matching or a dictionary to dispatch to correct Forge method
-        // based on source runtime type and TDestination
+        // Route to the correct ForgeMap-generated Forge() method based on types.
+        // Each arm just calls _forger.Forge(source) — ForgeMap does the actual mapping.
         return source switch
         {
             User u when typeof(TDestination) == typeof(UserDto) => (TDestination)(object)_forger.Forge(u),
             Order o when typeof(TDestination) == typeof(OrderDto) => (TDestination)(object)_forger.Forge(o),
-            // ... enumerate all mappings
+            // ... one arm per mapping — ForgeMap generates the implementation for each Forge() call
             _ => throw new NotSupportedException($"No mapping from {source.GetType().Name} to {typeof(TDestination).Name}")
         };
     }
@@ -305,16 +310,16 @@ public class ForgeMapMappingService : IMappingService
 
     public void Map<TSource, TDestination>(TSource? source, TDestination destination)
     {
-        // Dispatch to the appropriate Forge "Into" methods, similar to Map<TDestination> above.
-        // If not needed, throw so failures are explicit rather than silent no-ops.
+        // Route to the correct ForgeMap-generated ForgeInto() method.
+        // Example: if (source is User u && destination is UserDto d) _forger.ForgeInto(u, d);
         throw new NotSupportedException(
-            $"Map-into-existing-object not configured for {typeof(TSource).Name} -> {typeof(TDestination).Name}. " +
-            "Add dispatch to the ForgeInto method here.");
+            $"Map-into not configured for {typeof(TSource).Name} -> {typeof(TDestination).Name}. " +
+            "Add a dispatch arm calling _forger.ForgeInto(source, destination) here.");
     }
 }
 ```
 
-**NOTE**: The dispatch pattern above is temporary — it exists only for this abstraction layer which will be removed in commit 4. Optimize for correctness, not elegance.
+**Why is this dispatch needed?** AutoMapper's `IMapper.Map<TDest>(object source)` uses runtime type discovery. ForgeMap uses compile-time source generation with strongly-typed methods (`Forge(User source) → UserDto`). This shim bridges the gap temporarily. Once commit 4 removes the abstraction, callers use `_forger.Forge(source)` directly and this routing code disappears.
 
 #### 3.4 Update DI registration
 
