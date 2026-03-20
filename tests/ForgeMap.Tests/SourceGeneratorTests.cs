@@ -1988,3 +1988,301 @@ public class InheritedPropertyResolutionTests
 }
 
 #endregion
+
+#region Compatible Enum Auto-Cast Tests
+
+public class CompatibleEnumGeneratorTests
+{
+    [Fact]
+    public void Generator_CompatibleEnums_DifferentNamespaces_EmitsCast()
+    {
+        var source = """
+            using ForgeMap;
+
+            namespace Source
+            {
+                public enum Priority { Low, Medium, High }
+
+                public class SourceEntity
+                {
+                    public int Id { get; set; }
+                    public Priority Priority { get; set; }
+                }
+            }
+
+            namespace Dest
+            {
+                public enum Priority { Low, Medium, High }
+
+                public class DestDto
+                {
+                    public int Id { get; set; }
+                    public Priority Priority { get; set; }
+                }
+            }
+
+            namespace Mappers
+            {
+                [ForgeMap]
+                public partial class TestForger
+                {
+                    public partial Dest.DestDto Forge(Source.SourceEntity source);
+                }
+            }
+            """;
+
+        var (diagnostics, generatedTrees) = RunGenerator(source);
+
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        Assert.Single(generatedTrees);
+
+        var generatedCode = generatedTrees[0].GetText().ToString();
+        Assert.Contains("Id = source.Id,", generatedCode);
+        // Should emit cast, not direct assignment
+        Assert.Contains("(Dest.Priority)(int)source.Priority", generatedCode);
+        Assert.DoesNotContain("Priority = source.Priority,", generatedCode);
+    }
+
+    [Fact]
+    public void Generator_CompatibleEnums_DifferentValues_NoCast()
+    {
+        var source = """
+            using ForgeMap;
+
+            namespace Source
+            {
+                public enum Status { Active = 0, Inactive = 1 }
+
+                public class SourceEntity
+                {
+                    public int Id { get; set; }
+                    public Status Status { get; set; }
+                }
+            }
+
+            namespace Dest
+            {
+                public enum Status { Active = 0, Inactive = 2 }
+
+                public class DestDto
+                {
+                    public int Id { get; set; }
+                    public Status Status { get; set; }
+                }
+            }
+
+            namespace Mappers
+            {
+                [ForgeMap]
+                public partial class TestForger
+                {
+                    public partial Dest.DestDto Forge(Source.SourceEntity source);
+                }
+            }
+            """;
+
+        var (diagnostics, generatedTrees) = RunGenerator(source);
+
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        Assert.Single(generatedTrees);
+
+        var generatedCode = generatedTrees[0].GetText().ToString();
+        Assert.Contains("Id = source.Id,", generatedCode);
+        // Different values: should NOT emit cast — Status property should be skipped
+        Assert.DoesNotContain("(Dest.Status)(int)source.Status", generatedCode);
+        Assert.DoesNotContain("Status = source.Status,", generatedCode);
+    }
+
+    [Fact]
+    public void Generator_CompatibleEnums_DifferentMemberCount_NoCast()
+    {
+        var source = """
+            using ForgeMap;
+
+            namespace Source
+            {
+                public enum Color { Red, Green, Blue }
+
+                public class SourceEntity
+                {
+                    public Color Color { get; set; }
+                }
+            }
+
+            namespace Dest
+            {
+                public enum Color { Red, Green }
+
+                public class DestDto
+                {
+                    public Color Color { get; set; }
+                }
+            }
+
+            namespace Mappers
+            {
+                [ForgeMap]
+                public partial class TestForger
+                {
+                    public partial Dest.DestDto Forge(Source.SourceEntity source);
+                }
+            }
+            """;
+
+        var (diagnostics, generatedTrees) = RunGenerator(source);
+
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        Assert.Single(generatedTrees);
+
+        var generatedCode = generatedTrees[0].GetText().ToString();
+        // Different member count: no cast, property skipped
+        Assert.DoesNotContain("(Dest.Color)(int)source.Color", generatedCode);
+        Assert.DoesNotContain("Color = source.Color,", generatedCode);
+    }
+
+    [Fact]
+    public void Generator_CompatibleEnums_NullableSourceToNonNullableDest_EmitsCast()
+    {
+        var source = """
+            using ForgeMap;
+
+            namespace Source
+            {
+                public enum Priority { Low, Medium, High }
+
+                public class SourceEntity
+                {
+                    public Priority? Priority { get; set; }
+                }
+            }
+
+            namespace Dest
+            {
+                public enum Priority { Low, Medium, High }
+
+                public class DestDto
+                {
+                    public Priority Priority { get; set; }
+                }
+            }
+
+            namespace Mappers
+            {
+                [ForgeMap]
+                public partial class TestForger
+                {
+                    public partial Dest.DestDto Forge(Source.SourceEntity source);
+                }
+            }
+            """;
+
+        var (diagnostics, generatedTrees) = RunGenerator(source);
+
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        Assert.Single(generatedTrees);
+
+        var generatedCode = generatedTrees[0].GetText().ToString();
+        // Nullable<EnumA> -> EnumB: should emit cast with null-forgiving
+        Assert.Contains("(Dest.Priority)(int)source.Priority!", generatedCode);
+    }
+
+    [Fact]
+    public void Generator_CompatibleEnums_NonNullableToNullableDest_EmitsCast()
+    {
+        var source = """
+            using ForgeMap;
+
+            namespace Source
+            {
+                public enum Priority { Low, Medium, High }
+
+                public class SourceEntity
+                {
+                    public Priority Priority { get; set; }
+                }
+            }
+
+            namespace Dest
+            {
+                public enum Priority { Low, Medium, High }
+
+                public class DestDto
+                {
+                    public Priority? Priority { get; set; }
+                }
+            }
+
+            namespace Mappers
+            {
+                [ForgeMap]
+                public partial class TestForger
+                {
+                    public partial Dest.DestDto Forge(Source.SourceEntity source);
+                }
+            }
+            """;
+
+        var (diagnostics, generatedTrees) = RunGenerator(source);
+
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        Assert.Single(generatedTrees);
+
+        var generatedCode = generatedTrees[0].GetText().ToString();
+        // EnumA -> Nullable<EnumB>: should emit cast
+        Assert.Contains("(Dest.Priority?)(int)source.Priority", generatedCode);
+    }
+
+    [Fact]
+    public void Generator_CompatibleEnums_DifferentMemberNames_NoCast()
+    {
+        var source = """
+            using ForgeMap;
+
+            namespace Source
+            {
+                public enum Status { Active, Inactive }
+
+                public class SourceEntity
+                {
+                    public Status Status { get; set; }
+                }
+            }
+
+            namespace Dest
+            {
+                public enum Status { Enabled, Disabled }
+
+                public class DestDto
+                {
+                    public Status Status { get; set; }
+                }
+            }
+
+            namespace Mappers
+            {
+                [ForgeMap]
+                public partial class TestForger
+                {
+                    public partial Dest.DestDto Forge(Source.SourceEntity source);
+                }
+            }
+            """;
+
+        var (diagnostics, generatedTrees) = RunGenerator(source);
+
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        Assert.Single(generatedTrees);
+
+        var generatedCode = generatedTrees[0].GetText().ToString();
+        // Different member names: no cast, property skipped
+        Assert.DoesNotContain("(Dest.Status)(int)source.Status", generatedCode);
+        Assert.DoesNotContain("Status = source.Status,", generatedCode);
+    }
+
+    private static (IReadOnlyList<Diagnostic> Diagnostics, IReadOnlyList<SyntaxTree> GeneratedTrees) RunGenerator(string source)
+    {
+        return SourceGeneratorTests.RunGenerator(source);
+    }
+}
+
+#endregion

@@ -967,9 +967,32 @@ internal sealed class ForgeCodeEmitter
         if (sourceProp != null && CanAssign(sourceProp.Type, destProp.Type))
         {
             if (IsNullableToNonNullableValueType(sourceProp.Type, destProp.Type))
-                return $"({destProp.Type.ToDisplayString()}){sourceParam}.{sourceProp.Name}!";
-            else
-                return $"{sourceParam}.{sourceProp.Name}";
+            {
+                var destDisplay = destProp.Type.ToDisplayString();
+                var sourceUnderlyingType = GetNullableUnderlyingType(sourceProp.Type);
+                // Nullable<EnumA>? -> EnumB where EnumA and EnumB are compatible enums
+                if (sourceUnderlyingType != null && AreCompatibleEnums(sourceUnderlyingType, destProp.Type))
+                    return $"({destDisplay})(int){sourceParam}.{sourceProp.Name}!";
+                return $"({destDisplay}){sourceParam}.{sourceProp.Name}!";
+            }
+
+            // Compatible enum cast: EnumA -> EnumB (different namespaces, same members)
+            var sourceType2 = sourceProp.Type;
+            var destType2 = destProp.Type;
+            var srcUnderlying = GetNullableUnderlyingType(sourceType2);
+            var dstUnderlying = GetNullableUnderlyingType(destType2);
+            var srcEnum = srcUnderlying ?? sourceType2;
+            var dstEnum = dstUnderlying ?? destType2;
+            if (AreCompatibleEnums(srcEnum, dstEnum))
+            {
+                // Nullable<EnumA> -> EnumB: need null-forgiving operator
+                if (srcUnderlying != null && dstUnderlying == null)
+                    return $"({destType2.ToDisplayString()})(int){sourceParam}.{sourceProp.Name}!";
+                // EnumA -> Nullable<EnumB> or EnumA -> EnumB
+                return $"({destType2.ToDisplayString()})(int){sourceParam}.{sourceProp.Name}";
+            }
+
+            return $"{sourceParam}.{sourceProp.Name}";
         }
 
         // Try automatic flattening: destProp "CustomerName" → source.Customer.Name
@@ -2043,11 +2066,30 @@ internal sealed class ForgeCodeEmitter
                 // Handle Nullable<T> to T conversion using explicit cast which throws if null
                 if (IsNullableToNonNullableValueType(sourceProp.Type, destProp.Type))
                 {
-                    sb.AppendLine($"            {destParam}.{destProp.Name} = ({destProp.Type.ToDisplayString()}){sourceParam}.{sourceProp.Name}!;");
+                    var destDisplay = destProp.Type.ToDisplayString();
+                    var sourceUnderlyingType = GetNullableUnderlyingType(sourceProp.Type);
+                    if (sourceUnderlyingType != null && AreCompatibleEnums(sourceUnderlyingType, destProp.Type))
+                        sb.AppendLine($"            {destParam}.{destProp.Name} = ({destDisplay})(int){sourceParam}.{sourceProp.Name}!;");
+                    else
+                        sb.AppendLine($"            {destParam}.{destProp.Name} = ({destDisplay}){sourceParam}.{sourceProp.Name}!;");
                 }
                 else
                 {
-                    sb.AppendLine($"            {destParam}.{destProp.Name} = {sourceParam}.{sourceProp.Name};");
+                    // Compatible enum cast: EnumA -> EnumB (different namespaces, same members)
+                    var srcUnderlying = GetNullableUnderlyingType(sourceProp.Type);
+                    var dstUnderlying = GetNullableUnderlyingType(destProp.Type);
+                    var srcEnum = srcUnderlying ?? sourceProp.Type;
+                    var dstEnum = dstUnderlying ?? destProp.Type;
+                    if (AreCompatibleEnums(srcEnum, dstEnum))
+                    {
+                        // Nullable<EnumA> -> EnumB: need null-forgiving operator
+                        if (srcUnderlying != null && dstUnderlying == null)
+                            sb.AppendLine($"            {destParam}.{destProp.Name} = ({destProp.Type.ToDisplayString()})(int){sourceParam}.{sourceProp.Name}!;");
+                        else
+                            sb.AppendLine($"            {destParam}.{destProp.Name} = ({destProp.Type.ToDisplayString()})(int){sourceParam}.{sourceProp.Name};");
+                    }
+                    else
+                        sb.AppendLine($"            {destParam}.{destProp.Name} = {sourceParam}.{sourceProp.Name};");
                 }
             }
         }
@@ -2291,6 +2333,10 @@ internal sealed class ForgeCodeEmitter
         if (SymbolEqualityComparer.Default.Equals(source, dest))
             return true;
 
+        // Handle compatible enums (same members/values, different namespaces)
+        if (AreCompatibleEnums(source, dest))
+            return true;
+
         // Handle Nullable<T> to T (value types)
         var sourceUnderlying = GetNullableUnderlyingType(source);
         var destUnderlying = GetNullableUnderlyingType(dest);
@@ -2298,13 +2344,15 @@ internal sealed class ForgeCodeEmitter
         if (sourceUnderlying != null && destUnderlying == null)
         {
             // Nullable<T> -> T - allowed but may throw at runtime
-            return SymbolEqualityComparer.Default.Equals(sourceUnderlying, dest);
+            return SymbolEqualityComparer.Default.Equals(sourceUnderlying, dest)
+                || AreCompatibleEnums(sourceUnderlying, dest);
         }
 
         if (sourceUnderlying == null && destUnderlying != null)
         {
             // T -> Nullable<T> - always allowed
-            return SymbolEqualityComparer.Default.Equals(source, destUnderlying);
+            return SymbolEqualityComparer.Default.Equals(source, destUnderlying)
+                || AreCompatibleEnums(source, destUnderlying);
         }
 
         // Handle nullable reference types: nullable ref -> non-nullable ref
@@ -2340,6 +2388,38 @@ internal sealed class ForgeCodeEmitter
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Checks if source and dest are enums with identical member names and values (in declaration order),
+    /// enabling auto-cast between enums defined in different namespaces.
+    /// </summary>
+    private static bool AreCompatibleEnums(ITypeSymbol source, ITypeSymbol dest)
+    {
+        if (source.TypeKind != TypeKind.Enum || dest.TypeKind != TypeKind.Enum)
+            return false;
+
+        // Already identical types — not a "compatible enum" case
+        if (SymbolEqualityComparer.Default.Equals(source, dest))
+            return false;
+
+        var sourceMembers = source.GetMembers().OfType<IFieldSymbol>()
+            .Where(f => f.HasConstantValue).ToArray();
+        var destMembers = dest.GetMembers().OfType<IFieldSymbol>()
+            .Where(f => f.HasConstantValue).ToArray();
+
+        if (sourceMembers.Length != destMembers.Length)
+            return false;
+
+        for (int i = 0; i < sourceMembers.Length; i++)
+        {
+            if (sourceMembers[i].Name != destMembers[i].Name)
+                return false;
+            if (!Equals(sourceMembers[i].ConstantValue, destMembers[i].ConstantValue))
+                return false;
+        }
+
+        return true;
     }
 
     /// <summary>
