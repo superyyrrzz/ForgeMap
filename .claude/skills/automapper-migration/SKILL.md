@@ -430,6 +430,8 @@ Rewrite `MappingServiceTests` to test forger classes directly:
 public class MappingTests
 {
     private readonly AppForger _forger = new();
+    // NOTE: `new()` works only if the forger has a parameterless constructor.
+    // If it has DI dependencies, resolve via ServiceProvider after AddForgeMaps().
 
     [Fact]
     public void Forge_User_To_UserDto_MapsAllProperties()

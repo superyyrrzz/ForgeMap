@@ -51,7 +51,7 @@ After all comments addressed: commit, push, reset clean counter to 0, re-trigger
 
 Compare HEAD SHA with Copilot's latest review commit (see references).
 - **Match** → confirmed-clean. After 3 consecutive confirmed-clean iterations → cancel cron, report success.
-- **No match** → Copilot hasn't reviewed HEAD yet. Request review (if not already pending), do NOT count as clean. **Return immediately** — let the next cron tick check again. Do NOT sleep or poll.
+- **No match** → Copilot hasn't reviewed HEAD yet. Request Copilot review (re-requesting is acceptable even if already pending), do NOT count as clean. **Return immediately** — let the next cron tick check again. Do NOT sleep or poll.
 
 ### 4. Re-trigger Copilot review (MANDATORY after every push)
 
