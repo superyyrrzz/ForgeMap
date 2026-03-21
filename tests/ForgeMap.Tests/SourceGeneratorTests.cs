@@ -3289,7 +3289,7 @@ public class CompatibleEnumGeneratorTests
     }
 }
 
-#endregion#endregion
+#endregion
 
 #region ForgeAllDerived Tests
 
