@@ -2536,6 +2536,69 @@ public class IncludeBaseForgeTests
         Assert.Contains("Extra = source.Extra", derivedMethodLines);
     }
 
+    [Fact]
+    public void Generator_IncludeBaseForge_ForgeIntoPattern_InheritsIgnore()
+    {
+        var source = """
+            using ForgeMap;
+
+            namespace TestNamespace
+            {
+                public class BaseEntity
+                {
+                    public int Id { get; set; }
+                    public string Name { get; set; }
+                    public string AuditTrail { get; set; }
+                }
+
+                public class BaseDto
+                {
+                    public int Id { get; set; }
+                    public string Name { get; set; }
+                    public string AuditTrail { get; set; }
+                }
+
+                public class DerivedEntity : BaseEntity
+                {
+                    public string Extra { get; set; }
+                }
+
+                public class DerivedDto : BaseDto
+                {
+                    public string Extra { get; set; }
+                }
+
+                [ForgeMap]
+                public partial class TestForger
+                {
+                    // Base mapping uses ForgeInto pattern (void + [UseExistingValue])
+                    [Ignore(nameof(BaseDto.AuditTrail))]
+                    public partial void ForgeInto(BaseEntity source, [UseExistingValue] BaseDto dest);
+
+                    // Derived uses return-style but inherits from ForgeInto base
+                    [IncludeBaseForge(typeof(BaseEntity), typeof(BaseDto))]
+                    public partial DerivedDto Forge(DerivedEntity source);
+                }
+            }
+            """;
+
+        var (diagnostics, generatedTrees) = RunGenerator(source);
+
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        Assert.Single(generatedTrees);
+
+        var generatedCode = generatedTrees[0].GetText().ToString();
+        var lines = generatedCode.Split('\n');
+        var derivedMethodLines = GetMethodBody(lines, "DerivedDto Forge(TestNamespace.DerivedEntity");
+
+        // AuditTrail should be ignored (inherited from ForgeInto base)
+        Assert.DoesNotContain("AuditTrail", derivedMethodLines);
+        // Should have Id, Name, Extra
+        Assert.Contains("Id = source.Id", derivedMethodLines);
+        Assert.Contains("Name = source.Name", derivedMethodLines);
+        Assert.Contains("Extra = source.Extra", derivedMethodLines);
+    }
+
     /// <summary>
     /// Extracts the body of a generated method by finding its signature line and collecting
     /// everything up to the matching closing brace.

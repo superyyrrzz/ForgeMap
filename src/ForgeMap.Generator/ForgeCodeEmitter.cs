@@ -1746,6 +1746,7 @@ internal sealed class ForgeCodeEmitter
             // Merge base [Ignore] into derived
             foreach (var propName in baseIgnored)
             {
+                // FM0021: explicit attribute overrides inherited
                 if (explicitIgnored.Contains(propName) || explicitPropertyMappings.Contains(propName) ||
                     explicitResolverMappings.Contains(propName) || explicitForgeWithMappings.Contains(propName))
                 {
@@ -1755,6 +1756,10 @@ internal sealed class ForgeCodeEmitter
                         propName);
                     continue;
                 }
+                // First-wins: skip if already configured by a previous [IncludeBaseForge]
+                if (ignoredProperties.Contains(propName) || propertyMappings.ContainsKey(propName) ||
+                    resolverMappings.ContainsKey(propName) || forgeWithMappings.ContainsKey(propName))
+                    continue;
                 ignoredProperties.Add(propName);
             }
 
@@ -1770,8 +1775,10 @@ internal sealed class ForgeCodeEmitter
                         kvp.Key);
                     continue;
                 }
-                if (!propertyMappings.ContainsKey(kvp.Key))
-                    propertyMappings[kvp.Key] = kvp.Value;
+                if (ignoredProperties.Contains(kvp.Key) || propertyMappings.ContainsKey(kvp.Key) ||
+                    resolverMappings.ContainsKey(kvp.Key) || forgeWithMappings.ContainsKey(kvp.Key))
+                    continue;
+                propertyMappings[kvp.Key] = kvp.Value;
             }
 
             // Merge base [ForgeFrom] into derived
@@ -1786,8 +1793,10 @@ internal sealed class ForgeCodeEmitter
                         kvp.Key);
                     continue;
                 }
-                if (!resolverMappings.ContainsKey(kvp.Key))
-                    resolverMappings[kvp.Key] = kvp.Value;
+                if (ignoredProperties.Contains(kvp.Key) || propertyMappings.ContainsKey(kvp.Key) ||
+                    resolverMappings.ContainsKey(kvp.Key) || forgeWithMappings.ContainsKey(kvp.Key))
+                    continue;
+                resolverMappings[kvp.Key] = kvp.Value;
             }
 
             // Merge base [ForgeWith] into derived
@@ -1802,8 +1811,10 @@ internal sealed class ForgeCodeEmitter
                         kvp.Key);
                     continue;
                 }
-                if (!forgeWithMappings.ContainsKey(kvp.Key))
-                    forgeWithMappings[kvp.Key] = kvp.Value;
+                if (ignoredProperties.Contains(kvp.Key) || propertyMappings.ContainsKey(kvp.Key) ||
+                    resolverMappings.ContainsKey(kvp.Key) || forgeWithMappings.ContainsKey(kvp.Key))
+                    continue;
+                forgeWithMappings[kvp.Key] = kvp.Value;
             }
         }
     }
