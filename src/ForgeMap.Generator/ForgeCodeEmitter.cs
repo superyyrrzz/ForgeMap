@@ -1618,14 +1618,23 @@ internal sealed class ForgeCodeEmitter
                 m.Parameters.Any(p =>
                     SymbolEqualityComparer.Default.Equals(p.Type, baseDestType) &&
                     p.GetAttributes().Any(a =>
-                        string.Equals(a.AttributeClass?.Name, "UseExistingValueAttribute", StringComparison.Ordinal))))
+                    {
+                        var attrClass = a.AttributeClass;
+                        if (attrClass == null)
+                            return false;
+                        var name = attrClass.Name;
+                        if (string.Equals(name, "UseExistingValueAttribute", StringComparison.Ordinal))
+                            return true;
+                        var fullName = attrClass.ToDisplayString();
+                        return string.Equals(fullName, "ForgeMap.UseExistingValueAttribute", StringComparison.Ordinal);
+                    })))
             .OrderBy(m => m.Name, StringComparer.Ordinal)
             .FirstOrDefault();
     }
 
     /// <summary>
-    /// Checks whether <paramref name="derived"/> derives from <paramref name="baseType"/>
-    /// (i.e. is the same type or a subclass).
+    /// Checks whether <paramref name="derived"/> is assignable to <paramref name="baseType"/>
+    /// (i.e. is the same type, a subclass, or implements the interface).
     /// </summary>
     private static bool DerivesFrom(INamedTypeSymbol derived, INamedTypeSymbol baseType)
     {
@@ -1636,6 +1645,17 @@ internal sealed class ForgeCodeEmitter
                 return true;
             current = current.BaseType;
         }
+
+        // Also check interface implementation
+        if (baseType.TypeKind == TypeKind.Interface)
+        {
+            foreach (var iface in derived.AllInterfaces)
+            {
+                if (SymbolEqualityComparer.Default.Equals(iface, baseType))
+                    return true;
+            }
+        }
+
         return false;
     }
 
