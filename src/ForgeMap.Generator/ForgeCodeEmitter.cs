@@ -959,6 +959,13 @@ internal sealed class ForgeCodeEmitter
             var sourceLeafType = ResolvePathLeafType(sourcePropName, sourceType);
             // When null-conditional lifts a non-nullable value type to Nullable<T>, cast back
             var isLiftedValueType = hasNullConditional && sourceLeafType != null && sourceLeafType.IsValueType && GetNullableUnderlyingType(sourceLeafType) == null;
+            // Try compatible enum cast first — pass isLifted so it generates correct nullable handling
+            if (sourceLeafType != null)
+            {
+                var enumCast = TryGenerateCompatibleEnumCast(sourceLeafType, destProp.Type, sourceExpr, isLifted: isLiftedValueType);
+                if (enumCast != null)
+                    return enumCast;
+            }
             if (isLiftedValueType && destProp.Type.IsValueType && GetNullableUnderlyingType(destProp.Type) == null)
                 return $"({destProp.Type.ToDisplayString()})({sourceExpr})!";
             var nullForgiving = hasNullConditional && destProp.Type.NullableAnnotation != NullableAnnotation.Annotated ? "!" : "";
@@ -975,6 +982,14 @@ internal sealed class ForgeCodeEmitter
                 return $"({destProp.Type.ToDisplayString()}){sourceParam}.{sourceProp.Name}!";
             else
                 return $"{sourceParam}.{sourceProp.Name}";
+        }
+
+        // Compatible enum cast: EnumA -> EnumB (different namespaces, same members)
+        if (sourceProp != null)
+        {
+            var enumCastExpr = TryGenerateCompatibleEnumCast(sourceProp.Type, destProp.Type, $"{sourceParam}.{sourceProp.Name}");
+            if (enumCastExpr != null)
+                return enumCastExpr;
         }
 
         // Try automatic flattening: destProp "CustomerName" → source.Customer.Name
@@ -1131,10 +1146,25 @@ internal sealed class ForgeCodeEmitter
 
         // Handle lifted value type from null-conditional: source.Customer?.Age is int?
         // even though Age is int — cast back to the destination type
-        if (sourceExpression.Contains("?.") && sourcePropertyType != null
-            && sourcePropertyType.IsValueType && GetNullableUnderlyingType(sourcePropertyType) == null
-            && destPropertyType.IsValueType && GetNullableUnderlyingType(destPropertyType) == null)
+        var isLifted = sourceExpression.Contains("?.") && sourcePropertyType != null
+            && sourcePropertyType.IsValueType && GetNullableUnderlyingType(sourcePropertyType) == null;
+
+        if (isLifted && destPropertyType.IsValueType && GetNullableUnderlyingType(destPropertyType) == null)
+        {
+            // Try compatible enum cast first — it needs the isLifted flag for correct codegen
+            var enumCast = TryGenerateCompatibleEnumCast(sourcePropertyType!, destPropertyType, sourceExpression, isLifted: true);
+            if (enumCast != null)
+                return enumCast;
             return $"({destPropertyType.ToDisplayString()})({sourceExpression})!";
+        }
+
+        // Compatible enum cast for constructor parameters
+        if (sourcePropertyType != null)
+        {
+            var enumCastExpr = TryGenerateCompatibleEnumCast(sourcePropertyType, destPropertyType, sourceExpression, isLifted: isLifted);
+            if (enumCastExpr != null)
+                return enumCastExpr;
+        }
 
         return sourceExpression;
     }
@@ -1288,7 +1318,8 @@ internal sealed class ForgeCodeEmitter
                     }
                 }
 
-                if (sourceExpr != null && sourcePropType != null && CanAssign(sourcePropType, param.Type))
+                if (sourceExpr != null && sourcePropType != null &&
+                    (CanAssign(sourcePropType, param.Type) || IsCompatibleEnumPair(sourcePropType, param.Type)))
                 {
                     mappings.Add(new CtorParamMapping(param.Name, matchedDestPropName!, sourceExpr, sourcePropType, param.Type));
                 }
@@ -2282,6 +2313,16 @@ internal sealed class ForgeCodeEmitter
                 var sourceLeafType = ResolvePathLeafType(sourcePropName, sourceNamedType);
                 // When null-conditional lifts a non-nullable value type to Nullable<T>, cast back
                 var isLiftedValueType = hasNullConditional && sourceLeafType != null && sourceLeafType.IsValueType && GetNullableUnderlyingType(sourceLeafType) == null;
+                // Try compatible enum cast first — pass isLifted so it generates correct nullable handling
+                if (sourceLeafType != null)
+                {
+                    var enumCast = TryGenerateCompatibleEnumCast(sourceLeafType, destProp.Type, sourceExpr, isLifted: isLiftedValueType);
+                    if (enumCast != null)
+                    {
+                        sb.AppendLine($"            {destParam}.{destProp.Name} = {enumCast};");
+                        continue;
+                    }
+                }
                 if (isLiftedValueType && destProp.Type.IsValueType && GetNullableUnderlyingType(destProp.Type) == null)
                 {
                     sb.AppendLine($"            {destParam}.{destProp.Name} = ({destProp.Type.ToDisplayString()})({sourceExpr})!;");
@@ -2309,6 +2350,13 @@ internal sealed class ForgeCodeEmitter
                 {
                     sb.AppendLine($"            {destParam}.{destProp.Name} = {sourceParam}.{sourceProp.Name};");
                 }
+            }
+            else if (sourceProp != null)
+            {
+                // Compatible enum cast: EnumA -> EnumB (different namespaces, same members)
+                var enumCastExpr = TryGenerateCompatibleEnumCast(sourceProp.Type, destProp.Type, $"{sourceParam}.{sourceProp.Name}");
+                if (enumCastExpr != null)
+                    sb.AppendLine($"            {destParam}.{destProp.Name} = {enumCastExpr};");
             }
         }
 
@@ -2600,6 +2648,99 @@ internal sealed class ForgeCodeEmitter
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Checks if source and dest are enums with identical member names and values (in declaration order),
+    /// enabling auto-cast between enums defined in different namespaces.
+    /// </summary>
+    private static bool AreCompatibleEnums(ITypeSymbol source, ITypeSymbol dest)
+    {
+        if (source.TypeKind != TypeKind.Enum || dest.TypeKind != TypeKind.Enum)
+            return false;
+
+        // Already identical types — not a "compatible enum" case
+        if (SymbolEqualityComparer.Default.Equals(source, dest))
+            return false;
+
+        var srcNamed = (INamedTypeSymbol)source;
+        var dstNamed = (INamedTypeSymbol)dest;
+
+        // Underlying types must match — boxed constant Equals() is type-sensitive
+        // (e.g., ((int)0).Equals((byte)0) is false), so require same underlying type.
+        if (srcNamed.EnumUnderlyingType?.SpecialType != dstNamed.EnumUnderlyingType?.SpecialType)
+            return false;
+
+        var sourceMembers = source.GetMembers().OfType<IFieldSymbol>()
+            .Where(f => f.HasConstantValue).ToArray();
+        var destMembers = dest.GetMembers().OfType<IFieldSymbol>()
+            .Where(f => f.HasConstantValue).ToArray();
+
+        if (sourceMembers.Length != destMembers.Length)
+            return false;
+
+        for (int i = 0; i < sourceMembers.Length; i++)
+        {
+            if (sourceMembers[i].Name != destMembers[i].Name)
+                return false;
+            if (!Equals(sourceMembers[i].ConstantValue, destMembers[i].ConstantValue))
+                return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Checks if source and dest types are compatible enums (possibly wrapped in Nullable).
+    /// Used for ctor param matching where CanAssign returns false for cross-namespace enums.
+    /// </summary>
+    private static bool IsCompatibleEnumPair(ITypeSymbol source, ITypeSymbol dest)
+    {
+        var srcEnum = GetNullableUnderlyingType(source) ?? source;
+        var dstEnum = GetNullableUnderlyingType(dest) ?? dest;
+        return AreCompatibleEnums(srcEnum, dstEnum);
+    }
+
+    /// <summary>
+    /// Tries to generate a compatible enum cast expression. Returns null if not applicable.
+    /// Handles EnumA→EnumB, Nullable&lt;EnumA&gt;→EnumB, EnumA→Nullable&lt;EnumB&gt;, and Nullable&lt;EnumA&gt;→Nullable&lt;EnumB&gt;.
+    /// Uses the actual enum underlying type instead of hardcoding int.
+    /// When <paramref name="isLifted"/> is true, treats a non-nullable source type as nullable
+    /// (e.g., null-conditional lifting: source.Customer?.Priority is Priority? at runtime even
+    /// though the leaf property type is non-nullable Priority).
+    /// </summary>
+    private static string? TryGenerateCompatibleEnumCast(ITypeSymbol sourceType, ITypeSymbol destType, string sourceExpr, bool isLifted = false)
+    {
+        var srcUnderlying = GetNullableUnderlyingType(sourceType);
+        var dstUnderlying = GetNullableUnderlyingType(destType);
+        var srcEnum = srcUnderlying ?? sourceType;
+        var dstEnum = dstUnderlying ?? destType;
+
+        if (!AreCompatibleEnums(srcEnum, dstEnum))
+            return null;
+
+        // If expression is lifted by null-conditional (?.),
+        // treat source as nullable even if sourceType is non-nullable
+        var srcIsNullable = srcUnderlying != null || isLifted;
+
+        var srcNamed = srcEnum as INamedTypeSymbol;
+        var underlyingTypeName = srcNamed?.EnumUnderlyingType?.ToDisplayString() ?? "int";
+        var destDisplay = destType.ToDisplayString();
+
+        // Wrap sourceExpr in parentheses to handle null-conditional chains (e.g. source.Customer?.Priority)
+        // Without parens, appending .HasValue/.Value extends the ?. chain with wrong semantics
+        var safeExpr = sourceExpr.Contains("?.") ? $"({sourceExpr})" : sourceExpr;
+
+        // Nullable source -> Nullable dest: propagate null via pattern match (single evaluation)
+        if (srcIsNullable && dstUnderlying != null)
+            return $"{safeExpr} is {{ }} __v ? ({destDisplay})({underlyingTypeName})__v : null";
+
+        // Nullable source -> non-nullable dest: unwrap with .Value before casting (! suppresses CS8629)
+        if (srcIsNullable && dstUnderlying == null)
+            return $"({destDisplay})({underlyingTypeName}){safeExpr}!.Value";
+
+        // Non-nullable source -> dest (nullable or not)
+        return $"({destDisplay})({underlyingTypeName}){safeExpr}";
     }
 
     /// <summary>
