@@ -334,22 +334,6 @@ internal sealed class ForgeCodeEmitter
     }
 
     /// <summary>
-    /// Returns true if <paramref name="derived"/> inherits from <paramref name="baseType"/>
-    /// anywhere in its BaseType chain (not including equality).
-    /// </summary>
-    private static bool DerivesFrom(INamedTypeSymbol derived, INamedTypeSymbol baseType)
-    {
-        var current = derived.BaseType;
-        while (current != null)
-        {
-            if (SymbolEqualityComparer.Default.Equals(current, baseType))
-                return true;
-            current = current.BaseType;
-        }
-        return false;
-    }
-
-    /// <summary>
     /// Counts how many steps from <paramref name="derived"/> up the BaseType chain to reach <paramref name="baseType"/>.
     /// Returns 0 if they are the same type.
     /// </summary>
