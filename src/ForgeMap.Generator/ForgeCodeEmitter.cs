@@ -277,9 +277,10 @@ internal sealed class ForgeCodeEmitter
     }
 
     /// <summary>
-    /// Discovers all forge methods in the same forger class whose source type derives from
-    /// the base source type and whose return type derives from (or equals) the base return type.
-    /// Results are ordered most-derived first; ties broken alphabetically by fully qualified name.
+    /// Discovers all forge methods in the same forger class whose source parameter type is a class
+    /// that derives from the base source type and whose return type is assignable to the base return
+    /// type (including interface implementation and nullable reference type variations). Results are
+    /// ordered most-derived first; ties broken alphabetically by fully qualified name.
     /// </summary>
     private static List<IMethodSymbol> DiscoverDerivedForgeMethods(
         IMethodSymbol baseMethod,
@@ -367,7 +368,7 @@ internal sealed class ForgeCodeEmitter
             depth++;
             current = current.BaseType;
         }
-        return depth; // shouldn't reach here if DerivesFrom was true
+        return depth; // returns depth to the end of the hierarchy if baseType is not found (callers should ensure ClassDerivesFrom is true)
     }
 
     /// <summary>
@@ -966,18 +967,32 @@ internal sealed class ForgeCodeEmitter
             else
             {
                 sb.AppendLine("            // Polymorphic dispatch — most-derived types checked first");
-                var usedNames = new HashSet<string>(StringComparer.Ordinal) { sourceParam, "result" };
+
+                // Normalize identifiers so that `@foo` and `foo` are treated as the same name in C#
+                static string NormalizeIdentifier(string name) =>
+                    name.Length > 0 && name[0] == '@' ? name.Substring(1) : name;
+
+                var usedNames = new HashSet<string>(StringComparer.Ordinal)
+                {
+                    NormalizeIdentifier(sourceParam),
+                    NormalizeIdentifier("result")
+                };
                 foreach (var derived in derivedMethods)
                 {
                     var derivedSourceDisplay = derived.Parameters[0].Type.ToDisplayString();
-                    var varName = GenerateSafeVariableName(derived.Parameters[0].Type);
+                    var displayName = GenerateSafeVariableName(derived.Parameters[0].Type);
+                    var baseName = NormalizeIdentifier(displayName);
+                    var varName = baseName;
                     if (!usedNames.Add(varName))
                     {
-                        var baseName = varName;
                         var suffix = 2;
                         do { varName = baseName + suffix++; } while (!usedNames.Add(varName));
                     }
-                    sb.AppendLine($"            if ({sourceParam} is {derivedSourceDisplay} {varName}) return {method.Name}({varName});");
+                    // Re-apply @ escaping if the original name needed it and no suffix was added
+                    var finalName = (displayName.Length > 0 && displayName[0] == '@' && varName == baseName)
+                        ? displayName
+                        : varName;
+                    sb.AppendLine($"            if ({sourceParam} is {derivedSourceDisplay} {finalName}) return {method.Name}({finalName});");
                 }
                 sb.AppendLine();
             }
