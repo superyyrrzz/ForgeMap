@@ -304,8 +304,9 @@ internal sealed class ForgeCodeEmitter
             if (memberSourceType == null || memberReturnType == null)
                 continue;
 
-            // Source param type must derive from base source type
-            if (!DerivesFrom(memberSourceType, baseSourceType))
+            // Source param type must derive from base source type (class inheritance only;
+            // DerivesFrom also matches interfaces, which would break GetInheritanceDepth ordering)
+            if (!ClassDerivesFrom(memberSourceType, baseSourceType))
                 continue;
 
             // Return type must be assignable to the base return type (supports interfaces and NRT)
@@ -331,6 +332,24 @@ internal sealed class ForgeCodeEmitter
         });
 
         return candidates.Select(c => c.Method).ToList();
+    }
+
+    /// <summary>
+    /// Returns true if <paramref name="derived"/> inherits from <paramref name="baseType"/>
+    /// via the BaseType chain only (excludes interface implementation).
+    /// Used by <see cref="DiscoverDerivedForgeMethods"/> where <see cref="GetInheritanceDepth"/>
+    /// requires a class hierarchy.
+    /// </summary>
+    private static bool ClassDerivesFrom(INamedTypeSymbol derived, INamedTypeSymbol baseType)
+    {
+        var current = derived.BaseType;
+        while (current != null)
+        {
+            if (SymbolEqualityComparer.Default.Equals(current, baseType))
+                return true;
+            current = current.BaseType;
+        }
+        return false;
     }
 
     /// <summary>
