@@ -1,5 +1,6 @@
 using AutoMapper;
 using ForgeMap.Benchmarks.Models;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ForgeMap.Benchmarks.Mappers;
 
@@ -17,7 +18,7 @@ public static class AutoMapperConfig
         cfg.CreateMap<DepartmentSource, DepartmentDestination>();
         cfg.CreateMap<TeamSource, TeamDestination>();
         cfg.CreateMap<EmployeeSource, EmployeeDestination>();
-    });
+    }, NullLoggerFactory.Instance);
 
     public static IMapper CreateMapper() => Configuration.CreateMapper();
 }
