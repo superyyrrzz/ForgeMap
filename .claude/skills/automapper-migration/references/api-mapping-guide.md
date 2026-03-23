@@ -28,7 +28,7 @@ This reference maps AutoMapper patterns to their ForgeMap equivalents.
 |---|---|---|
 | `IValueResolver<S,D,TVal>` | `[ForgeFrom(nameof(D.DestProp), nameof(ResolverMethod))]` | Static/instance method on the forger class |
 | `.MapFrom(s => expr)` | `[ForgeFrom(nameof(D.DestProp), nameof(Method))]` | Resolver method returns value |
-| `ITypeConverter<S,D>` | `[ConvertWith(typeof(MyConverter))]` | Converter class must implement `ITypeConverter<S,D>`; cannot combine with `[ForgeAllDerived]` (FM0023). Alternatively, use `[ForgeFrom]` resolver methods for simpler cases |
+| `ITypeConverter<S,D>` | `[ForgeFrom]` resolver methods | The `[ConvertWith]` attribute exists in the abstractions but is not yet honored by the generator for conversion; use `[ForgeFrom]`-based resolver methods instead |
 
 ### Resolver method signatures
 
