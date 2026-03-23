@@ -74,7 +74,7 @@ public partial class OrderForger
 |---|---|---|
 | `.IncludeBase<TBaseSrc, TBaseDst>()` | `[IncludeBaseForge(typeof(TBaseSrc), typeof(TBaseDst))]` | Inherits `[Ignore]`, `[ForgeProperty]`, `[ForgeFrom]`, `[ForgeWith]` from the base forge method; the base method must exist in the same forger class (FM0019) |
 | `.Include<TDerivedSrc, TDerivedDst>()` | Not needed — `[ForgeAllDerived]` auto-discovers | No explicit registration; derived forge overloads must be declared in the same forger class and share the same method name to be auto-discovered |
-| `.IncludeAllDerived()` | `[ForgeAllDerived]` | Generates polymorphic dispatch (`is` cascade), most-derived checked first |
+| `.IncludeAllDerived()` | `[ForgeAllDerived]` | Generates polymorphic dispatch (`is` cascade), most-derived checked first; derived source types must be in a class inheritance chain (interfaces not considered), and each derived method's return type must be assignable to the base destination type |
 | Inherited properties from compiled assemblies | Automatic (generator fix) | No configuration needed — base-type properties are discovered automatically |
 
 ### Configuration inheritance
