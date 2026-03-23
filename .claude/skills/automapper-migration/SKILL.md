@@ -19,8 +19,10 @@ It contains exact API mappings between AutoMapper and ForgeMap. Consult it for e
 
 ## Step 0: Create a migration branch
 
+Ensure the branch is based on the repo's default branch:
+
 ```
-git checkout -b migrate/automapper-to-forgemap
+git checkout main && git pull && git checkout -b migrate/automapper-to-forgemap
 ```
 
 Use a user-specified name if provided.
