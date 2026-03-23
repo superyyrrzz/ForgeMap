@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/ForgeMap.Abstractions/ForgeMap.Abstractions.csproj" />
+    <Project Path="src/ForgeMap.Generator/ForgeMap.Generator.csproj" />
+    <Project Path="src/ForgeMap/ForgeMap.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/ForgeMap.Tests/ForgeMap.Tests.csproj" />
+  </Folder>
+</Solution>
