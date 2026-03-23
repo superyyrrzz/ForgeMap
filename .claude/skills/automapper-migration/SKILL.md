@@ -57,13 +57,10 @@ Use `[return: MaybeNull]` on return types and nullable parameter types (`TSource
 - **No `ProjectTo<T>()`**: ForgeMap is compile-time only. Rewrite to materialize first: `var entities = query.ToList(); var dtos = entities.Select(x => forger.Forge(x)).ToList();`. Warn user about performance implications.
 - **No `[ConvertWith]` / global type converters**: Use per-method `[ForgeFrom]` resolvers instead.
 - **No `ConstructUsing()` equivalent**: ForgeMap maps constructor/record parameters when the destination has an accessible constructor, but has no custom factory logic. Adjust destination constructors or use `[ForgeFrom]` / `[BeforeForge]` hooks.
-
-### Inheritance and polymorphic dispatch (v1.1)
-
-- **`[IncludeBaseForge]`**: Inherits attribute-based configuration (`[Ignore]`, `[ForgeProperty]`, `[ForgeFrom]`, `[ForgeWith]`) from a base forge method. Replaces AutoMapper's `.IncludeBase<TBaseSrc, TBaseDst>()`. Explicit attributes on the derived method override inherited ones. Can chain through multiple levels.
-- **`[ForgeAllDerived]`**: Generates a polymorphic dispatch method that inspects the runtime type and delegates to the most-specific derived forge method (`is` cascade). Replaces AutoMapper's `.IncludeAllDerived()`. Derived methods are auto-discovered — no manual registration needed.
-- **Cross-namespace enum auto-conversion**: Enums with identical members, values, and declaration order in different namespaces are automatically cast (e.g., `(DestEnum)(int)source.Prop`). Works with nullable variants. No forge method or attribute required.
-- **Inherited properties from compiled assemblies**: Properties from base types in NuGet packages or compiled assemblies are now automatically discovered without any configuration.
+- **`[IncludeBaseForge]` for configuration inheritance**: Inherits attribute-based configuration (`[Ignore]`, `[ForgeProperty]`, `[ForgeFrom]`, `[ForgeWith]`) from a base forge method. Replaces AutoMapper's `.IncludeBase<TBaseSrc, TBaseDst>()`. Explicit attributes on the derived method override inherited ones. Can chain through multiple levels.
+- **`[ForgeAllDerived]` for polymorphic dispatch**: Generates a polymorphic dispatch method that inspects the runtime type and delegates to the most-specific derived forge method (`is` cascade). Replaces AutoMapper's `.IncludeAllDerived()`. Derived methods are auto-discovered — no manual registration needed.
+- **Cross-namespace enum auto-conversion**: Enums with identical members, values, declaration order, and matching underlying types in different namespaces are automatically cast using the enum's underlying type (e.g., `(DestEnum)(<underlying-type>)source.Prop`). Works with nullable variants. No forge method or attribute required.
+- **Inherited properties from compiled assemblies**: Properties from base types in NuGet packages or compiled assemblies are automatically discovered without any configuration.
 
 ### Build diagnostics to watch for
 
@@ -74,7 +71,7 @@ Use `[return: MaybeNull]` on return types and nullable parameter types (`TSource
 - **FM0020** (`[IncludeBaseForge]` type mismatch): Source/destination types must actually derive from the specified base types
 - **FM0021** (inherited attribute overridden): Info-level — explicit attribute on derived method takes precedence over inherited one
 - **FM0022** (`[ForgeAllDerived]` no derived methods): No derived forge methods found for the base type; check that derived forge methods exist in the same forger
-- **FM0023** (`[ForgeAllDerived]` + `[ConvertWith]` conflict): These attributes are mutually exclusive
+- **FM0023** (`[ForgeAllDerived]` + `[ConvertWith]` conflict): Forward-looking diagnostic — `[ConvertWith]` does not exist yet but the ID is reserved; if it ships in a future version, it cannot be combined with `[ForgeAllDerived]`
 
 ### Test failure handling in commit 3
 

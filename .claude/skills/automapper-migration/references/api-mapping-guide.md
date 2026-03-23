@@ -49,14 +49,14 @@ private static decimal ConvertPrice(int priceInCents)
 | Auto-detected nested maps | `[ForgeWith(nameof(D.DestProp), nameof(NestedForgeMethod))]` | Must declare a forge method for the nested type |
 | `.IncludeMembers(s => s.Inner)` | Not directly supported | Use `[ForgeProperty]` with dot notation instead |
 
-## Mapping Inheritance & Polymorphic Dispatch (v1.1)
+## Mapping Inheritance & Polymorphic Dispatch
 
 | AutoMapper | ForgeMap | Notes |
 |---|---|---|
 | `.IncludeBase<TBaseSrc, TBaseDst>()` | `[IncludeBaseForge(typeof(TBaseSrc), typeof(TBaseDst))]` | Inherits `[Ignore]`, `[ForgeProperty]`, `[ForgeFrom]`, `[ForgeWith]` from the base forge method |
 | `.Include<TDerivedSrc, TDerivedDst>()` | Not needed — `[ForgeAllDerived]` auto-discovers | Derived methods are found automatically |
 | `.IncludeAllDerived()` | `[ForgeAllDerived]` | Generates polymorphic dispatch (`is` cascade), most-derived checked first |
-| Inherited properties from compiled assemblies | Automatic (generator fix in v1.1) | No configuration needed — base-type properties are discovered automatically |
+| Inherited properties from compiled assemblies | Automatic (generator fix) | No configuration needed — base-type properties are discovered automatically |
 
 ### Configuration inheritance
 
@@ -168,7 +168,7 @@ public partial class OrderForger
 |---|---|---|
 | Auto enum-to-enum by name | Auto by name | Forge method: `partial DEnum Forge(SEnum source)` |
 | Enum-to-string | Auto string conversion | Forge method: `partial string Forge(SEnum source)` |
-| Cross-namespace enum mapping | Auto-converted when compatible | Enums with identical members, values, and declaration order are cast automatically (e.g., `(DestEnum)(int)source.Prop`) — including nullable variants |
+| Cross-namespace enum mapping | Auto-converted when compatible | Enums with identical members, values, declaration order, and the same underlying integral type are cast automatically via their underlying type — including nullable variants |
 
 ## Configuration Validation
 
