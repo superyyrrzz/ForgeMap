@@ -49,6 +49,62 @@ private static decimal ConvertPrice(int priceInCents)
 | Auto-detected nested maps | `[ForgeWith(nameof(D.DestProp), nameof(NestedForgeMethod))]` | Must declare a forge method for the nested type |
 | `.IncludeMembers(s => s.Inner)` | Not directly supported | Use `[ForgeProperty]` with dot notation instead |
 
+## Mapping Inheritance & Polymorphic Dispatch (v1.1)
+
+| AutoMapper | ForgeMap | Notes |
+|---|---|---|
+| `.IncludeBase<TBaseSrc, TBaseDst>()` | `[IncludeBaseForge(typeof(TBaseSrc), typeof(TBaseDst))]` | Inherits `[Ignore]`, `[ForgeProperty]`, `[ForgeFrom]`, `[ForgeWith]` from the base forge method |
+| `.Include<TDerivedSrc, TDerivedDst>()` | Not needed — `[ForgeAllDerived]` auto-discovers | Derived methods are found automatically |
+| `.IncludeAllDerived()` | `[ForgeAllDerived]` | Generates polymorphic dispatch (`is` cascade), most-derived checked first |
+| Inherited properties from compiled assemblies | Automatic (generator fix in v1.1) | No configuration needed — base-type properties are discovered automatically |
+
+### Configuration inheritance
+
+`[IncludeBaseForge]` inherits property-level attributes from the base forge method:
+
+| Attribute | Inherited? | Notes |
+|---|---|---|
+| `[Ignore]` | Yes | Ignored properties remain ignored |
+| `[ForgeProperty]` | Yes | Renamed properties carry over |
+| `[ForgeFrom]` | Yes | Custom resolvers apply to inherited properties |
+| `[ForgeWith]` | Yes | Nested forge methods apply to inherited properties |
+| `[BeforeForge]` / `[AfterForge]` | No | Hooks are method-specific; declare explicitly on derived |
+| `[ReverseForge]` | No | Reverse generation is per-method |
+
+Explicit attributes on the derived method **override** inherited attributes for the same property.
+
+### Chaining
+
+`[IncludeBaseForge]` can chain through multiple inheritance levels (Base → Middle → Leaf).
+
+### Polymorphic dispatch example
+
+```csharp
+// AutoMapper
+CreateMap<BaseEntity, BaseDto>()
+    .ForMember(d => d.AuditTrail, o => o.Ignore())
+    .IncludeAllDerived();
+CreateMap<DerivedAEntity, DerivedADto>()
+    .IncludeBase<BaseEntity, BaseDto>();
+CreateMap<DerivedBEntity, DerivedBDto>()
+    .IncludeBase<BaseEntity, BaseDto>();
+
+// ForgeMap v1.1
+[ForgeAllDerived]
+[Ignore(nameof(BaseDto.AuditTrail))]
+public partial BaseDto Forge(BaseEntity source);
+
+[IncludeBaseForge(typeof(BaseEntity), typeof(BaseDto))]
+public partial DerivedADto Forge(DerivedAEntity source);
+
+[IncludeBaseForge(typeof(BaseEntity), typeof(BaseDto))]
+public partial DerivedBDto Forge(DerivedBEntity source);
+```
+
+### Collection interop
+
+When `[ForgeAllDerived]` is on a base forge method, collection forge methods for that base type dispatch each element polymorphically.
+
 ### Example
 
 ```csharp
@@ -112,12 +168,13 @@ public partial class OrderForger
 |---|---|---|
 | Auto enum-to-enum by name | Auto by name | Forge method: `partial DEnum Forge(SEnum source)` |
 | Enum-to-string | Auto string conversion | Forge method: `partial string Forge(SEnum source)` |
+| Cross-namespace enum mapping | Auto-converted when compatible | Enums with identical members, values, and declaration order are cast automatically (e.g., `(DestEnum)(int)source.Prop`) — including nullable variants |
 
 ## Configuration Validation
 
 | AutoMapper | ForgeMap | Notes |
 |---|---|---|
-| `AssertConfigurationIsValid()` | Compiler diagnostics (FM0001–FM0018) | Errors at compile time, not runtime |
+| `AssertConfigurationIsValid()` | Compiler diagnostics (FM0001–FM0023) | Errors at compile time, not runtime |
 | Unmapped property warnings | FM0005: Unmapped source property | Configurable via `SuppressDiagnostics` |
 
 ## Case-Insensitive Matching
@@ -146,7 +203,6 @@ public partial class OrderForger
 | `ConstructUsing()` | No direct equivalent. ForgeMap maps constructor/record parameters when the destination has an accessible constructor; for custom factory logic, adjust destination constructors/records where possible or create the destination manually (e.g., in calling code, a `[ForgeFrom]` resolver, or a `[BeforeForge]` hook). |
 | Conditional mapping (`.PreCondition()`) | Use `[BeforeForge]` to validate, or `[ForgeFrom]` with conditional logic |
 | Value converters (global type conversion) | `[ForgeFrom]` resolvers per method | No global type converter support; use per-method `[ForgeFrom]` resolvers |
-| Mapping inheritance (`.Include<>()`, `.IncludeBase<>()`) | Declare separate forge methods, use `[ForgeWith]` for shared parts |
 | Dynamic/runtime mapping | Not supported — ForgeMap is compile-time only |
 
 ## Common Migration Patterns
@@ -272,4 +328,42 @@ public partial class AppForger
     public partial void ForgeInto(Source source, [UseExistingValue] Dest destination);
 }
 forger.ForgeInto(source, existingDest);
+```
+
+### Pattern 8: Inheritance hierarchy with polymorphic dispatch
+
+```csharp
+// BEFORE (AutoMapper)
+public class MappingProfile : Profile
+{
+    public MappingProfile()
+    {
+        CreateMap<BaseEntity, BaseDto>()
+            .ForMember(d => d.AuditTrail, o => o.Ignore())
+            .IncludeAllDerived();
+
+        CreateMap<ChildEntity, ChildDto>()
+            .IncludeBase<BaseEntity, BaseDto>();
+
+        CreateMap<GrandChildEntity, GrandChildDto>()
+            .IncludeBase<BaseEntity, BaseDto>();
+    }
+}
+// Usage — polymorphic: mapper.Map<BaseDto>(anyEntity)
+
+// AFTER (ForgeMap)
+[ForgeMap]
+public partial class AppForger
+{
+    [ForgeAllDerived]
+    [Ignore(nameof(BaseDto.AuditTrail))]
+    public partial BaseDto Forge(BaseEntity source);
+
+    [IncludeBaseForge(typeof(BaseEntity), typeof(BaseDto))]
+    public partial ChildDto Forge(ChildEntity source);
+
+    [IncludeBaseForge(typeof(BaseEntity), typeof(BaseDto))]
+    public partial GrandChildDto Forge(GrandChildEntity source);
+}
+// Usage — polymorphic: forger.Forge(anyEntity)
 ```
