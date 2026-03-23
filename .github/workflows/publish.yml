@@ -45,14 +45,14 @@ jobs:
         run: dotnet pack src/ForgeMap/ForgeMap.csproj --configuration Release --no-build --no-restore --output ${{ env.NuGetDirectory }} /p:PackageVersion=${{ steps.version.outputs.version }}
 
       - name: Upload NuGet package artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: nuget
           if-no-files-found: error
           path: ${{ env.NuGetDirectory }}/*.nupkg
 
       - name: Upload symbol package artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: nuget-symbols
           if-no-files-found: warn
