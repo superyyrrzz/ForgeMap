@@ -20,6 +20,16 @@ Before starting the migration, verify the project references ForgeMap **>= 1.1.0
 
 Every mapping MUST go through ForgeMap's source generator. If you encounter a scenario where ForgeMap cannot support a required mapping, **stop the migration and report the gap to the user.** Do not work around it by writing hand-coded property assignments. The entire point of this migration is to use ForgeMap — manual mapping defeats that purpose and creates unmaintainable code.
 
+## Step 0: Create a migration branch
+
+Before making any changes, create and check out a new branch from the current default branch. This prevents committing directly to `main`/`master` and makes it easy to open a PR later.
+
+```
+git checkout -b migrate/automapper-to-forgemap
+```
+
+If the user specifies a branch name, use that instead. Confirm the branch is created before proceeding.
+
 ## Strategy: 4 incremental commits
 
 Each commit leaves the project green (compiling + tests passing):
