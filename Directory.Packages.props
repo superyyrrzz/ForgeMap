@@ -17,7 +17,7 @@
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp.SourceGenerators.Testing.XUnit" Version="1.1.2" />
     <!-- Benchmarking -->
     <PackageVersion Include="BenchmarkDotNet" Version="0.14.0" />
-    <PackageVersion Include="AutoMapper" Version="14.0.0" />
+    <PackageVersion Include="AutoMapper" Version="16.1.1" />
     <PackageVersion Include="Riok.Mapperly" Version="4.3.1" />
     <!-- SourceLink -->
     <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="8.0.0" />
