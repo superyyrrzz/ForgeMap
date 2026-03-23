@@ -12,6 +12,10 @@ description: >
 
 It contains exact API mappings between AutoMapper and ForgeMap for every feature. Consult it for every translation.
 
+## Minimum ForgeMap version: 1.1.0
+
+Before starting the migration, verify the project references ForgeMap **>= 1.1.0**. If the package is not yet added, install it at 1.1.0 or later. If an older version is referenced, upgrade it first. Features like `[IncludeBaseForge]`, `[ForgeAllDerived]`, compatible enum auto-conversion, and inherited property resolution from compiled assemblies all require 1.1.0+.
+
 ## NEVER write manual mapping code
 
 Every mapping MUST go through ForgeMap's source generator. If you encounter a scenario where ForgeMap cannot support a required mapping, **stop the migration and report the gap to the user.** Do not work around it by writing hand-coded property assignments. The entire point of this migration is to use ForgeMap — manual mapping defeats that purpose and creates unmaintainable code.
