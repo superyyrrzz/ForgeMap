@@ -963,7 +963,6 @@ The following AutoMapper features are **not supported** in v1.1:
 | Conditional mapping | Complex to generate | Use `[ForgeFrom]` with logic |
 | `ProjectTo<T>()` for EF | Requires expression trees | Future version |
 | Inline configuration | Compile-time only | Use attributes |
-| Mapping inheritance (`IncludeBase`) | ~~v1.1~~ | `[IncludeBaseForge]`, `[ForgeAllDerived]` (shipped in v1.1) |
 
 ---
 
