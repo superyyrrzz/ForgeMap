@@ -17,7 +17,7 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ForgeMap.Tests", "tests\For
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "benchmarks", "benchmarks", "{66320409-64EC-F7C5-3DEF-65E7510DAAD1}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ForgeMap.Benchmarks", "benchmarks\ForgeMap.Benchmarks\ForgeMap.Benchmarks.csproj", "{AD2472BF-B125-4C7C-A2A3-95F86C31DB4F}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ForgeMap.Benchmarks", "benchmarks\ForgeMap.Benchmarks\ForgeMap.Benchmarks.csproj", "{AD2472BF-B125-4C7C-A2A3-95F86C31DB4F}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
