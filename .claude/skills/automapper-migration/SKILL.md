@@ -12,6 +12,10 @@ description: >
 
 It contains exact API mappings between AutoMapper and ForgeMap for every feature. Consult it for every translation.
 
+## Minimum ForgeMap version: 1.1.0
+
+Before starting the migration, verify the project references ForgeMap **>= 1.1.0**. If the package is not yet added, install it at 1.1.0 or later. If an older version is referenced, upgrade it first. Features like `[IncludeBaseForge]`, `[ForgeAllDerived]`, compatible enum auto-conversion, and inherited property resolution from compiled assemblies all require 1.1.0+.
+
 ## NEVER write manual mapping code
 
 Every mapping MUST go through ForgeMap's source generator. If you encounter a scenario where ForgeMap cannot support a required mapping, **stop the migration and report the gap to the user.** Do not work around it by writing hand-coded property assignments. The entire point of this migration is to use ForgeMap — manual mapping defeats that purpose and creates unmaintainable code.
@@ -55,14 +59,23 @@ Use `[return: MaybeNull]` on return types and nullable parameter types (`TSource
 - **Nested maps are NOT auto-discovered**: AutoMapper auto-discovers `CreateMap<Address, AddressDto>()` when mapping a parent. ForgeMap requires explicit `[ForgeWith(nameof(D.Prop), nameof(ForgeNested))]`.
 - **Collection properties need explicit wiring**: A `List<A>` → `List<B>` property on a parent is NOT auto-mapped just because an element forge exists. Declare a collection-level forge method referenced via `[ForgeWith]`, and the element method must share the same name (overload resolution).
 - **No `ProjectTo<T>()`**: ForgeMap is compile-time only. Rewrite to materialize first: `var entities = query.ToList(); var dtos = entities.Select(x => forger.Forge(x)).ToList();`. Warn user about performance implications.
-- **No `[ConvertWith]` / global type converters**: Use per-method `[ForgeFrom]` resolvers instead.
+- **`[ConvertWith]` is not yet functional**: The attribute exists in the abstractions but the generator does not honor it for conversion. Use per-method `[ForgeFrom]` resolvers instead. The only current effect of `[ConvertWith]` is triggering FM0023 when combined with `[ForgeAllDerived]`.
 - **No `ConstructUsing()` equivalent**: ForgeMap maps constructor/record parameters when the destination has an accessible constructor, but has no custom factory logic. Adjust destination constructors or use `[ForgeFrom]` / `[BeforeForge]` hooks.
+- **`[IncludeBaseForge]` for configuration inheritance**: Inherits attribute-based configuration (`[Ignore]`, `[ForgeProperty]`, `[ForgeFrom]`, `[ForgeWith]`) from a base forge method. Replaces AutoMapper's `.IncludeBase<TBaseSrc, TBaseDst>()`. Explicit attributes on the derived method override inherited ones. Can chain through multiple levels. Supports `AllowMultiple = true` — when including multiple bases, inherited config merges with a first-wins rule per property (attribute order matters).
+- **`[ForgeAllDerived]` for polymorphic dispatch**: Generates a polymorphic dispatch method that inspects the runtime type and delegates to the most-specific derived forge method (`is` cascade). Replaces AutoMapper's `.IncludeAllDerived()`. Derived methods are auto-discovered only when they are overloads in the same forger class with the same method name as the base forge method — no manual registration needed, but differently-named methods (e.g., `ForgeDerived`) will not be picked up.
+- **Compatible enum auto-conversion**: Distinct enum types with identical members, values, declaration order, and matching underlying types are automatically cast via the underlying type (e.g., `(DestEnum)(<underlying-type>)source.Prop`). Works with nullable variants. No forge method or attribute required. Commonly seen across namespaces, but namespace difference is not a requirement.
+- **Inherited properties from compiled assemblies**: Properties from base types in NuGet packages or compiled assemblies are automatically discovered without any configuration.
 
 ### Build diagnostics to watch for
 
 - **FM0005** (unmapped source property): Add `[Ignore]` or `SuppressDiagnostics` if intentional
 - **FM0007** (nullable→non-nullable): Make destination nullable, adjust null handling, or use `[ForgeFrom]` fallback
 - **FM0015** (`[ForgeWith]` target missing `[ReverseForge]`): Add `[ReverseForge]` to nested method or remove from parent
+- **FM0019** (`[IncludeBaseForge]` base not found): The referenced base forge method must exist in the same forger class
+- **FM0020** (`[IncludeBaseForge]` type mismatch): Source/destination types must actually derive from the specified base types
+- **FM0021** (inherited attribute overridden): Info-level — explicit attribute on derived method takes precedence over inherited one
+- **FM0022** (`[ForgeAllDerived]` no derived methods): No derived forge methods found for the base type; check that derived forge methods exist in the same forger
+- **FM0023** (`[ForgeAllDerived]` + `[ConvertWith]` conflict): Emitted when a forge method has both `[ForgeAllDerived]` and `[ConvertWith]` — these are mutually exclusive; refactor so only one is applied
 
 ### Test failure handling in commit 3
 
