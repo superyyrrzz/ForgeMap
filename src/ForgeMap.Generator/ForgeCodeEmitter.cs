@@ -29,10 +29,58 @@ internal sealed class ForgerConfig
 }
 
 /// <summary>
+/// Resolved attribute configuration for a forge method.
+/// </summary>
+internal readonly struct ResolvedMethodConfig
+{
+    public ResolvedMethodConfig(
+        HashSet<string> ignoredProperties,
+        Dictionary<string, string> propertyMappings,
+        Dictionary<string, string> resolverMappings,
+        Dictionary<string, string> forgeWithMappings,
+        List<string> beforeForgeHooks,
+        List<string> afterForgeHooks)
+    {
+        IgnoredProperties = ignoredProperties;
+        PropertyMappings = propertyMappings;
+        ResolverMappings = resolverMappings;
+        ForgeWithMappings = forgeWithMappings;
+        BeforeForgeHooks = beforeForgeHooks;
+        AfterForgeHooks = afterForgeHooks;
+    }
+
+    public HashSet<string> IgnoredProperties { get; }
+    public Dictionary<string, string> PropertyMappings { get; }
+    public Dictionary<string, string> ResolverMappings { get; }
+    public Dictionary<string, string> ForgeWithMappings { get; }
+    public List<string> BeforeForgeHooks { get; }
+    public List<string> AfterForgeHooks { get; }
+}
+
+/// <summary>
 /// Emits generated forging code for ForgeMap forger classes.
 /// </summary>
 internal sealed class ForgeCodeEmitter
 {
+    private static readonly HashSet<string> CollectionTypesWithCheapCount = new(StringComparer.Ordinal)
+    {
+        "System.Collections.Generic.List<T>",
+        "System.Collections.Generic.IList<T>",
+        "System.Collections.Generic.ICollection<T>",
+        "System.Collections.Generic.IReadOnlyList<T>",
+        "System.Collections.Generic.IReadOnlyCollection<T>"
+    };
+
+    private static readonly HashSet<string> SupportedCollectionTypes = new(StringComparer.Ordinal)
+    {
+        "System.Collections.Generic.List<T>",
+        "System.Collections.Generic.IList<T>",
+        "System.Collections.Generic.ICollection<T>",
+        "System.Collections.Generic.IEnumerable<T>",
+        "System.Collections.Generic.IReadOnlyList<T>",
+        "System.Collections.Generic.IReadOnlyCollection<T>"
+    };
+
     private readonly INamedTypeSymbol? _ignoreAttributeSymbol;
     private readonly INamedTypeSymbol? _forgePropertyAttributeSymbol;
     private readonly INamedTypeSymbol? _forgeFromAttributeSymbol;
@@ -43,6 +91,7 @@ internal sealed class ForgeCodeEmitter
     private readonly INamedTypeSymbol? _includeBaseForgeAttributeSymbol;
     private readonly INamedTypeSymbol? _forgeAllDerivedAttributeSymbol;
     private readonly INamedTypeSymbol? _convertWithAttributeSymbol;
+    private readonly INamedTypeSymbol? _useExistingValueAttributeSymbol;
     private readonly ForgerConfig _assemblyDefaults;
     private ForgerConfig _config = null!;
 
@@ -58,6 +107,7 @@ internal sealed class ForgeCodeEmitter
         _includeBaseForgeAttributeSymbol = compilation.GetTypeByMetadataName("ForgeMap.IncludeBaseForgeAttribute");
         _forgeAllDerivedAttributeSymbol = compilation.GetTypeByMetadataName("ForgeMap.ForgeAllDerivedAttribute");
         _convertWithAttributeSymbol = compilation.GetTypeByMetadataName("ForgeMap.ConvertWithAttribute");
+        _useExistingValueAttributeSymbol = compilation.GetTypeByMetadataName("ForgeMap.UseExistingValueAttribute");
         _assemblyDefaults = assemblyDefaults;
     }
 
@@ -240,13 +290,9 @@ internal sealed class ForgeCodeEmitter
         return sb.ToString();
     }
 
-    private static bool HasForgeIntoPattern(IMethodSymbol method)
+    private bool HasForgeIntoPattern(IMethodSymbol method)
     {
-        // Check if this is a ForgeInto pattern (void return with [UseExistingValue] parameter)
-        return method.Parameters.Any(p =>
-            p.GetAttributes().Any(a =>
-                a.AttributeClass?.Name == "UseExistingValueAttribute" ||
-                a.AttributeClass?.ToDisplayString() == "ForgeMap.UseExistingValueAttribute"));
+        return GetUseExistingValueParameter(method) != null;
     }
 
     private bool HasReverseForgeAttribute(IMethodSymbol method)
@@ -274,6 +320,20 @@ internal sealed class ForgeCodeEmitter
 
         return method.GetAttributes().Any(a =>
             SymbolEqualityComparer.Default.Equals(a.AttributeClass, _convertWithAttributeSymbol));
+    }
+
+    private bool HasUseExistingValueAttribute(IParameterSymbol param)
+    {
+        if (_useExistingValueAttributeSymbol == null)
+            return false;
+
+        return param.GetAttributes().Any(a =>
+            SymbolEqualityComparer.Default.Equals(a.AttributeClass, _useExistingValueAttributeSymbol));
+    }
+
+    private IParameterSymbol? GetUseExistingValueParameter(IMethodSymbol method)
+    {
+        return method.Parameters.FirstOrDefault(p => HasUseExistingValueAttribute(p));
     }
 
     /// <summary>
@@ -780,10 +840,7 @@ internal sealed class ForgeCodeEmitter
         var destinationType = method.ReturnType;
 
         // Handle ForgeInto pattern
-        var useExistingParam = method.Parameters.FirstOrDefault(p =>
-            p.GetAttributes().Any(a =>
-                a.AttributeClass?.Name == "UseExistingValueAttribute" ||
-                a.AttributeClass?.ToDisplayString() == "ForgeMap.UseExistingValueAttribute"));
+        var useExistingParam = GetUseExistingValueParameter(method);
 
         if (useExistingParam != null)
         {
@@ -909,32 +966,14 @@ internal sealed class ForgeCodeEmitter
         var sb = new StringBuilder();
         var sourceParam = method.Parameters[0].Name;
 
-        // Get ignored properties from [Ignore] attributes
-        var ignoredProperties = GetIgnoredProperties(method);
-
-        // Get property mappings from [ForgeProperty] attributes
-        var propertyMappings = GetPropertyMappings(method);
-
-        // Get resolver mappings from [ForgeFrom] attributes
-        var resolverMappings = GetResolverMappings(method);
-
-        // Get [ForgeWith] mappings for nested object forging
-        var forgeWithMappings = GetForgeWithMappings(method);
-
-        // Merge inherited configuration from [IncludeBaseForge] attributes
-        ResolveInheritedConfig(method, forger, context, ignoredProperties, propertyMappings, resolverMappings, forgeWithMappings);
-
-        // Get [BeforeForge] and [AfterForge] hooks
-        var beforeForgeHooks = GetBeforeForgeHooks(method);
-        var afterForgeHooks = GetAfterForgeHooks(method);
-
-        // Validate hooks and filter to only valid ones
-        beforeForgeHooks = beforeForgeHooks
-            .Where(h => ValidateBeforeForgeHook(h, sourceType, forger, context, method))
-            .ToList();
-        afterForgeHooks = afterForgeHooks
-            .Where(h => ValidateAfterForgeHook(h, sourceType, destinationType, forger, context, method))
-            .ToList();
+        // Resolve all attribute-based configuration
+        var cfg = ResolveMethodConfig(method, sourceType, destinationType, forger, context);
+        var ignoredProperties = cfg.IgnoredProperties;
+        var propertyMappings = cfg.PropertyMappings;
+        var resolverMappings = cfg.ResolverMappings;
+        var forgeWithMappings = cfg.ForgeWithMappings;
+        var beforeForgeHooks = cfg.BeforeForgeHooks;
+        var afterForgeHooks = cfg.AfterForgeHooks;
 
         var hasAfterForge = afterForgeHooks.Count > 0;
 
@@ -1483,8 +1522,8 @@ internal sealed class ForgeCodeEmitter
         }
 
         // Build a reverse map: dest property name → source expression
-        var destToSourceExpr = BuildDestToSourceMap(sourceType, sourceProperties.ToList(), propertyMappings);
         var sourcePropertiesList = sourceProperties.ToList();
+        var destToSourceExpr = BuildDestToSourceMap(sourceType, sourcePropertiesList, propertyMappings);
 
         // Score each constructor by how many parameters can be satisfied
         var scoredCtors = new List<(IMethodSymbol Ctor, List<CtorParamMapping> Mappings, int Score)>();
@@ -1799,7 +1838,7 @@ internal sealed class ForgeCodeEmitter
     /// Finds a forge method in the forger class that maps the given source type to the given destination type.
     /// Used for [IncludeBaseForge] resolution.
     /// </summary>
-    private static IMethodSymbol? FindBaseForgeMethod(INamedTypeSymbol forgerType, INamedTypeSymbol baseSourceType, INamedTypeSymbol baseDestType)
+    private IMethodSymbol? FindBaseForgeMethod(INamedTypeSymbol forgerType, INamedTypeSymbol baseSourceType, INamedTypeSymbol baseDestType)
     {
         var methods = forgerType.GetMembers()
             .OfType<IMethodSymbol>()
@@ -1828,17 +1867,7 @@ internal sealed class ForgeCodeEmitter
                 SymbolEqualityComparer.Default.Equals(m.Parameters[0].Type, baseSourceType) &&
                 m.Parameters.Any(p =>
                     SymbolEqualityComparer.Default.Equals(p.Type, baseDestType) &&
-                    p.GetAttributes().Any(a =>
-                    {
-                        var attrClass = a.AttributeClass;
-                        if (attrClass == null)
-                            return false;
-                        var name = attrClass.Name;
-                        if (string.Equals(name, "UseExistingValueAttribute", StringComparison.Ordinal))
-                            return true;
-                        var fullName = attrClass.ToDisplayString();
-                        return string.Equals(fullName, "ForgeMap.UseExistingValueAttribute", StringComparison.Ordinal);
-                    })))
+                    HasUseExistingValueAttribute(p)))
             .OrderBy(m => m.Name, StringComparer.Ordinal)
             .FirstOrDefault();
     }
@@ -1908,10 +1937,7 @@ internal sealed class ForgeCodeEmitter
         INamedTypeSymbol? destType;
         if (method.ReturnsVoid)
         {
-            var useExistingParam = method.Parameters.FirstOrDefault(p =>
-                p.GetAttributes().Any(a =>
-                    a.AttributeClass?.Name == "UseExistingValueAttribute" ||
-                    a.AttributeClass?.ToDisplayString() == "ForgeMap.UseExistingValueAttribute"));
+            var useExistingParam = GetUseExistingValueParameter(method);
             destType = useExistingParam?.Type as INamedTypeSymbol;
         }
         else
@@ -1974,80 +2000,94 @@ internal sealed class ForgeCodeEmitter
             var baseForgeWithMappings = GetForgeWithMappings(baseMethod);
             ResolveInheritedConfig(baseMethod, forger, context, baseIgnored, basePropertyMappings, baseResolverMappings, baseForgeWithMappings, visited);
 
-            // Merge base [Ignore] into derived
+            // Merge all base config into derived using first-wins semantics + FM0021 override reporting
+            var diagLocation = attrData.ApplicationSyntaxReference?.GetSyntax().GetLocation() ?? method.Locations.FirstOrDefault();
+
+            bool IsExplicitlyConfigured(string propName) =>
+                explicitIgnored.Contains(propName) || explicitPropertyMappings.Contains(propName) ||
+                explicitResolverMappings.Contains(propName) || explicitForgeWithMappings.Contains(propName);
+
+            bool IsAlreadyConfigured(string propName) =>
+                ignoredProperties.Contains(propName) || propertyMappings.ContainsKey(propName) ||
+                resolverMappings.ContainsKey(propName) || forgeWithMappings.ContainsKey(propName);
+
             foreach (var propName in baseIgnored)
             {
-                // FM0021: explicit attribute overrides inherited
-                if (explicitIgnored.Contains(propName) || explicitPropertyMappings.Contains(propName) ||
-                    explicitResolverMappings.Contains(propName) || explicitForgeWithMappings.Contains(propName))
+                if (IsExplicitlyConfigured(propName))
                 {
-                    ReportDiagnosticIfNotSuppressed(context,
-                        DiagnosticDescriptors.IncludeBaseForgeOverridden,
-                        attrData.ApplicationSyntaxReference?.GetSyntax().GetLocation() ?? method.Locations.FirstOrDefault(),
-                        propName);
+                    ReportDiagnosticIfNotSuppressed(context, DiagnosticDescriptors.IncludeBaseForgeOverridden, diagLocation, propName);
                     continue;
                 }
-                // First-wins: skip if already configured by a previous [IncludeBaseForge]
-                if (ignoredProperties.Contains(propName) || propertyMappings.ContainsKey(propName) ||
-                    resolverMappings.ContainsKey(propName) || forgeWithMappings.ContainsKey(propName))
-                    continue;
-                ignoredProperties.Add(propName);
+                if (!IsAlreadyConfigured(propName))
+                    ignoredProperties.Add(propName);
             }
 
-            // Merge base [ForgeProperty] into derived
             foreach (var kvp in basePropertyMappings)
             {
-                if (explicitIgnored.Contains(kvp.Key) || explicitPropertyMappings.Contains(kvp.Key) ||
-                    explicitResolverMappings.Contains(kvp.Key) || explicitForgeWithMappings.Contains(kvp.Key))
+                if (IsExplicitlyConfigured(kvp.Key))
                 {
-                    ReportDiagnosticIfNotSuppressed(context,
-                        DiagnosticDescriptors.IncludeBaseForgeOverridden,
-                        attrData.ApplicationSyntaxReference?.GetSyntax().GetLocation() ?? method.Locations.FirstOrDefault(),
-                        kvp.Key);
+                    ReportDiagnosticIfNotSuppressed(context, DiagnosticDescriptors.IncludeBaseForgeOverridden, diagLocation, kvp.Key);
                     continue;
                 }
-                if (ignoredProperties.Contains(kvp.Key) || propertyMappings.ContainsKey(kvp.Key) ||
-                    resolverMappings.ContainsKey(kvp.Key) || forgeWithMappings.ContainsKey(kvp.Key))
-                    continue;
-                propertyMappings[kvp.Key] = kvp.Value;
+                if (!IsAlreadyConfigured(kvp.Key))
+                    propertyMappings[kvp.Key] = kvp.Value;
             }
 
-            // Merge base [ForgeFrom] into derived
             foreach (var kvp in baseResolverMappings)
             {
-                if (explicitIgnored.Contains(kvp.Key) || explicitPropertyMappings.Contains(kvp.Key) ||
-                    explicitResolverMappings.Contains(kvp.Key) || explicitForgeWithMappings.Contains(kvp.Key))
+                if (IsExplicitlyConfigured(kvp.Key))
                 {
-                    ReportDiagnosticIfNotSuppressed(context,
-                        DiagnosticDescriptors.IncludeBaseForgeOverridden,
-                        attrData.ApplicationSyntaxReference?.GetSyntax().GetLocation() ?? method.Locations.FirstOrDefault(),
-                        kvp.Key);
+                    ReportDiagnosticIfNotSuppressed(context, DiagnosticDescriptors.IncludeBaseForgeOverridden, diagLocation, kvp.Key);
                     continue;
                 }
-                if (ignoredProperties.Contains(kvp.Key) || propertyMappings.ContainsKey(kvp.Key) ||
-                    resolverMappings.ContainsKey(kvp.Key) || forgeWithMappings.ContainsKey(kvp.Key))
-                    continue;
-                resolverMappings[kvp.Key] = kvp.Value;
+                if (!IsAlreadyConfigured(kvp.Key))
+                    resolverMappings[kvp.Key] = kvp.Value;
             }
 
-            // Merge base [ForgeWith] into derived
             foreach (var kvp in baseForgeWithMappings)
             {
-                if (explicitIgnored.Contains(kvp.Key) || explicitPropertyMappings.Contains(kvp.Key) ||
-                    explicitResolverMappings.Contains(kvp.Key) || explicitForgeWithMappings.Contains(kvp.Key))
+                if (IsExplicitlyConfigured(kvp.Key))
                 {
-                    ReportDiagnosticIfNotSuppressed(context,
-                        DiagnosticDescriptors.IncludeBaseForgeOverridden,
-                        attrData.ApplicationSyntaxReference?.GetSyntax().GetLocation() ?? method.Locations.FirstOrDefault(),
-                        kvp.Key);
+                    ReportDiagnosticIfNotSuppressed(context, DiagnosticDescriptors.IncludeBaseForgeOverridden, diagLocation, kvp.Key);
                     continue;
                 }
-                if (ignoredProperties.Contains(kvp.Key) || propertyMappings.ContainsKey(kvp.Key) ||
-                    resolverMappings.ContainsKey(kvp.Key) || forgeWithMappings.ContainsKey(kvp.Key))
-                    continue;
-                forgeWithMappings[kvp.Key] = kvp.Value;
+                if (!IsAlreadyConfigured(kvp.Key))
+                    forgeWithMappings[kvp.Key] = kvp.Value;
             }
         }
+    }
+
+    /// <summary>
+    /// Resolves all attribute-based configuration for a forge method (ignores, mappings, resolvers, forgeWith, hooks).
+    /// </summary>
+    private ResolvedMethodConfig ResolveMethodConfig(
+        IMethodSymbol method,
+        ITypeSymbol sourceType,
+        INamedTypeSymbol destinationType,
+        ForgerInfo forger,
+        SourceProductionContext context)
+    {
+        var ignoredProperties = GetIgnoredProperties(method);
+        var propertyMappings = GetPropertyMappings(method);
+        var resolverMappings = GetResolverMappings(method);
+        var forgeWithMappings = GetForgeWithMappings(method);
+
+        ResolveInheritedConfig(method, forger, context, ignoredProperties, propertyMappings, resolverMappings, forgeWithMappings);
+
+        var beforeForgeHooks = GetBeforeForgeHooks(method)
+            .Where(h => ValidateBeforeForgeHook(h, sourceType, forger, context, method))
+            .ToList();
+        var afterForgeHooks = GetAfterForgeHooks(method)
+            .Where(h => ValidateAfterForgeHook(h, sourceType, destinationType, forger, context, method))
+            .ToList();
+
+        return new ResolvedMethodConfig(
+            ignoredProperties,
+            propertyMappings,
+            resolverMappings,
+            forgeWithMappings,
+            beforeForgeHooks,
+            afterForgeHooks);
     }
 
     /// <summary>
@@ -2357,36 +2397,16 @@ internal sealed class ForgeCodeEmitter
 
         var sb = new StringBuilder();
         var sourceParam = method.Parameters[0].Name;
-        var destParam = method.Parameters.First(p =>
-            p.GetAttributes().Any(a =>
-                a.AttributeClass?.Name == "UseExistingValueAttribute")).Name;
+        var destParam = GetUseExistingValueParameter(method)!.Name;
 
-        // Get ignored properties from [Ignore] attributes
-        var ignoredProperties = GetIgnoredProperties(method);
-
-        // Get property mappings from [ForgeProperty] attributes
-        var propertyMappings = GetPropertyMappings(method);
-
-        // Get resolver mappings from [ForgeFrom] attributes
-        var resolverMappings = GetResolverMappings(method);
-
-        // Get [ForgeWith] mappings for nested object forging
-        var forgeWithMappings = GetForgeWithMappings(method);
-
-        // Merge inherited configuration from [IncludeBaseForge] attributes
-        ResolveInheritedConfig(method, forger, context, ignoredProperties, propertyMappings, resolverMappings, forgeWithMappings);
-
-        // Get [BeforeForge] and [AfterForge] hooks
-        var beforeForgeHooks = GetBeforeForgeHooks(method);
-        var afterForgeHooks = GetAfterForgeHooks(method);
-
-        // Validate hooks and filter to only valid ones
-        beforeForgeHooks = beforeForgeHooks
-            .Where(h => ValidateBeforeForgeHook(h, sourceType, forger, context, method))
-            .ToList();
-        afterForgeHooks = afterForgeHooks
-            .Where(h => ValidateAfterForgeHook(h, sourceType, destinationType, forger, context, method))
-            .ToList();
+        // Resolve all attribute-based configuration
+        var cfg = ResolveMethodConfig(method, sourceType, destinationType, forger, context);
+        var ignoredProperties = cfg.IgnoredProperties;
+        var propertyMappings = cfg.PropertyMappings;
+        var resolverMappings = cfg.ResolverMappings;
+        var forgeWithMappings = cfg.ForgeWithMappings;
+        var beforeForgeHooks = cfg.BeforeForgeHooks;
+        var afterForgeHooks = cfg.AfterForgeHooks;
 
         // Method signature
         var accessibility = GetAccessibilityKeyword(method.DeclaredAccessibility);
@@ -2715,11 +2735,7 @@ internal sealed class ForgeCodeEmitter
         if (sourceType is INamedTypeSymbol namedType && namedType.IsGenericType)
         {
             var originalDef = namedType.OriginalDefinition.ToDisplayString();
-            return originalDef == "System.Collections.Generic.List<T>" ||
-                   originalDef == "System.Collections.Generic.ICollection<T>" ||
-                   originalDef == "System.Collections.Generic.IReadOnlyCollection<T>" ||
-                   originalDef == "System.Collections.Generic.IList<T>" ||
-                   originalDef == "System.Collections.Generic.IReadOnlyList<T>";
+            return CollectionTypesWithCheapCount.Contains(originalDef);
         }
 
         return false;
@@ -2736,12 +2752,7 @@ internal sealed class ForgeCodeEmitter
         if (sourceType is INamedTypeSymbol namedType && namedType.IsGenericType)
         {
             var originalDef = namedType.OriginalDefinition.ToDisplayString();
-            // Types with Count property
-            if (originalDef == "System.Collections.Generic.List<T>" ||
-                originalDef == "System.Collections.Generic.ICollection<T>" ||
-                originalDef == "System.Collections.Generic.IReadOnlyCollection<T>" ||
-                originalDef == "System.Collections.Generic.IList<T>" ||
-                originalDef == "System.Collections.Generic.IReadOnlyList<T>")
+            if (CollectionTypesWithCheapCount.Contains(originalDef))
             {
                 return $"{sourceParam}.Count";
             }
@@ -2767,17 +2778,8 @@ internal sealed class ForgeCodeEmitter
         if (type is INamedTypeSymbol namedType && namedType.IsGenericType && namedType.TypeArguments.Length == 1)
         {
             var originalDef = namedType.OriginalDefinition.ToDisplayString();
-            var supportedCollections = new[]
-            {
-                "System.Collections.Generic.List<T>",
-                "System.Collections.Generic.IList<T>",
-                "System.Collections.Generic.ICollection<T>",
-                "System.Collections.Generic.IEnumerable<T>",
-                "System.Collections.Generic.IReadOnlyList<T>",
-                "System.Collections.Generic.IReadOnlyCollection<T>"
-            };
 
-            if (supportedCollections.Contains(originalDef))
+            if (SupportedCollectionTypes.Contains(originalDef))
             {
                 return namedType.TypeArguments[0];
             }
