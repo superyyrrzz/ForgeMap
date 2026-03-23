@@ -50,7 +50,7 @@ var dto = forger.Forge(entity);
 
 ## Documentation
 
-See [SPEC.md](SPEC.md) for the full specification.
+See [SPEC.md](docs/SPEC.md) for the full specification.
 
 ## Version Roadmap
 
