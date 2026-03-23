@@ -6,13 +6,16 @@ namespace ForgeMap.Benchmarks.Benchmarks;
 
 [MemoryDiagnoser]
 [SimpleJob]
+[GroupBenchmarksBy(BenchmarkDotNet.Configs.BenchmarkLogicalGroupRule.ByParams)]
 public class CollectionMappingBenchmark
 {
-    private List<SimpleSource> _small = null!;
-    private List<SimpleSource> _large = null!;
+    private List<SimpleSource> _items = null!;
     private BenchmarkForger _forger = null!;
     private BenchmarkMapper _mapper = null!;
     private AutoMapper.IMapper _autoMapper = null!;
+
+    [Params(100, 1000)]
+    public int Count { get; set; }
 
     [GlobalSetup]
     public void Setup()
@@ -21,8 +24,7 @@ public class CollectionMappingBenchmark
         _mapper = new BenchmarkMapper();
         _autoMapper = AutoMapperConfig.CreateMapper();
 
-        _small = Enumerable.Range(0, 100).Select(CreateSource).ToList();
-        _large = Enumerable.Range(0, 1000).Select(CreateSource).ToList();
+        _items = Enumerable.Range(0, Count).Select(CreateSource).ToList();
     }
 
     private static SimpleSource CreateSource(int i) => new()
@@ -40,22 +42,12 @@ public class CollectionMappingBenchmark
     };
 
     [Benchmark(Baseline = true)]
-    public List<SimpleDestination> ForgeMap_100() => _forger.Forge(_small);
+    public List<SimpleDestination> ForgeMap() => _forger.Forge(_items);
 
     [Benchmark]
-    public List<SimpleDestination> Mapperly_100() => _mapper.Map(_small);
+    public List<SimpleDestination> Mapperly() => _mapper.Map(_items);
 
     [Benchmark]
-    public List<SimpleDestination> AutoMapper_100()
-        => _autoMapper.Map<List<SimpleDestination>>(_small);
-
-    [Benchmark]
-    public List<SimpleDestination> ForgeMap_1000() => _forger.Forge(_large);
-
-    [Benchmark]
-    public List<SimpleDestination> Mapperly_1000() => _mapper.Map(_large);
-
-    [Benchmark]
-    public List<SimpleDestination> AutoMapper_1000()
-        => _autoMapper.Map<List<SimpleDestination>>(_large);
+    public List<SimpleDestination> AutoMapper()
+        => _autoMapper.Map<List<SimpleDestination>>(_items);
 }

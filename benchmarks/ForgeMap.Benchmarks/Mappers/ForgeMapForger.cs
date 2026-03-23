@@ -1,3 +1,4 @@
+using ForgeMap;
 using ForgeMap.Benchmarks.Models;
 
 namespace ForgeMap.Benchmarks.Mappers;
