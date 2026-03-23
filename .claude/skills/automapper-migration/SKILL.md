@@ -46,7 +46,7 @@ return source switch
 {
     User u when typeof(TDestination) == typeof(UserDto) => (TDestination)(object)_forger.Forge(u),
     Order o when typeof(TDestination) == typeof(OrderDto) => (TDestination)(object)_forger.Forge(o),
-    _ => throw new NotSupportedException(...)
+    _ => throw new NotSupportedException($"No ForgeMap mapping for {source.GetType().Name} → {typeof(TDestination).Name}")
 };
 ```
 
