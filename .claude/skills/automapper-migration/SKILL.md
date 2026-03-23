@@ -8,47 +8,38 @@ description: >
 
 # AutoMapper → ForgeMap Migration
 
-## Critical: Read `references/api-mapping-guide.md` first
+## Read `references/api-mapping-guide.md` first
 
-It contains exact API mappings between AutoMapper and ForgeMap for every feature. Consult it for every translation.
+It contains exact API mappings between AutoMapper and ForgeMap. Consult it for every translation.
 
-## Minimum ForgeMap version: 1.1.0
+## Hard rules
 
-Before starting the migration, verify the project references ForgeMap **>= 1.1.0**. If the package is not yet added, install it at 1.1.0 or later. If an older version is referenced, upgrade it first. Features like `[IncludeBaseForge]`, `[ForgeAllDerived]`, compatible enum auto-conversion, and inherited property resolution from compiled assemblies all require 1.1.0+.
-
-## NEVER write manual mapping code
-
-Every mapping MUST go through ForgeMap's source generator. If you encounter a scenario where ForgeMap cannot support a required mapping, **stop the migration and report the gap to the user.** Do not work around it by writing hand-coded property assignments. The entire point of this migration is to use ForgeMap — manual mapping defeats that purpose and creates unmaintainable code.
+- **Minimum ForgeMap version: 1.1.0** — `[IncludeBaseForge]`, `[ForgeAllDerived]`, compatible enum auto-conversion, and inherited property resolution all require it.
+- **NEVER write manual mapping code.** If ForgeMap can't support a required mapping, **stop and report the gap.** File an issue on `superyyrrzz/ForgeMap` with title `[Migration] <description>` and let the user decide.
 
 ## Step 0: Create a migration branch
-
-Before making any changes, create and check out a new branch from the current default branch. This prevents committing directly to `main`/`master` and makes it easy to open a PR later.
 
 ```
 git checkout -b migrate/automapper-to-forgemap
 ```
 
-If the user specifies a branch name, use that instead. Confirm the branch is created before proceeding.
+Use a user-specified name if provided.
 
-## Strategy: 4 incremental commits
+## Commits (each leaves the project green)
 
-Each commit leaves the project green (compiling + tests passing):
+1. **Wrap** — `IMappingService` abstraction over AutoMapper. Nothing outside references AutoMapper.
+2. **Test** — Unit tests for every mapping through `IMappingService`.
+3. **Swap** — Replace AutoMapper impl with ForgeMap. All tests must pass.
+4. **Unwrap** — Delete abstraction. Call `_forger.Forge(source)` directly.
 
-1. **Wrap** — Hide AutoMapper behind an `IMappingService` abstraction. No behavior change. No file outside the abstraction should reference AutoMapper.
-2. **Test** — Add unit tests exercising every mapping through `IMappingService`. These define the behavioral contract ForgeMap must satisfy.
-3. **Swap** — Replace the AutoMapper implementation with ForgeMap. All tests from step 2 must pass.
-4. **Unwrap** — Delete the abstraction. All code calls `_forger.Forge(source)` directly.
+## The routing shim (commit 3) — this is the tricky part
 
-## What Claude needs to know (non-obvious parts)
-
-### The routing shim in commit 3
-
-AutoMapper's `IMapper.Map<TDest>(object source)` accepts untyped `object` and uses runtime type discovery. ForgeMap uses compile-time source generation with strongly-typed methods (`Forge(User source) → UserDto`). To bridge this gap temporarily, `ForgeMapMappingService` dispatches untyped calls to the correct `Forge()` overload:
+AutoMapper's `IMapper.Map<TDest>(object source)` is untyped. ForgeMap is compile-time with strongly-typed `Forge()` overloads. The `ForgeMapMappingService` needs a temporary dispatch shim:
 
 ```csharp
-// This is NOT manual mapping — each arm delegates to ForgeMap's generated code.
-// This shim is deleted entirely in commit 4.
-if (source is null) return default!; // AutoMapper returns default(TDestination) for null
+// NOT manual mapping — each arm delegates to ForgeMap's generated code.
+// Deleted entirely in commit 4.
+if (source is null) return default!;
 return source switch
 {
     User u when typeof(TDestination) == typeof(UserDto) => (TDestination)(object)_forger.Forge(u),
@@ -57,38 +48,11 @@ return source switch
 };
 ```
 
-**All actual property mapping is done by ForgeMap.** The shim only routes. It is temporary and deleted in commit 4.
+## ForgeMap behaviors that differ from AutoMapper
 
-### Nullable annotations on the abstraction interface
-
-Use `[return: MaybeNull]` on return types and nullable parameter types (`TSource?`) — AutoMapper returns `default(TDestination)` for null sources (null for reference types, zero/false for value types). Without these annotations, callers in nullable-enabled projects will assume non-null returns.
-
-### ForgeMap-specific gotchas
-
-- **Case sensitivity**: AutoMapper is case-insensitive by default; ForgeMap is case-sensitive. Add `PropertyMatching = PropertyMatching.ByNameCaseInsensitive` if the project relies on case-insensitive matching.
-- **Nested maps are NOT auto-discovered**: AutoMapper auto-discovers `CreateMap<Address, AddressDto>()` when mapping a parent. ForgeMap requires explicit `[ForgeWith(nameof(D.Prop), nameof(ForgeNested))]`.
-- **Collection properties need explicit wiring**: A `List<A>` → `List<B>` property on a parent is NOT auto-mapped just because an element forge exists. Declare a collection-level forge method referenced via `[ForgeWith]`, and the element method must share the same name (overload resolution).
-- **No `ProjectTo<T>()`**: ForgeMap is compile-time only. Rewrite to materialize first: `var entities = query.ToList(); var dtos = entities.Select(x => forger.Forge(x)).ToList();`. Warn user about performance implications.
-- **`[ConvertWith]` is not yet functional**: The attribute exists in the abstractions but the generator does not honor it for conversion. Use per-method `[ForgeFrom]` resolvers instead. The only current effect of `[ConvertWith]` is triggering FM0023 when combined with `[ForgeAllDerived]`.
-- **No `ConstructUsing()` equivalent**: ForgeMap maps constructor/record parameters when the destination has an accessible constructor, but has no custom factory logic. Adjust destination constructors or use `[ForgeFrom]` / `[BeforeForge]` hooks.
-- **`[IncludeBaseForge]` for configuration inheritance**: Inherits attribute-based configuration (`[Ignore]`, `[ForgeProperty]`, `[ForgeFrom]`, `[ForgeWith]`) from a base forge method. Replaces AutoMapper's `.IncludeBase<TBaseSrc, TBaseDst>()`. Explicit attributes on the derived method override inherited ones. Can chain through multiple levels. Supports `AllowMultiple = true` — when including multiple bases, inherited config merges with a first-wins rule per property (attribute order matters).
-- **`[ForgeAllDerived]` for polymorphic dispatch**: Generates a polymorphic dispatch method that inspects the runtime type and delegates to the most-specific derived forge method (`is` cascade). Replaces AutoMapper's `.IncludeAllDerived()`. Derived methods are auto-discovered only when they are overloads in the same forger class with the same method name as the base forge method — no manual registration needed, but differently-named methods (e.g., `ForgeDerived`) will not be picked up.
-- **Compatible enum auto-conversion**: Distinct enum types with identical members, values, declaration order, and matching underlying types are automatically cast via the underlying type (e.g., `(DestEnum)(<underlying-type>)source.Prop`). Works with nullable variants. No forge method or attribute required. Commonly seen across namespaces, but namespace difference is not a requirement.
-- **Inherited properties from compiled assemblies**: Properties from base types in NuGet packages or compiled assemblies are automatically discovered without any configuration.
-
-### Build diagnostics to watch for
-
-- **FM0005** (unmapped source property): Add `[Ignore]` or `SuppressDiagnostics` if intentional
-- **FM0007** (nullable→non-nullable): Make destination nullable, adjust null handling, or use `[ForgeFrom]` fallback
-- **FM0015** (`[ForgeWith]` target missing `[ReverseForge]`): Add `[ReverseForge]` to nested method or remove from parent
-- **FM0019** (`[IncludeBaseForge]` base not found): The referenced base forge method must exist in the same forger class
-- **FM0020** (`[IncludeBaseForge]` type mismatch): Source/destination types must actually derive from the specified base types
-- **FM0021** (inherited attribute overridden): Info-level — explicit attribute on derived method takes precedence over inherited one
-- **FM0022** (`[ForgeAllDerived]` no derived methods): No derived forge methods found for the base type; check that derived forge methods exist in the same forger
-- **FM0023** (`[ForgeAllDerived]` + `[ConvertWith]` conflict): Emitted when a forge method has both `[ForgeAllDerived]` and `[ConvertWith]` — these are mutually exclusive; refactor so only one is applied
-
-### Test failure handling in commit 3
-
-1. **Configuration error** → fix the forger
-2. **Expected behavioral difference** (e.g., case sensitivity) → adjust ForgeMap config or test, document in commit message
-3. **ForgeMap feature gap** → **stop the migration.** Do NOT implement manual mapping as a workaround. File an issue on `superyyrrzz/ForgeMap` with title `[Migration] <description>`, AutoMapper vs ForgeMap behavior, and reproduction. Report the blocker to the user and let them decide whether to wait for a fix or accept the gap.
+- **Case-sensitive by default** (AutoMapper is case-insensitive). Use `PropertyMatching = PropertyMatching.ByNameCaseInsensitive` if needed.
+- **Nested maps are NOT auto-discovered.** Requires explicit `[ForgeWith(nameof(D.Prop), nameof(ForgeNested))]`.
+- **Collection properties need explicit wiring.** `List<A>` → `List<B>` on a parent isn't auto-mapped. Declare a collection-level forge method via `[ForgeWith]`, and the element method must share the same method name (overload resolution).
+- **No `ProjectTo<T>()`** — materialize first, then map. Warn user about perf implications.
+- **`[ConvertWith]` is not functional** — the attribute exists but the generator ignores it. Use `[ForgeFrom]` resolvers instead.
+- **`[ForgeAllDerived]` auto-discovery needs same method name** — derived forge methods must be overloads with the same name in the same forger class. Differently-named methods won't be picked up.
