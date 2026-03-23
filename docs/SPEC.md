@@ -747,11 +747,11 @@ The generator produces compile-time diagnostics for common issues:
 | `FM0016` | Error | Hook method not found or has invalid signature |
 | `FM0017` | Error | `[UseExistingValue]` on non-reference type or method returns non-void |
 | `FM0018` | Warning | `[BeforeForge]`/`[AfterForge]` not supported on enum or collection forge methods |
-| `FM0019` | Error | `[IncludeBaseForge]` base forge method not found *(v1.1)* |
-| `FM0020` | Error | `[IncludeBaseForge]` type mismatch: not an inheritance relationship *(v1.1)* |
-| `FM0021` | Info | `[IncludeBaseForge]` inherited attribute overridden by explicit attribute *(v1.1)* |
-| `FM0022` | Warning | `[ForgeAllDerived]` found no derived forge methods *(v1.1)* |
-| `FM0023` | Error | `[ForgeAllDerived]` cannot be combined with `[ConvertWith]` *(v1.1)* |
+| `FM0019` | Error | `[IncludeBaseForge]` base forge method not found |
+| `FM0020` | Error | `[IncludeBaseForge]` type mismatch: not an inheritance relationship |
+| `FM0021` | Info | `[IncludeBaseForge]` inherited attribute overridden by explicit attribute |
+| `FM0022` | Warning | `[ForgeAllDerived]` found no derived forge methods |
+| `FM0023` | Error | `[ForgeAllDerived]` cannot be combined with `[ConvertWith]` |
 
 ### Suppressing Warnings
 
@@ -856,9 +856,9 @@ public partial DestType Forge(SourceType source)
 | `.ConvertUsing<TConverter>()` | `[ConvertWith(typeof(TConverter))]` *(future)* |
 | `.ConvertUsing(new Converter())` | `[ConvertWith(typeof(Converter))]` *(future)* |
 | `ITypeConverter<S, D>` | `ITypeConverter<S, D>` *(future)* |
-| `.IncludeBase<TBaseSrc, TBaseDst>()` | `[IncludeBaseForge(typeof(TBaseSrc), typeof(TBaseDst))]` *(v1.1)* |
-| `.Include<TDerivedSrc, TDerivedDst>()` | Auto-discovered by `[ForgeAllDerived]` *(v1.1)* |
-| `.IncludeAllDerived()` | `[ForgeAllDerived]` *(v1.1)* |
+| `.IncludeBase<TBaseSrc, TBaseDst>()` | `[IncludeBaseForge(typeof(TBaseSrc), typeof(TBaseDst))]` |
+| `.Include<TDerivedSrc, TDerivedDst>()` | Auto-discovered by `[ForgeAllDerived]` |
+| `.IncludeAllDerived()` | `[ForgeAllDerived]` |
 | `.ReverseMap()` | `[ReverseForge]` |
 | `.AfterMap((s, d) => { ... })` | `[AfterForge(nameof(Method))]` |
 | `.BeforeMap((s, d) => { ... })` | `[BeforeForge(nameof(Method))]` |
@@ -870,7 +870,7 @@ public partial DestType Forge(SourceType source)
 - Simple property-access `MapFrom(s => s.Y)` maps to `[ForgeProperty]`.
 - Computed `MapFrom` lambdas map to `[ForgeFrom]`.
 - Converter-based AutoMapper features are planned for a future version.
-- Inheritance/polymorphism features (`[IncludeBaseForge]`, `[ForgeAllDerived]`) are available in v1.1.
+- Inheritance/polymorphism features (`[IncludeBaseForge]`, `[ForgeAllDerived]`) are available since v1.1.
 
 ### Example Migration
 
@@ -951,9 +951,9 @@ For project-wide defaults, use the `[ForgeMapDefaults]` assembly attribute:
 
 ---
 
-## Limitations (v1.0)
+## Limitations (v1.1)
 
-The following AutoMapper features are **not supported** in v1.0:
+The following AutoMapper features are **not supported** in v1.1:
 
 | Feature | Reason | Workaround |
 |---------|--------|------------|
@@ -963,7 +963,7 @@ The following AutoMapper features are **not supported** in v1.0:
 | Conditional mapping | Complex to generate | Use `[ForgeFrom]` with logic |
 | `ProjectTo<T>()` for EF | Requires expression trees | Future version |
 | Inline configuration | Compile-time only | Use attributes |
-| Mapping inheritance (`IncludeBase`) | Complex to generate | v1.1: `[IncludeBaseForge]`, `[ForgeAllDerived]` |
+| Mapping inheritance (`IncludeBase`) | ~~v1.1~~ | `[IncludeBaseForge]`, `[ForgeAllDerived]` (shipped in v1.1) |
 
 ---
 
@@ -1173,5 +1173,5 @@ All forging behaviors are controlled by attributes. New features should:
 
 ---
 
-*Specification Version: 1.0*
+*Specification Version: 1.1*
 *License: MIT*

@@ -63,6 +63,7 @@ See [SPEC.md](SPEC.md) for the full specification.
 | **v0.5** | `[ReverseForge]` |
 | **v0.6** | `[BeforeForge]`, `[AfterForge]`, `ForgeInto()` |
 | **v1.0** | DI integration, full diagnostics, NuGet publish |
+| **v1.1** | Mapping inheritance, `[IncludeBaseForge]`, `[ForgeAllDerived]` polymorphic dispatch |
 
 ## License
 
