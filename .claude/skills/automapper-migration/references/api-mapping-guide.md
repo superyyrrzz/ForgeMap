@@ -168,7 +168,7 @@ When `[ForgeAllDerived]` is on a base forge method, collection forge methods for
 |---|---|---|
 | Auto enum-to-enum by name | Auto by name | Forge method: `partial DEnum Forge(SEnum source)` |
 | Enum-to-string | Auto string conversion | Forge method: `partial string Forge(SEnum source)` |
-| Cross-namespace enum mapping | Auto-converted when compatible | Enums with identical members, values, declaration order, and the same underlying integral type are cast automatically via their underlying type — including nullable variants |
+| Compatible enum mapping | Auto-converted when compatible | Distinct enum types with identical members, values, declaration order, and the same underlying integral type are cast automatically via their underlying type — including nullable variants; commonly cross-namespace but namespace difference is not required |
 
 ## Configuration Validation
 
