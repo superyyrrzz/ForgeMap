@@ -49,6 +49,25 @@ private static decimal ConvertPrice(int priceInCents)
 | Auto-detected nested maps | `[ForgeWith(nameof(D.DestProp), nameof(NestedForgeMethod))]` | Must declare a forge method for the nested type |
 | `.IncludeMembers(s => s.Inner)` | Not directly supported | Use `[ForgeProperty]` with dot notation instead |
 
+### Example
+
+```csharp
+// AutoMapper
+CreateMap<Order, OrderDto>();
+CreateMap<Address, AddressDto>();
+// AutoMapper auto-discovers nested Address→AddressDto
+
+// ForgeMap
+[ForgeMap]
+public partial class OrderForger
+{
+    [ForgeWith(nameof(OrderDto.ShippingAddress), nameof(ForgeAddress))]
+    public partial OrderDto Forge(Order source);
+
+    public partial AddressDto ForgeAddress(Address source);
+}
+```
+
 ## Mapping Inheritance & Polymorphic Dispatch
 
 | AutoMapper | ForgeMap | Notes |
@@ -104,25 +123,6 @@ public partial DerivedBDto Forge(DerivedBEntity source);
 ### Collection interop
 
 When `[ForgeAllDerived]` is on a base forge method, collection forge methods for that base type dispatch each element polymorphically.
-
-### Example
-
-```csharp
-// AutoMapper
-CreateMap<Order, OrderDto>();
-CreateMap<Address, AddressDto>();
-// AutoMapper auto-discovers nested Address→AddressDto
-
-// ForgeMap
-[ForgeMap]
-public partial class OrderForger
-{
-    [ForgeWith(nameof(OrderDto.ShippingAddress), nameof(ForgeAddress))]
-    public partial OrderDto Forge(Order source);
-
-    public partial AddressDto ForgeAddress(Address source);
-}
-```
 
 ## Reverse Mapping
 
