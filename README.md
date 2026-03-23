@@ -48,6 +48,19 @@ var forger = new AppForger();
 var dto = forger.Forge(entity);
 ```
 
+## Performance
+
+ForgeMap is the fastest in benchmarks against AutoMapper and Mapperly (.NET 9, AMD EPYC 7763):
+
+| Scenario           | ForgeMap    | Mapperly        | AutoMapper       |
+|--------------------|-------------|-----------------|------------------|
+| Simple (10 props)  | **14.5 ns** | 15.9 ns (1.1x)  | 80.7 ns (5.6x)  |
+| Nested (2 levels)  | **27.3 ns** | 30.7 ns (1.1x)  | 92.5 ns (3.4x)  |
+| Deep (4 levels)    | **31.3 ns** | 35.8 ns (1.1x)  | 247.0 ns (7.9x) |
+| Collection (1000)  | **17.7 us** | 20.1 us (1.1x)  | 22.2 us (1.3x)  |
+
+See [benchmarks/BENCHMARK_RESULTS.md](benchmarks/BENCHMARK_RESULTS.md) for full details.
+
 ## Documentation
 
 See [SPEC.md](docs/SPEC.md) for the full specification.
