@@ -55,7 +55,7 @@ Use `[return: MaybeNull]` on return types and nullable parameter types (`TSource
 - **Nested maps are NOT auto-discovered**: AutoMapper auto-discovers `CreateMap<Address, AddressDto>()` when mapping a parent. ForgeMap requires explicit `[ForgeWith(nameof(D.Prop), nameof(ForgeNested))]`.
 - **Collection properties need explicit wiring**: A `List<A>` → `List<B>` property on a parent is NOT auto-mapped just because an element forge exists. Declare a collection-level forge method referenced via `[ForgeWith]`, and the element method must share the same name (overload resolution).
 - **No `ProjectTo<T>()`**: ForgeMap is compile-time only. Rewrite to materialize first: `var entities = query.ToList(); var dtos = entities.Select(x => forger.Forge(x)).ToList();`. Warn user about performance implications.
-- **No `[ConvertWith]` / global type converters**: Use per-method `[ForgeFrom]` resolvers instead.
+- **`[ConvertWith]` cannot combine with `[ForgeAllDerived]`**: Use `[ConvertWith(typeof(MyConverter))]` for global type conversion via `ITypeConverter<S,D>`, but it cannot be used on the same method as `[ForgeAllDerived]` (FM0023). Prefer per-method `[ForgeFrom]` resolvers when possible.
 - **No `ConstructUsing()` equivalent**: ForgeMap maps constructor/record parameters when the destination has an accessible constructor, but has no custom factory logic. Adjust destination constructors or use `[ForgeFrom]` / `[BeforeForge]` hooks.
 - **`[IncludeBaseForge]` for configuration inheritance**: Inherits attribute-based configuration (`[Ignore]`, `[ForgeProperty]`, `[ForgeFrom]`, `[ForgeWith]`) from a base forge method. Replaces AutoMapper's `.IncludeBase<TBaseSrc, TBaseDst>()`. Explicit attributes on the derived method override inherited ones. Can chain through multiple levels.
 - **`[ForgeAllDerived]` for polymorphic dispatch**: Generates a polymorphic dispatch method that inspects the runtime type and delegates to the most-specific derived forge method (`is` cascade). Replaces AutoMapper's `.IncludeAllDerived()`. Derived methods are auto-discovered — no manual registration needed.
@@ -71,7 +71,7 @@ Use `[return: MaybeNull]` on return types and nullable parameter types (`TSource
 - **FM0020** (`[IncludeBaseForge]` type mismatch): Source/destination types must actually derive from the specified base types
 - **FM0021** (inherited attribute overridden): Info-level — explicit attribute on derived method takes precedence over inherited one
 - **FM0022** (`[ForgeAllDerived]` no derived methods): No derived forge methods found for the base type; check that derived forge methods exist in the same forger
-- **FM0023** (`[ForgeAllDerived]` + `[ConvertWith]` conflict): Forward-looking diagnostic — `[ConvertWith]` does not exist yet but the ID is reserved; if it ships in a future version, it cannot be combined with `[ForgeAllDerived]`
+- **FM0023** (`[ForgeAllDerived]` + `[ConvertWith]` conflict): Emitted when a forge method has both `[ForgeAllDerived]` and `[ConvertWith]` — these are mutually exclusive; refactor so only one is applied
 
 ### Test failure handling in commit 3
 

@@ -28,7 +28,7 @@ This reference maps AutoMapper patterns to their ForgeMap equivalents.
 |---|---|---|
 | `IValueResolver<S,D,TVal>` | `[ForgeFrom(nameof(D.DestProp), nameof(ResolverMethod))]` | Static/instance method on the forger class |
 | `.MapFrom(s => expr)` | `[ForgeFrom(nameof(D.DestProp), nameof(Method))]` | Resolver method returns value |
-| `ITypeConverter<S,D>` | `[ForgeFrom]` resolver methods | No built-in `[ConvertWith]` in current ForgeMap; model type conversions with `[ForgeFrom]` resolver methods on the forger class |
+| `ITypeConverter<S,D>` | `[ConvertWith(typeof(MyConverter))]` | Converter class must implement `ITypeConverter<S,D>`; cannot combine with `[ForgeAllDerived]` (FM0023). Alternatively, use `[ForgeFrom]` resolver methods for simpler cases |
 
 ### Resolver method signatures
 
@@ -202,7 +202,6 @@ public partial class OrderForger
 | `ProjectTo<T>()` (IQueryable) | Map in-memory after materializing the query |
 | `ConstructUsing()` | No direct equivalent. ForgeMap maps constructor/record parameters when the destination has an accessible constructor; for custom factory logic, adjust destination constructors/records where possible or create the destination manually (e.g., in calling code, a `[ForgeFrom]` resolver, or a `[BeforeForge]` hook). |
 | Conditional mapping (`.PreCondition()`) | Use `[BeforeForge]` to validate, or `[ForgeFrom]` with conditional logic |
-| Value converters (global type conversion) | `[ForgeFrom]` resolvers per method | No global type converter support; use per-method `[ForgeFrom]` resolvers |
 | Dynamic/runtime mapping | Not supported — ForgeMap is compile-time only |
 
 ## Common Migration Patterns
