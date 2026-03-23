@@ -1,4 +1,12 @@
 <Solution>
+  <Configurations>
+    <Platform Name="Any CPU" />
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Folder Name="/benchmarks/">
+    <Project Path="benchmarks/ForgeMap.Benchmarks/ForgeMap.Benchmarks.csproj" />
+  </Folder>
   <Folder Name="/src/">
     <Project Path="src/ForgeMap.Abstractions/ForgeMap.Abstractions.csproj" />
     <Project Path="src/ForgeMap.Generator/ForgeMap.Generator.csproj" />
