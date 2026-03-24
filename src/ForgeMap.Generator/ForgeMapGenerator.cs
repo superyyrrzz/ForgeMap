@@ -121,6 +121,9 @@ public sealed class ForgeMapGenerator : IIncrementalGenerator
                 case "GenerateCollectionMappings":
                     config.GenerateCollectionMappings = (bool)named.Value.Value!;
                     break;
+                case "NullPropertyHandling":
+                    config.NullPropertyHandling = (int)named.Value.Value!;
+                    break;
             }
         }
 

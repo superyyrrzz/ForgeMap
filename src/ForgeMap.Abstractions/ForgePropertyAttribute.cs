@@ -28,4 +28,11 @@ public sealed class ForgePropertyAttribute : Attribute
     /// Gets the name of the destination property.
     /// </summary>
     public string DestinationProperty { get; }
+
+    /// <summary>
+    /// Gets or sets how a nullable source property should be assigned to a non-nullable destination property.
+    /// Overrides the forger-level and assembly-level <see cref="NullPropertyHandling"/> for this property.
+    /// A value of <c>(NullPropertyHandling)(-1)</c> means "not set" (inherit from forger/assembly).
+    /// </summary>
+    public NullPropertyHandling NullPropertyHandling { get; set; } = (NullPropertyHandling)(-1);
 }

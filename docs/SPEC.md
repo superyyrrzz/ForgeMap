@@ -33,7 +33,7 @@
 | **v0.6** | `[BeforeForge]`, `[AfterForge]`, `ForgeInto()` |
 | **v1.0** | DI integration, full diagnostics, NuGet publish |
 | **v1.1** | Mapping inheritance, polymorphic dispatch, inherited property resolution ([spec](SPEC-v1.1-inheritance.md)) |
-| **v1.2** | Null-safe property assignment, `NullPropertyHandling` strategy ([spec](SPEC-v1.2-null-property-handling.md)) |
+| **v1.2** | Null-safe property assignment: `NullPropertyHandling` enum with 4 strategies, three-tier config, FM0007 activation ([spec](SPEC-v1.2-null-property-handling.md)) |
 | *Future* | `[ConvertWith]`, `ITypeConverter<S,D>` |
 | *Future* | `ProjectTo<T>()` |
 
@@ -1124,6 +1124,21 @@ namespace ForgeMap
         ByName,
         /// <summary>Case-insensitive property name matching.</summary>
         ByNameCaseInsensitive
+    }
+
+    /// <summary>
+    /// Controls how a nullable source reference property is assigned to a non-nullable destination property.
+    /// </summary>
+    public enum NullPropertyHandling
+    {
+        /// <summary>Append null-forgiving operator (source.X!).</summary>
+        NullForgiving,
+        /// <summary>Skip assignment when source is null.</summary>
+        SkipNull,
+        /// <summary>Use ?? with a type-appropriate default.</summary>
+        CoalesceToDefault,
+        /// <summary>Throw ArgumentNullException when source is null.</summary>
+        ThrowException
     }
 
     /// <summary>

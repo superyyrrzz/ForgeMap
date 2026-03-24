@@ -25,4 +25,10 @@ public sealed class ForgeMapAttribute : Attribute
     /// Gets or sets diagnostic IDs to suppress for this forger.
     /// </summary>
     public string[]? SuppressDiagnostics { get; set; }
+
+    /// <summary>
+    /// Gets or sets how nullable source properties should be assigned to non-nullable destination properties.
+    /// Default is <see cref="NullPropertyHandling.NullForgiving"/>.
+    /// </summary>
+    public NullPropertyHandling NullPropertyHandling { get; set; } = NullPropertyHandling.NullForgiving;
 }

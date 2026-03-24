@@ -24,6 +24,9 @@ internal sealed class ForgerConfig
     /// <summary>Diagnostic IDs to suppress for this forger (e.g. "FM0005").</summary>
     public HashSet<string> SuppressDiagnostics { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>0 = NullForgiving (default), 1 = SkipNull, 2 = CoalesceToDefault, 3 = ThrowException</summary>
+    public int NullPropertyHandling { get; set; }
+
     public StringComparison PropertyNameComparison =>
         PropertyMatching == 1 ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
 }
@@ -39,7 +42,8 @@ internal readonly struct ResolvedMethodConfig
         Dictionary<string, string> resolverMappings,
         Dictionary<string, string> forgeWithMappings,
         List<string> beforeForgeHooks,
-        List<string> afterForgeHooks)
+        List<string> afterForgeHooks,
+        Dictionary<string, int> nullPropertyHandlingOverrides)
     {
         IgnoredProperties = ignoredProperties;
         PropertyMappings = propertyMappings;
@@ -47,6 +51,7 @@ internal readonly struct ResolvedMethodConfig
         ForgeWithMappings = forgeWithMappings;
         BeforeForgeHooks = beforeForgeHooks;
         AfterForgeHooks = afterForgeHooks;
+        NullPropertyHandlingOverrides = nullPropertyHandlingOverrides;
     }
 
     public HashSet<string> IgnoredProperties { get; }
@@ -55,6 +60,8 @@ internal readonly struct ResolvedMethodConfig
     public Dictionary<string, string> ForgeWithMappings { get; }
     public List<string> BeforeForgeHooks { get; }
     public List<string> AfterForgeHooks { get; }
+    /// <summary>Per-property NullPropertyHandling overrides. Key = dest property name, Value = enum int value (0–3). Only explicitly set overrides are included.</summary>
+    public Dictionary<string, int> NullPropertyHandlingOverrides { get; }
 }
 
 /// <summary>
@@ -122,6 +129,7 @@ internal sealed class ForgeCodeEmitter
             NullHandling = _assemblyDefaults.NullHandling,
             PropertyMatching = _assemblyDefaults.PropertyMatching,
             GenerateCollectionMappings = _assemblyDefaults.GenerateCollectionMappings,
+            NullPropertyHandling = _assemblyDefaults.NullPropertyHandling,
             SuppressDiagnostics = new HashSet<string>(_assemblyDefaults.SuppressDiagnostics, StringComparer.OrdinalIgnoreCase),
         };
 
@@ -135,6 +143,9 @@ internal sealed class ForgeCodeEmitter
                     break;
                 case "PropertyMatching":
                     config.PropertyMatching = (int)named.Value.Value!;
+                    break;
+                case "NullPropertyHandling":
+                    config.NullPropertyHandling = (int)named.Value.Value!;
                     break;
                 case "SuppressDiagnostics":
                     if (!named.Value.IsNull)
@@ -700,7 +711,9 @@ internal sealed class ForgeCodeEmitter
                 var mapping = ctorParamMappings[i];
                 var separator = i < ctorParamMappings.Count - 1 ? "," : "";
                 var expr = GenerateCtorParamExpression(
-                    mapping.SourceExpression, mapping.SourcePropertyType, mapping.DestPropertyType);
+                    mapping.SourceExpression, mapping.SourcePropertyType, mapping.DestPropertyType,
+                    mapping.DestPropertyName, reverseDestType.ToDisplayString(),
+                    new Dictionary<string, int>(StringComparer.Ordinal));
                 sb.AppendLine($"                {mapping.CtorParamName}: {expr}{separator}");
             }
 
@@ -825,7 +838,8 @@ internal sealed class ForgeCodeEmitter
         // Fall through to regular property assignment
         return GeneratePropertyAssignment(
             destProp, sourceParam, sourceType, sourceProperties,
-            propertyMappings, resolverMappings, forgeWithMappings, ignoredProperties, forger, context, method);
+            propertyMappings, resolverMappings, forgeWithMappings, ignoredProperties, forger, context, method,
+            new Dictionary<string, int>());
     }
 
     private string GenerateMethod(IMethodSymbol method, ForgerInfo forger, SourceProductionContext context)
@@ -974,6 +988,7 @@ internal sealed class ForgeCodeEmitter
         var forgeWithMappings = cfg.ForgeWithMappings;
         var beforeForgeHooks = cfg.BeforeForgeHooks;
         var afterForgeHooks = cfg.AfterForgeHooks;
+        var nullPropertyHandlingOverrides = cfg.NullPropertyHandlingOverrides;
 
         var hasAfterForge = afterForgeHooks.Count > 0;
 
@@ -1072,7 +1087,9 @@ internal sealed class ForgeCodeEmitter
                 var mapping = ctorParamMappings[i];
                 var separator = i < ctorParamMappings.Count - 1 ? "," : "";
                 var expr = GenerateCtorParamExpression(
-                    mapping.SourceExpression, mapping.SourcePropertyType, mapping.DestPropertyType);
+                    mapping.SourceExpression, mapping.SourcePropertyType, mapping.DestPropertyType,
+                    mapping.DestPropertyName, destinationType.ToDisplayString(),
+                    nullPropertyHandlingOverrides);
                 sb.AppendLine($"                {mapping.CtorParamName}: {expr}{separator}");
             }
 
@@ -1082,6 +1099,7 @@ internal sealed class ForgeCodeEmitter
                 .ToList();
 
             var initAssignments = new List<(string Name, string Expr)>();
+            var skipNullAssignmentsForCtor = new List<(string DestPropName, string SourceExpr, string LocalVarName)>();
             foreach (var destProp in remainingDestProps)
             {
                 if (ignoredProperties.Contains(destProp.Name))
@@ -1089,7 +1107,8 @@ internal sealed class ForgeCodeEmitter
 
                 var assignment = GeneratePropertyAssignment(
                     destProp, sourceParam, sourceType, sourceProperties,
-                    propertyMappings, resolverMappings, forgeWithMappings, ignoredProperties, forger, context, method);
+                    propertyMappings, resolverMappings, forgeWithMappings, ignoredProperties, forger, context, method,
+                    nullPropertyHandlingOverrides, skipNullAssignmentsForCtor);
 
                 if (assignment != null)
                     initAssignments.Add((destProp.Name, assignment));
@@ -1108,6 +1127,15 @@ internal sealed class ForgeCodeEmitter
                 sb.AppendLine("            );");
             }
 
+            // SkipNull properties — emit separate if-guard statements after the initializer
+            foreach (var (destName, srcExpr, localVar) in skipNullAssignmentsForCtor)
+            {
+                sb.AppendLine($"            if ({srcExpr} is {{ }} {localVar})");
+                sb.AppendLine($"            {{");
+                sb.AppendLine($"                result.{destName} = {localVar};");
+                sb.AppendLine($"            }}");
+            }
+
             // [AfterForge] callbacks
             foreach (var hookName in afterForgeHooks)
             {
@@ -1119,6 +1147,7 @@ internal sealed class ForgeCodeEmitter
         else if (hasAfterForge)
         {
             // When AfterForge hooks exist, we need a variable to pass to the hooks
+            var skipNullAssignmentsAfterForge = new List<(string DestPropName, string SourceExpr, string LocalVarName)>();
             sb.AppendLine($"            var result = new {destinationType.ToDisplayString()}");
             sb.AppendLine("            {");
 
@@ -1126,13 +1155,23 @@ internal sealed class ForgeCodeEmitter
             {
                 var assignment = GeneratePropertyAssignment(
                     destProp, sourceParam, sourceType, sourceProperties,
-                    propertyMappings, resolverMappings, forgeWithMappings, ignoredProperties, forger, context, method);
+                    propertyMappings, resolverMappings, forgeWithMappings, ignoredProperties, forger, context, method,
+                    nullPropertyHandlingOverrides, skipNullAssignmentsAfterForge);
 
                 if (assignment != null)
                     sb.AppendLine($"                {destProp.Name} = {assignment},");
             }
 
             sb.AppendLine("            };");
+
+            // SkipNull properties — emit separate if-guard statements
+            foreach (var (destName, srcExpr, localVar) in skipNullAssignmentsAfterForge)
+            {
+                sb.AppendLine($"            if ({srcExpr} is {{ }} {localVar})");
+                sb.AppendLine($"            {{");
+                sb.AppendLine($"                result.{destName} = {localVar};");
+                sb.AppendLine($"            }}");
+            }
 
             // [AfterForge] callbacks
             foreach (var hookName in afterForgeHooks)
@@ -1144,21 +1183,48 @@ internal sealed class ForgeCodeEmitter
         }
         else
         {
-            // Object initializer pattern (existing behavior)
-            sb.AppendLine($"            return new {destinationType.ToDisplayString()}");
-            sb.AppendLine("            {");
+            // Object initializer pattern
+            var skipNullAssignmentsPlain = new List<(string DestPropName, string SourceExpr, string LocalVarName)>();
+            var plainAssignments = new List<(string Name, string Expr)>();
 
-            foreach (var destProp in destProperties)
+            foreach (var destProp in destProperties.Where(p => p.SetMethod != null))
             {
                 var assignment = GeneratePropertyAssignment(
                     destProp, sourceParam, sourceType, sourceProperties,
-                    propertyMappings, resolverMappings, forgeWithMappings, ignoredProperties, forger, context, method);
+                    propertyMappings, resolverMappings, forgeWithMappings, ignoredProperties, forger, context, method,
+                    nullPropertyHandlingOverrides, skipNullAssignmentsPlain);
 
                 if (assignment != null)
-                    sb.AppendLine($"                {destProp.Name} = {assignment},");
+                    plainAssignments.Add((destProp.Name, assignment));
             }
 
-            sb.AppendLine("            };");
+            if (skipNullAssignmentsPlain.Count > 0)
+            {
+                // SkipNull properties exist — need a variable so we can emit if-guards after the initializer
+                sb.AppendLine($"            var result = new {destinationType.ToDisplayString()}");
+                sb.AppendLine("            {");
+                foreach (var (name, expr) in plainAssignments)
+                    sb.AppendLine($"                {name} = {expr},");
+                sb.AppendLine("            };");
+
+                foreach (var (destName, srcExpr, localVar) in skipNullAssignmentsPlain)
+                {
+                    sb.AppendLine($"            if ({srcExpr} is {{ }} {localVar})");
+                    sb.AppendLine($"            {{");
+                    sb.AppendLine($"                result.{destName} = {localVar};");
+                    sb.AppendLine($"            }}");
+                }
+
+                sb.AppendLine("            return result;");
+            }
+            else
+            {
+                sb.AppendLine($"            return new {destinationType.ToDisplayString()}");
+                sb.AppendLine("            {");
+                foreach (var (name, expr) in plainAssignments)
+                    sb.AppendLine($"                {name} = {expr},");
+                sb.AppendLine("            };");
+            }
         }
 
         sb.AppendLine("        }");
@@ -1168,6 +1234,7 @@ internal sealed class ForgeCodeEmitter
 
     /// <summary>
     /// Generates a property assignment expression string, or null if the property should be skipped.
+    /// When NullPropertyHandling.SkipNull applies, returns null and adds the property to <paramref name="skipNullAssignments"/>.
     /// </summary>
     private string? GeneratePropertyAssignment(
         IPropertySymbol destProp,
@@ -1180,7 +1247,9 @@ internal sealed class ForgeCodeEmitter
         HashSet<string> ignoredProperties,
         ForgerInfo forger,
         SourceProductionContext context,
-        IMethodSymbol method)
+        IMethodSymbol method,
+        Dictionary<string, int> nullPropertyHandlingOverrides,
+        List<(string DestPropName, string SourceExpr, string LocalVarName)>? skipNullAssignments = null)
     {
         // Skip ignored properties
         if (ignoredProperties.Contains(destProp.Name))
@@ -1218,6 +1287,29 @@ internal sealed class ForgeCodeEmitter
             }
             if (isLiftedValueType && destProp.Type.IsValueType && GetNullableUnderlyingType(destProp.Type) == null)
                 return $"({destProp.Type.ToDisplayString()})({sourceExpr})!";
+
+            // Check for nullable ref → non-nullable ref mismatch
+            if (sourceLeafType != null && IsNullableToNonNullableReferenceType(sourceLeafType, destProp.Type))
+            {
+                var strategy = ResolveNullPropertyHandling(destProp.Name, nullPropertyHandlingOverrides);
+                ReportFM0007(context, method, sourceType.Name, sourcePropName, destProp.ContainingType.Name, destProp.Name);
+                if (strategy == 1 && skipNullAssignments != null) // SkipNull
+                {
+                    // Init-only properties cannot be assigned after initialization; fall back to NullForgiving
+                    if (destProp.SetMethod?.IsInitOnly == true)
+                        return $"{sourceExpr}!";
+                    var localVar = GenerateSafeVariableName(destProp.Type) + "_" + destProp.Name;
+                    skipNullAssignments.Add((destProp.Name, sourceExpr, localVar));
+                    return null;
+                }
+                var handledExpr = ApplyNullPropertyHandlingExpression(
+                    sourceExpr, destProp.Type, destProp.Name,
+                    destProp.ContainingType.Name, strategy);
+                if (handledExpr != null) return handledExpr;
+                return $"{sourceExpr}!"; // Final fallback
+            }
+
+            // Handle null-conditional on reference types (non-nullable ref mismatch not detected — e.g., oblivious types)
             var nullForgiving = hasNullConditional && destProp.Type.NullableAnnotation != NullableAnnotation.Annotated ? "!" : "";
             return $"{sourceExpr}{nullForgiving}";
         }
@@ -1230,8 +1322,30 @@ internal sealed class ForgeCodeEmitter
         {
             if (IsNullableToNonNullableValueType(sourceProp.Type, destProp.Type))
                 return $"({destProp.Type.ToDisplayString()}){sourceParam}.{sourceProp.Name}!";
-            else
-                return $"{sourceParam}.{sourceProp.Name}";
+
+            // Check for nullable ref → non-nullable ref mismatch
+            if (IsNullableToNonNullableReferenceType(sourceProp.Type, destProp.Type))
+            {
+                var strategy = ResolveNullPropertyHandling(destProp.Name, nullPropertyHandlingOverrides);
+                ReportFM0007(context, method, sourceType.Name, sourceProp.Name, destProp.ContainingType.Name, destProp.Name);
+                var sourceExprConv = $"{sourceParam}.{sourceProp.Name}";
+                if (strategy == 1 && skipNullAssignments != null) // SkipNull
+                {
+                    // Init-only properties cannot be assigned after initialization; fall back to NullForgiving
+                    if (destProp.SetMethod?.IsInitOnly == true)
+                        return $"{sourceExprConv}!";
+                    var localVar = GenerateSafeVariableName(destProp.Type) + "_" + destProp.Name;
+                    skipNullAssignments.Add((destProp.Name, sourceExprConv, localVar));
+                    return null;
+                }
+                var handledExpr = ApplyNullPropertyHandlingExpression(
+                    sourceExprConv, destProp.Type, destProp.Name,
+                    destProp.ContainingType.Name, strategy);
+                if (handledExpr != null) return handledExpr;
+                return $"{sourceExprConv}!"; // Final fallback
+            }
+
+            return $"{sourceParam}.{sourceProp.Name}";
         }
 
         // Compatible enum cast: EnumA -> EnumB (different namespaces, same members)
@@ -1243,9 +1357,36 @@ internal sealed class ForgeCodeEmitter
         }
 
         // Try automatic flattening: destProp "CustomerName" → source.Customer.Name
-        var flattenResult = TryAutoFlatten(destProp, sourceParam, sourceType);
+        var flattenResult = TryAutoFlatten(destProp, sourceParam, sourceType, out var flattenLeafType);
         if (flattenResult != null)
+        {
+            // Check for nullable ref → non-nullable ref mismatch on auto-flattened result
+            if (flattenLeafType != null && IsNullableToNonNullableReferenceType(flattenLeafType, destProp.Type))
+            {
+                var strategy = ResolveNullPropertyHandling(destProp.Name, nullPropertyHandlingOverrides);
+                // Extract source property path from flattened expression (e.g., "source.Customer?.Name" → "Customer?.Name")
+                var flattenSourcePropName = flattenResult.StartsWith(sourceParam + ".")
+                    ? flattenResult.Substring(sourceParam.Length + 1)
+                    : flattenResult.StartsWith(sourceParam + "?.")
+                        ? flattenResult.Substring(sourceParam.Length + 2)
+                        : destProp.Name;
+                ReportFM0007(context, method, sourceType.Name, flattenSourcePropName, destProp.ContainingType.Name, destProp.Name);
+                if (strategy == 1 && skipNullAssignments != null) // SkipNull
+                {
+                    if (destProp.SetMethod?.IsInitOnly == true)
+                        return $"{flattenResult}!";
+                    var localVar = GenerateSafeVariableName(destProp.Type) + "_" + destProp.Name;
+                    skipNullAssignments.Add((destProp.Name, flattenResult, localVar));
+                    return null;
+                }
+                var handledExpr = ApplyNullPropertyHandlingExpression(
+                    flattenResult, destProp.Type, destProp.Name,
+                    destProp.ContainingType.Name, strategy);
+                if (handledExpr != null) return handledExpr;
+                return $"{flattenResult}!";
+            }
             return flattenResult;
+        }
 
         return null;
     }
@@ -1386,10 +1527,13 @@ internal sealed class ForgeCodeEmitter
     /// <summary>
     /// Generates a mapping expression for a constructor parameter, handling Nullable&lt;T&gt; to T.
     /// </summary>
-    private static string GenerateCtorParamExpression(
+    private string GenerateCtorParamExpression(
         string sourceExpression,
         ITypeSymbol? sourcePropertyType,
-        ITypeSymbol destPropertyType)
+        ITypeSymbol destPropertyType,
+        string destPropertyName,
+        string destTypeName,
+        Dictionary<string, int> nullPropertyHandlingOverrides)
     {
         if (sourcePropertyType != null && IsNullableToNonNullableValueType(sourcePropertyType, destPropertyType))
             return sourceExpression.Contains("?.") ? $"({destPropertyType.ToDisplayString()})({sourceExpression})!" : $"({destPropertyType.ToDisplayString()}){sourceExpression}!";
@@ -1416,6 +1560,18 @@ internal sealed class ForgeCodeEmitter
                 return enumCastExpr;
         }
 
+        // Handle nullable ref → non-nullable ref for constructor parameters
+        // Apply strategy: SkipNull falls back to NullForgiving (ctor params can't be skipped)
+        if (sourcePropertyType != null && IsNullableToNonNullableReferenceType(sourcePropertyType, destPropertyType))
+        {
+            var strategy = ResolveNullPropertyHandling(destPropertyName, nullPropertyHandlingOverrides);
+            // SkipNull (1) is not applicable for ctor params — fall back to NullForgiving
+            if (strategy == 1)
+                strategy = 0;
+            return ApplyNullPropertyHandlingExpression(sourceExpression, destPropertyType, destPropertyName, destTypeName, strategy)
+                   ?? $"{sourceExpression}!"; // fallback if ApplyNullPropertyHandlingExpression returns null (SkipNull)
+        }
+
         return sourceExpression;
     }
 
@@ -1423,10 +1579,11 @@ internal sealed class ForgeCodeEmitter
     /// Tries automatic flattening: matches dest property "CustomerName" to source path "Customer.Name".
     /// Walks the source type hierarchy looking for concatenated property name matches.
     /// </summary>
-    private string? TryAutoFlatten(IPropertySymbol destProp, string sourceParam, INamedTypeSymbol sourceType)
+    private string? TryAutoFlatten(IPropertySymbol destProp, string sourceParam, INamedTypeSymbol sourceType, out ITypeSymbol? leafTypeOut)
     {
         var destName = destProp.Name;
         var (expr, leafType) = TryAutoFlattenRecursive(destName, 0, sourceParam, sourceType);
+        leafTypeOut = leafType;
         if (expr == null || leafType == null)
             return null;
 
@@ -1743,6 +1900,42 @@ internal sealed class ForgeCodeEmitter
     }
 
     /// <summary>
+    /// Gets per-property NullPropertyHandling overrides from [ForgeProperty] attributes.
+    /// Returns a dictionary mapping destination property name to the NullPropertyHandling int value.
+    /// Only includes properties where the override was explicitly set (not the -1 sentinel).
+    /// </summary>
+    private Dictionary<string, int> GetNullPropertyHandlingOverrides(IMethodSymbol method)
+    {
+        var overrides = new Dictionary<string, int>(StringComparer.Ordinal);
+
+        if (_forgePropertyAttributeSymbol == null)
+            return overrides;
+
+        foreach (var attr in method.GetAttributes())
+        {
+            if (!SymbolEqualityComparer.Default.Equals(attr.AttributeClass, _forgePropertyAttributeSymbol))
+                continue;
+
+            if (attr.ConstructorArguments.Length >= 2)
+            {
+                var destinationProperty = attr.ConstructorArguments[1].Value as string;
+                if (string.IsNullOrEmpty(destinationProperty))
+                    continue;
+
+                foreach (var named in attr.NamedArguments)
+                {
+                    if (named.Key == "NullPropertyHandling" && named.Value.Value is int value && value != -1)
+                    {
+                        overrides[destinationProperty!] = value;
+                    }
+                }
+            }
+        }
+
+        return overrides;
+    }
+
+    /// <summary>
     /// Gets resolver mappings from [ForgeFrom] attributes.
     /// Returns a dictionary mapping destination property name to resolver method name.
     /// </summary>
@@ -1911,9 +2104,10 @@ internal sealed class ForgeCodeEmitter
         HashSet<string> ignoredProperties,
         Dictionary<string, string> propertyMappings,
         Dictionary<string, string> resolverMappings,
-        Dictionary<string, string> forgeWithMappings)
+        Dictionary<string, string> forgeWithMappings,
+        Dictionary<string, int> nullPropertyHandlingOverrides)
     {
-        ResolveInheritedConfig(method, forger, context, ignoredProperties, propertyMappings, resolverMappings, forgeWithMappings, new HashSet<string>());
+        ResolveInheritedConfig(method, forger, context, ignoredProperties, propertyMappings, resolverMappings, forgeWithMappings, nullPropertyHandlingOverrides, new HashSet<string>());
     }
 
     private void ResolveInheritedConfig(
@@ -1924,6 +2118,7 @@ internal sealed class ForgeCodeEmitter
         Dictionary<string, string> propertyMappings,
         Dictionary<string, string> resolverMappings,
         Dictionary<string, string> forgeWithMappings,
+        Dictionary<string, int> nullPropertyHandlingOverrides,
         HashSet<string> visited)
     {
         var includeBaseForges = GetIncludeBaseForgeAttributes(method);
@@ -1998,7 +2193,8 @@ internal sealed class ForgeCodeEmitter
             var basePropertyMappings = GetPropertyMappings(baseMethod);
             var baseResolverMappings = GetResolverMappings(baseMethod);
             var baseForgeWithMappings = GetForgeWithMappings(baseMethod);
-            ResolveInheritedConfig(baseMethod, forger, context, baseIgnored, basePropertyMappings, baseResolverMappings, baseForgeWithMappings, visited);
+            var baseNullPropertyHandlingOverrides = GetNullPropertyHandlingOverrides(baseMethod);
+            ResolveInheritedConfig(baseMethod, forger, context, baseIgnored, basePropertyMappings, baseResolverMappings, baseForgeWithMappings, baseNullPropertyHandlingOverrides, visited);
 
             // Merge all base config into derived using first-wins semantics + FM0021 override reporting
             var diagLocation = attrData.ApplicationSyntaxReference?.GetSyntax().GetLocation() ?? method.Locations.FirstOrDefault();
@@ -2054,6 +2250,13 @@ internal sealed class ForgeCodeEmitter
                 if (!IsAlreadyConfigured(kvp.Key))
                     forgeWithMappings[kvp.Key] = kvp.Value;
             }
+
+            // Merge base NullPropertyHandling overrides using first-wins semantics
+            foreach (var kvp in baseNullPropertyHandlingOverrides)
+            {
+                if (!nullPropertyHandlingOverrides.ContainsKey(kvp.Key))
+                    nullPropertyHandlingOverrides[kvp.Key] = kvp.Value;
+            }
         }
     }
 
@@ -2071,8 +2274,9 @@ internal sealed class ForgeCodeEmitter
         var propertyMappings = GetPropertyMappings(method);
         var resolverMappings = GetResolverMappings(method);
         var forgeWithMappings = GetForgeWithMappings(method);
+        var nullPropertyHandlingOverrides = GetNullPropertyHandlingOverrides(method);
 
-        ResolveInheritedConfig(method, forger, context, ignoredProperties, propertyMappings, resolverMappings, forgeWithMappings);
+        ResolveInheritedConfig(method, forger, context, ignoredProperties, propertyMappings, resolverMappings, forgeWithMappings, nullPropertyHandlingOverrides);
 
         var beforeForgeHooks = GetBeforeForgeHooks(method)
             .Where(h => ValidateBeforeForgeHook(h, sourceType, forger, context, method))
@@ -2087,7 +2291,8 @@ internal sealed class ForgeCodeEmitter
             resolverMappings,
             forgeWithMappings,
             beforeForgeHooks,
-            afterForgeHooks);
+            afterForgeHooks,
+            nullPropertyHandlingOverrides);
     }
 
     /// <summary>
@@ -2407,6 +2612,7 @@ internal sealed class ForgeCodeEmitter
         var forgeWithMappings = cfg.ForgeWithMappings;
         var beforeForgeHooks = cfg.BeforeForgeHooks;
         var afterForgeHooks = cfg.AfterForgeHooks;
+        var nullPropertyHandlingOverrides = cfg.NullPropertyHandlingOverrides;
 
         // Method signature
         var accessibility = GetAccessibilityKeyword(method.DeclaredAccessibility);
@@ -2431,7 +2637,7 @@ internal sealed class ForgeCodeEmitter
 
         // Get mappable properties
         var sourceProperties = GetMappableProperties(sourceNamedType);
-        var destProperties = GetMappableProperties(destinationType).Where(p => p.SetMethod != null);
+        var destProperties = GetMappableProperties(destinationType).Where(p => p.SetMethod != null && !p.SetMethod.IsInitOnly);
 
         foreach (var destProp in destProperties)
         {
@@ -2589,6 +2795,26 @@ internal sealed class ForgeCodeEmitter
                 {
                     sb.AppendLine($"            {destParam}.{destProp.Name} = ({destProp.Type.ToDisplayString()})({sourceExpr})!;");
                 }
+                else if (sourceLeafType != null && IsNullableToNonNullableReferenceType(sourceLeafType, destProp.Type))
+                {
+                    var strategy = ResolveNullPropertyHandling(destProp.Name, nullPropertyHandlingOverrides);
+                    ReportFM0007(context, method, sourceNamedType.Name, sourcePropName, destProp.ContainingType.Name, destProp.Name);
+                    if (strategy == 1) // SkipNull
+                    {
+                        var localVar = GenerateSafeVariableName(destProp.Type) + "_" + destProp.Name;
+                        sb.AppendLine($"            if ({sourceExpr} is {{ }} {localVar})");
+                        sb.AppendLine($"            {{");
+                        sb.AppendLine($"                {destParam}.{destProp.Name} = {localVar};");
+                        sb.AppendLine($"            }}");
+                    }
+                    else
+                    {
+                        var handledExpr = ApplyNullPropertyHandlingExpression(
+                            sourceExpr, destProp.Type, destProp.Name,
+                            destProp.ContainingType.Name, strategy);
+                        sb.AppendLine($"            {destParam}.{destProp.Name} = {handledExpr ?? $"{sourceExpr}!"};");
+                    }
+                }
                 else
                 {
                     // Add null-forgiving operator if we used null-conditional and dest is non-nullable
@@ -2607,6 +2833,27 @@ internal sealed class ForgeCodeEmitter
                 if (IsNullableToNonNullableValueType(sourceProp.Type, destProp.Type))
                 {
                     sb.AppendLine($"            {destParam}.{destProp.Name} = ({destProp.Type.ToDisplayString()}){sourceParam}.{sourceProp.Name}!;");
+                }
+                else if (IsNullableToNonNullableReferenceType(sourceProp.Type, destProp.Type))
+                {
+                    var strategy = ResolveNullPropertyHandling(destProp.Name, nullPropertyHandlingOverrides);
+                    ReportFM0007(context, method, sourceNamedType.Name, sourceProp.Name, destProp.ContainingType.Name, destProp.Name);
+                    var sourceExprConv = $"{sourceParam}.{sourceProp.Name}";
+                    if (strategy == 1) // SkipNull
+                    {
+                        var localVar = GenerateSafeVariableName(destProp.Type) + "_" + destProp.Name;
+                        sb.AppendLine($"            if ({sourceExprConv} is {{ }} {localVar})");
+                        sb.AppendLine($"            {{");
+                        sb.AppendLine($"                {destParam}.{destProp.Name} = {localVar};");
+                        sb.AppendLine($"            }}");
+                    }
+                    else
+                    {
+                        var handledExpr = ApplyNullPropertyHandlingExpression(
+                            sourceExprConv, destProp.Type, destProp.Name,
+                            destProp.ContainingType.Name, strategy);
+                        sb.AppendLine($"            {destParam}.{destProp.Name} = {handledExpr ?? $"{sourceExprConv}!"};");
+                    }
                 }
                 else
                 {
@@ -3015,6 +3262,114 @@ internal sealed class ForgeCodeEmitter
             return false;
 
         return SymbolEqualityComparer.Default.Equals(sourceUnderlying, dest);
+    }
+
+    /// <summary>
+    /// Checks if source is a nullable reference type and dest is a non-nullable reference type.
+    /// Intentionally excludes NullableAnnotation.None (oblivious) destinations since they don't produce CS8601.
+    /// </summary>
+    private static bool IsNullableToNonNullableReferenceType(ITypeSymbol source, ITypeSymbol dest)
+    {
+        return source.IsReferenceType
+            && dest.IsReferenceType
+            && source.NullableAnnotation == NullableAnnotation.Annotated
+            && dest.NullableAnnotation == NullableAnnotation.NotAnnotated;
+    }
+
+    /// <summary>
+    /// Reports FM0007 diagnostic for nullable ref → non-nullable ref mapping, respecting SuppressDiagnostics.
+    /// </summary>
+    private void ReportFM0007(
+        SourceProductionContext context,
+        IMethodSymbol method,
+        string sourceTypeName,
+        string sourcePropertyName,
+        string destTypeName,
+        string destPropertyName)
+    {
+        ReportDiagnosticIfNotSuppressed(context,
+            DiagnosticDescriptors.NullableToNonNullableMapping,
+            method.Locations.FirstOrDefault(),
+            sourceTypeName, sourcePropertyName, destTypeName, destPropertyName);
+    }
+
+    /// <summary>
+    /// Resolves the effective NullPropertyHandling strategy for a destination property.
+    /// Priority: per-property override > forger config > assembly default.
+    /// </summary>
+    private int ResolveNullPropertyHandling(string destPropertyName, Dictionary<string, int> overrides)
+    {
+        if (overrides.TryGetValue(destPropertyName, out var perProperty))
+            return perProperty;
+        return _config.NullPropertyHandling;
+    }
+
+    /// <summary>
+    /// Generates a type-appropriate default expression for the CoalesceToDefault strategy.
+    /// Returns null if no suitable default can be determined (caller should fall back to NullForgiving).
+    /// </summary>
+    private static string? GenerateCoalesceDefault(ITypeSymbol destType)
+    {
+        // string → ""
+        if (destType.SpecialType == SpecialType.System_String)
+            return "\"\"";
+
+        // T[] → Array.Empty<T>()
+        if (destType is IArrayTypeSymbol arrayType)
+        {
+            var elementDisplay = arrayType.ElementType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+            return $"global::System.Array.Empty<{elementDisplay}>()";
+        }
+
+        // Named types with parameterless constructor → new FQN()
+        // Skip abstract types and interfaces — they cannot be instantiated
+        if (destType is INamedTypeSymbol namedType && !namedType.IsAbstract && namedType.TypeKind != TypeKind.Interface)
+        {
+            var hasParameterlessCtor = namedType.InstanceConstructors
+                .Any(c => c.Parameters.Length == 0 && c.DeclaredAccessibility == Accessibility.Public);
+
+            if (hasParameterlessCtor)
+            {
+                return $"new {namedType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}()";
+            }
+        }
+
+        // No suitable default — caller falls back to NullForgiving
+        return null;
+    }
+
+    /// <summary>
+    /// Applies NullPropertyHandling strategy to a property assignment expression.
+    /// Returns the modified expression, or null when the strategy is SkipNull (which requires separate statement handling by the caller).
+    /// </summary>
+    private string? ApplyNullPropertyHandlingExpression(
+        string sourceExpr,
+        ITypeSymbol destType,
+        string destPropertyName,
+        string destTypeName,
+        int strategy)
+    {
+        switch (strategy)
+        {
+            case 0: // NullForgiving
+                return $"{sourceExpr}!";
+
+            case 1: // SkipNull — cannot be expressed as a single expression in object initializer
+                return null;
+
+            case 2: // CoalesceToDefault
+                var defaultExpr = GenerateCoalesceDefault(destType);
+                if (defaultExpr != null)
+                    return $"{sourceExpr} ?? {defaultExpr}";
+                // Fallback to NullForgiving — caller already reported FM0007
+                return $"{sourceExpr}!";
+
+            case 3: // ThrowException
+                return $"{sourceExpr} ?? throw new global::System.ArgumentNullException(\"{sourceExpr}\", \"Cannot assign null source property '{sourceExpr}' to non-nullable destination '{destTypeName}.{destPropertyName}'.\")";
+
+            default:
+                return $"{sourceExpr}!";
+        }
     }
 
     private static string GetAccessibilityKeyword(Accessibility accessibility)
