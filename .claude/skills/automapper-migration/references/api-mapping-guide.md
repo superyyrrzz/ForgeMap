@@ -169,7 +169,7 @@ Controls how nullable-to-non-nullable **reference type** property assignments an
 // Per-forger override
 [ForgeMap(NullPropertyHandling = NullPropertyHandling.SkipNull)]
 
-// Per-property override (sentinel -1 = inherit)
+// Per-property override (omit NullPropertyHandling to inherit)
 [ForgeProperty(nameof(Source.Tags), nameof(Dest.Tags),
     NullPropertyHandling = NullPropertyHandling.ThrowException)]
 ```
