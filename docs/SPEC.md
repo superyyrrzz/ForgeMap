@@ -1003,7 +1003,7 @@ namespace ForgeMap
     /// <summary>
     /// Marks a partial class as a ForgeMap forger.
     /// </summary>
-    [AttributeUsage(AttributeTargets.Class, AllowMultiple = false)]
+    [AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = false)]
     public sealed class ForgeMapAttribute : Attribute
     {
         public NullHandling NullHandling { get; set; } = NullHandling.ReturnNull;
@@ -1015,7 +1015,7 @@ namespace ForgeMap
     /// <summary>
     /// Ignores specified properties during forging.
     /// </summary>
-    [AttributeUsage(AttributeTargets.Method, AllowMultiple = true)]
+    [AttributeUsage(AttributeTargets.Method, AllowMultiple = true, Inherited = false)]
     public sealed class IgnoreAttribute : Attribute
     {
         public IgnoreAttribute(params string[] propertyNames);
@@ -1025,7 +1025,7 @@ namespace ForgeMap
     /// <summary>
     /// Maps a source property to a differently-named destination property.
     /// </summary>
-    [AttributeUsage(AttributeTargets.Method, AllowMultiple = true)]
+    [AttributeUsage(AttributeTargets.Method, AllowMultiple = true, Inherited = false)]
     public sealed class ForgePropertyAttribute : Attribute
     {
         public ForgePropertyAttribute(string sourceProperty, string destinationProperty);
@@ -1037,7 +1037,7 @@ namespace ForgeMap
     /// <summary>
     /// Maps a destination property using a custom resolver method.
     /// </summary>
-    [AttributeUsage(AttributeTargets.Method, AllowMultiple = true)]
+    [AttributeUsage(AttributeTargets.Method, AllowMultiple = true, Inherited = false)]
     public sealed class ForgeFromAttribute : Attribute
     {
         public ForgeFromAttribute(string destinationProperty, string resolverMethodName);

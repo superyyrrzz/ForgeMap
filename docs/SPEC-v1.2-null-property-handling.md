@@ -259,7 +259,7 @@ FM0007 (`NullableToNonNullableMapping`) is defined in `DiagnosticDescriptors.cs`
 
 ### New Behavior
 
-The generator reports FM0007 whenever a nullable reference type source property is assigned to a non-nullable reference type destination property, regardless of the chosen `NullPropertyHandling` strategy. This gives users visibility into mismatches even when the strategy silently handles them.
+The generator reports FM0007 for each direct property-to-property mapping where a nullable reference type source property is assigned to a non-nullable reference type destination property, regardless of the chosen `NullPropertyHandling` strategy. Properties mapped via `[ForgeFrom]` custom resolvers are exempt from FM0007 (see [Interaction with Existing Features](#interaction-with-existing-features)). This gives users visibility into nullable mismatches for standard mappings even when the strategy silently handles them.
 
 ### Diagnostic Definition (unchanged)
 
