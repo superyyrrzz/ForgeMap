@@ -23,4 +23,10 @@ public sealed class ForgeMapDefaultsAttribute : Attribute
     /// Gets or sets the default property matching mode for all forgers in the assembly.
     /// </summary>
     public PropertyMatching PropertyMatching { get; set; } = PropertyMatching.ByName;
+
+    /// <summary>
+    /// Gets or sets the default null property handling mode for all forgers in the assembly.
+    /// Default is <see cref="NullPropertyHandling.NullForgiving"/>.
+    /// </summary>
+    public NullPropertyHandling NullPropertyHandling { get; set; } = NullPropertyHandling.NullForgiving;
 }

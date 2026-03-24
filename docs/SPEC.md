@@ -33,6 +33,7 @@
 | **v0.6** | `[BeforeForge]`, `[AfterForge]`, `ForgeInto()` |
 | **v1.0** | DI integration, full diagnostics, NuGet publish |
 | **v1.1** | Mapping inheritance, polymorphic dispatch, inherited property resolution ([spec](SPEC-v1.1-inheritance.md)) |
+| **v1.2** | Null-safe property assignment: `NullPropertyHandling` enum with 4 strategies, three-tier config, FM0007 activation ([spec](SPEC-v1.2-null-property-handling.md)) |
 | *Future* | `[ConvertWith]`, `ITypeConverter<S,D>` |
 | *Future* | `ProjectTo<T>()` |
 
@@ -951,7 +952,7 @@ For project-wide defaults, use the `[ForgeMapDefaults]` assembly attribute:
 
 ---
 
-## Limitations (v1.1)
+## Limitations (v1.2)
 
 The following AutoMapper features are **not supported** in v1.1:
 
@@ -1004,6 +1005,7 @@ namespace ForgeMap
         public NullHandling NullHandling { get; set; } = NullHandling.ReturnNull;
         public PropertyMatching PropertyMatching { get; set; } = PropertyMatching.ByName;
         public string[]? SuppressDiagnostics { get; set; }
+        public NullPropertyHandling NullPropertyHandling { get; set; } = NullPropertyHandling.NullForgiving;
     }
 
     /// <summary>
@@ -1025,6 +1027,7 @@ namespace ForgeMap
         public ForgePropertyAttribute(string sourceProperty, string destinationProperty);
         public string SourceProperty { get; }
         public string DestinationProperty { get; }
+        public NullPropertyHandling NullPropertyHandling { get; set; } = (NullPropertyHandling)(-1); // inherit
     }
 
     /// <summary>
@@ -1090,6 +1093,7 @@ namespace ForgeMap
         public NullHandling NullHandling { get; set; }
         public bool GenerateCollectionMappings { get; set; }
         public PropertyMatching PropertyMatching { get; set; }
+        public NullPropertyHandling NullPropertyHandling { get; set; } = NullPropertyHandling.NullForgiving;
     }
 
     public enum NullHandling
@@ -1104,6 +1108,21 @@ namespace ForgeMap
         ByName,
         /// <summary>Case-insensitive property name matching.</summary>
         ByNameCaseInsensitive
+    }
+
+    /// <summary>
+    /// Controls how a nullable source reference property is assigned to a non-nullable destination property.
+    /// </summary>
+    public enum NullPropertyHandling
+    {
+        /// <summary>Append null-forgiving operator (source.X!).</summary>
+        NullForgiving,
+        /// <summary>Skip assignment when source is null.</summary>
+        SkipNull,
+        /// <summary>Use ?? with a type-appropriate default.</summary>
+        CoalesceToDefault,
+        /// <summary>Throw ArgumentNullException when source is null.</summary>
+        ThrowException
     }
 
     /// <summary>
