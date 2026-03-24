@@ -1364,7 +1364,13 @@ internal sealed class ForgeCodeEmitter
             if (flattenLeafType != null && IsNullableToNonNullableReferenceType(flattenLeafType, destProp.Type))
             {
                 var strategy = ResolveNullPropertyHandling(destProp.Name, nullPropertyHandlingOverrides);
-                ReportFM0007(context, method, sourceType.Name, destProp.Name, destProp.ContainingType.Name, destProp.Name);
+                // Extract source property path from flattened expression (e.g., "source.Customer?.Name" → "Customer?.Name")
+                var flattenSourcePropName = flattenResult.StartsWith(sourceParam + ".")
+                    ? flattenResult.Substring(sourceParam.Length + 1)
+                    : flattenResult.StartsWith(sourceParam + "?.")
+                        ? flattenResult.Substring(sourceParam.Length + 2)
+                        : destProp.Name;
+                ReportFM0007(context, method, sourceType.Name, flattenSourcePropName, destProp.ContainingType.Name, destProp.Name);
                 if (strategy == 1 && skipNullAssignments != null) // SkipNull
                 {
                     if (destProp.SetMethod?.IsInitOnly == true)
@@ -3316,7 +3322,8 @@ internal sealed class ForgeCodeEmitter
         }
 
         // Named types with parameterless constructor → new FQN()
-        if (destType is INamedTypeSymbol namedType)
+        // Skip abstract types and interfaces — they cannot be instantiated
+        if (destType is INamedTypeSymbol namedType && !namedType.IsAbstract && namedType.TypeKind != TypeKind.Interface)
         {
             var hasParameterlessCtor = namedType.InstanceConstructors
                 .Any(c => c.Parameters.Length == 0 && c.DeclaredAccessibility == Accessibility.Public);
