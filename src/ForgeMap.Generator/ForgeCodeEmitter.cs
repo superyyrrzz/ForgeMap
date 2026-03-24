@@ -1183,7 +1183,7 @@ internal sealed class ForgeCodeEmitter
             var skipNullAssignmentsPlain = new List<(string DestPropName, string SourceExpr, string LocalVarName)>();
             var plainAssignments = new List<(string Name, string Expr)>();
 
-            foreach (var destProp in destProperties)
+            foreach (var destProp in destProperties.Where(p => p.SetMethod != null))
             {
                 var assignment = GeneratePropertyAssignment(
                     destProp, sourceParam, sourceType, sourceProperties,
@@ -1291,13 +1291,16 @@ internal sealed class ForgeCodeEmitter
                 ReportFM0007(context, method, sourceType.Name, sourcePropName, destProp.ContainingType.Name, destProp.Name);
                 if (strategy == 1 && skipNullAssignments != null) // SkipNull
                 {
+                    // Init-only properties cannot be assigned after initialization; fall back to NullForgiving
+                    if (destProp.SetMethod?.IsInitOnly == true)
+                        return $"{sourceExpr}!";
                     var localVar = GenerateSafeVariableName(destProp.Type) + "_" + destProp.Name;
                     skipNullAssignments.Add((destProp.Name, sourceExpr, localVar));
                     return null;
                 }
                 var handledExpr = ApplyNullPropertyHandlingExpression(
                     sourceExpr, destProp.Type, destProp.Name,
-                    sourceType.Name, destProp.ContainingType.Name, strategy, context, method);
+                    sourceType.Name, destProp.ContainingType.Name, strategy);
                 if (handledExpr != null) return handledExpr;
                 return $"{sourceExpr}!"; // Final fallback
             }
@@ -1324,13 +1327,16 @@ internal sealed class ForgeCodeEmitter
                 var sourceExprConv = $"{sourceParam}.{sourceProp.Name}";
                 if (strategy == 1 && skipNullAssignments != null) // SkipNull
                 {
+                    // Init-only properties cannot be assigned after initialization; fall back to NullForgiving
+                    if (destProp.SetMethod?.IsInitOnly == true)
+                        return $"{sourceExprConv}!";
                     var localVar = GenerateSafeVariableName(destProp.Type) + "_" + destProp.Name;
                     skipNullAssignments.Add((destProp.Name, sourceExprConv, localVar));
                     return null;
                 }
                 var handledExpr = ApplyNullPropertyHandlingExpression(
                     sourceExprConv, destProp.Type, destProp.Name,
-                    sourceType.Name, destProp.ContainingType.Name, strategy, context, method);
+                    sourceType.Name, destProp.ContainingType.Name, strategy);
                 if (handledExpr != null) return handledExpr;
                 return $"{sourceExprConv}!"; // Final fallback
             }
@@ -2753,7 +2759,7 @@ internal sealed class ForgeCodeEmitter
                     {
                         var handledExpr = ApplyNullPropertyHandlingExpression(
                             sourceExpr, destProp.Type, destProp.Name,
-                            sourceNamedType.Name, destProp.ContainingType.Name, strategy, context, method);
+                            sourceNamedType.Name, destProp.ContainingType.Name, strategy);
                         sb.AppendLine($"            {destParam}.{destProp.Name} = {handledExpr ?? $"{sourceExpr}!"};");
                     }
                 }
@@ -2793,7 +2799,7 @@ internal sealed class ForgeCodeEmitter
                     {
                         var handledExpr = ApplyNullPropertyHandlingExpression(
                             sourceExprConv, destProp.Type, destProp.Name,
-                            sourceNamedType.Name, destProp.ContainingType.Name, strategy, context, method);
+                            sourceNamedType.Name, destProp.ContainingType.Name, strategy);
                         sb.AppendLine($"            {destParam}.{destProp.Name} = {handledExpr ?? $"{sourceExprConv}!"};");
                     }
                 }
@@ -3281,8 +3287,7 @@ internal sealed class ForgeCodeEmitter
 
     /// <summary>
     /// Applies NullPropertyHandling strategy to a property assignment expression.
-    /// Returns the modified expression, or null if the property should be handled as a separate statement (SkipNull).
-    /// The <paramref name="isSkipNull"/> out parameter indicates special handling is needed.
+    /// Returns the modified expression, or null when the strategy is SkipNull (which requires separate statement handling by the caller).
     /// </summary>
     private string? ApplyNullPropertyHandlingExpression(
         string sourceExpr,
@@ -3290,9 +3295,7 @@ internal sealed class ForgeCodeEmitter
         string destPropertyName,
         string sourceTypeName,
         string destTypeName,
-        int strategy,
-        SourceProductionContext context,
-        IMethodSymbol method)
+        int strategy)
     {
         switch (strategy)
         {
@@ -3306,16 +3309,12 @@ internal sealed class ForgeCodeEmitter
                 var defaultExpr = GenerateCoalesceDefault(destType);
                 if (defaultExpr != null)
                     return $"{sourceExpr} ?? {defaultExpr}";
-                // Fallback to NullForgiving + report FM0007
-                ReportDiagnosticIfNotSuppressed(context,
-                    DiagnosticDescriptors.NullableToNonNullableMapping,
-                    method.Locations.FirstOrDefault(),
-                    sourceTypeName, sourceExpr.Contains(".") ? sourceExpr.Split('.').Last() : sourceExpr,
-                    destTypeName, destPropertyName);
+                // Fallback to NullForgiving — caller already reported FM0007
                 return $"{sourceExpr}!";
 
             case 3: // ThrowException
-                return $"{sourceExpr} ?? throw new global::System.ArgumentNullException(nameof({sourceExpr}), \"Cannot assign null source property '{sourceTypeName}.{(sourceExpr.Contains(".") ? sourceExpr.Split('.').Last() : sourceExpr)}' to non-nullable destination '{destTypeName}.{destPropertyName}'.\")";
+                var propName = sourceExpr.Contains(".") ? sourceExpr.Split('.').Last() : sourceExpr;
+                return $"{sourceExpr} ?? throw new global::System.ArgumentNullException(\"{propName}\", \"Cannot assign null source property '{sourceTypeName}.{propName}' to non-nullable destination '{destTypeName}.{destPropertyName}'.\")";
 
             default:
                 return $"{sourceExpr}!";

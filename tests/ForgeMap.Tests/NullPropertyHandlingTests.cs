@@ -1,5 +1,6 @@
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
+using ForgeMap;
 using ForgeMap.Generator;
 using Xunit;
 using System.Diagnostics;
@@ -705,6 +706,52 @@ public class NullPropertyHandlingTests
 
     private static (IReadOnlyList<Diagnostic> Diagnostics, IReadOnlyList<SyntaxTree> GeneratedTrees) RunGenerator(string source)
     {
-        return SourceGeneratorTests.RunGenerator(source);
+        var syntaxTree = CSharpSyntaxTree.ParseText(source);
+
+        var abstractionsAssembly = typeof(ForgeMapAttribute).Assembly;
+        var references = new List<MetadataReference>
+        {
+            MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
+            MetadataReference.CreateFromFile(typeof(Console).Assembly.Location),
+            MetadataReference.CreateFromFile(abstractionsAssembly.Location)
+        };
+
+        var runtimeAssembly = AppDomain.CurrentDomain.GetAssemblies()
+            .FirstOrDefault(a => a.GetName().Name == "System.Runtime");
+        if (runtimeAssembly != null)
+            references.Add(MetadataReference.CreateFromFile(runtimeAssembly.Location));
+
+        var netstandardAssembly = AppDomain.CurrentDomain.GetAssemblies()
+            .FirstOrDefault(a => a.GetName().Name == "netstandard");
+        if (netstandardAssembly != null)
+            references.Add(MetadataReference.CreateFromFile(netstandardAssembly.Location));
+
+        // Add System.Collections for List<T> support
+        var collectionsAssembly = AppDomain.CurrentDomain.GetAssemblies()
+            .FirstOrDefault(a => a.GetName().Name == "System.Collections");
+        if (collectionsAssembly != null)
+            references.Add(MetadataReference.CreateFromFile(collectionsAssembly.Location));
+
+        var compilation = CSharpCompilation.Create(
+            "TestAssembly",
+            new[] { syntaxTree },
+            references,
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+
+        var generator = new ForgeMap.Generator.ForgeMapGenerator();
+
+        GeneratorDriver driver = CSharpGeneratorDriver.Create(generator);
+        driver = driver.RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out var diagnostics);
+
+        // Verify the output compilation has no errors (Comment 1 fix)
+        var compilationErrors = outputCompilation.GetDiagnostics()
+            .Where(d => d.Severity == DiagnosticSeverity.Error)
+            .ToList();
+        Assert.Empty(compilationErrors);
+
+        var runResult = driver.GetRunResult();
+        var generatedTrees = runResult.GeneratedTrees.ToList();
+
+        return (diagnostics.ToList(), generatedTrees);
     }
 }

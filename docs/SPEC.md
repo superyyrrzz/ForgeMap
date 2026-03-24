@@ -954,7 +954,7 @@ For project-wide defaults, use the `[ForgeMapDefaults]` assembly attribute:
 
 ## Limitations (v1.2)
 
-The following AutoMapper features are **not supported** in v1.1:
+The following AutoMapper features are **not supported** in v1.2:
 
 | Feature | Reason | Workaround |
 |---------|--------|------------|
