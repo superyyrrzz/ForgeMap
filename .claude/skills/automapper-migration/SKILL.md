@@ -16,6 +16,7 @@ It contains exact API mappings between AutoMapper and ForgeMap. Consult it for e
 
 - **Minimum ForgeMap version: 1.1.0** — `[IncludeBaseForge]`, `[ForgeAllDerived]`, compatible enum auto-conversion, and inherited property resolution all require it.
 - **NEVER write manual mapping code.** If ForgeMap can't support a required mapping, **stop and report the gap.** File an issue on `superyyrrzz/ForgeMap` with title `[Migration] <description>` and let the user decide.
+- **No git operations.** Do not run any git commands (checkout, commit, push, branch, etc.). The developer controls their own git workflow.
 
 ## Phases (each leaves the project green)
 
@@ -24,7 +25,7 @@ It contains exact API mappings between AutoMapper and ForgeMap. Consult it for e
 3. **Swap** — Replace AutoMapper impl with ForgeMap. All tests must pass.
 4. **Unwrap** — Delete abstraction. Call `_forger.Forge(source)` directly.
 
-Report progress to the user after each phase so they can review the changes and commit at their discretion.
+Report progress to the user after each phase and **wait for confirmation before proceeding** to the next phase. This gives the developer a chance to review the changes, run tests, and commit at their discretion.
 
 ## The routing shim (Phase 3) — this is the tricky part
 
