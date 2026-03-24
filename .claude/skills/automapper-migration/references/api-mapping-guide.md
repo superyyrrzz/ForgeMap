@@ -140,11 +140,41 @@ When `[ForgeAllDerived]` is on a base forge method, collection forge methods for
 
 ## Null Handling
 
+### Source-object null handling (v1.1)
+
 | AutoMapper | ForgeMap | Notes |
 |---|---|---|
 | Default: returns `default(TDestination)` for null source | `NullHandling.ReturnNull` (default) | Same behavior (default/null depending on destination type) |
 | Custom null handling | `NullHandling.ThrowException` | Set on `[ForgeMap]` or `[ForgeMapDefaults]` |
 | `.NullSubstitute(value)` | Not directly supported | Use `[AfterForge]` hook to substitute |
+
+### Nullable-property handling (v1.2)
+
+Controls how nullable-to-non-nullable **reference type** property assignments are generated. Does not apply to value types, `[ForgeFrom]` resolvers, or `[ForgeWith]` nested mappings.
+
+| AutoMapper | ForgeMap | Notes |
+|---|---|---|
+| Default (assigns null through / `AllowNullDestinationValues = true`) | `NullPropertyHandling.NullForgiving` (default) | `target.X = source.X!;` — same runtime behavior as AutoMapper |
+| `AllowNullCollections = false` | `NullPropertyHandling.CoalesceToDefault` | `target.X = source.X ?? <default>;` — type-aware defaults (empty string, empty list, etc.) |
+| `.NullSubstitute(value)` per property | `[ForgeFrom]` resolver returning the substitute | No direct attribute; resolver has full control |
+| No equivalent | `NullPropertyHandling.SkipNull` | `if (source.X is { } v) target.X = v;` — destination keeps its initialized value |
+| No equivalent | `NullPropertyHandling.ThrowException` | `target.X = source.X ?? throw new ArgumentNullException(...)` — fail-fast |
+
+**Three-tier configuration** — per-property > per-forger > assembly default:
+
+```csharp
+// Assembly-level default
+[assembly: ForgeMapDefaults(NullPropertyHandling = NullPropertyHandling.CoalesceToDefault)]
+
+// Per-forger override
+[ForgeMap(NullPropertyHandling = NullPropertyHandling.SkipNull)]
+
+// Per-property override (sentinel -1 = inherit)
+[ForgeProperty(nameof(Source.Tags), nameof(Dest.Tags),
+    NullPropertyHandling = NullPropertyHandling.ThrowException)]
+```
+
+**FM0007 diagnostic** — ForgeMap v1.2 reports a warning for every nullable ref → non-nullable ref property mapping, regardless of strategy. Suppress with `SuppressDiagnostics = new[] { "FM0007" }`, `#pragma warning disable FM0007`, or `<NoWarn>FM0007</NoWarn>` in `.csproj`.
 
 ## Collections
 
@@ -191,7 +221,8 @@ When `[ForgeAllDerived]` is on a base forge method, collection forge methods for
 [assembly: ForgeMapDefaults(
     NullHandling = NullHandling.ThrowException,
     PropertyMatching = PropertyMatching.ByNameCaseInsensitive,
-    GenerateCollectionMappings = true
+    GenerateCollectionMappings = true,
+    NullPropertyHandling = NullPropertyHandling.NullForgiving  // v1.2: default
 )]
 ```
 
@@ -365,4 +396,41 @@ public partial class AppForger
     public partial GrandChildDto Forge(GrandChildEntity source);
 }
 // Usage — polymorphic: forger.Forge(anyEntity)
+```
+
+### Pattern 9: Nullable-to-non-nullable property mapping (v1.2)
+
+```csharp
+// BEFORE (AutoMapper)
+// AutoMapper assigns null through by default.
+// Some projects use AllowNullCollections = false for safety:
+CreateMap<Assessment, SnapshotDto>();
+// cfg.AllowNullCollections = false; // in MapperConfiguration
+
+// AFTER (ForgeMap) — default NullForgiving matches AutoMapper default
+[ForgeMap]
+public partial class AppForger
+{
+    public partial SnapshotDto Forge(Assessment source);
+}
+// Generated: target.Tags = source.Tags!;
+
+// AFTER (ForgeMap) — CoalesceToDefault matches AllowNullCollections = false
+[ForgeMap(NullPropertyHandling = NullPropertyHandling.CoalesceToDefault)]
+public partial class AppForger
+{
+    public partial SnapshotDto Forge(Assessment source);
+}
+// Generated: target.Tags = source.Tags ?? new List<string>();
+
+// Per-property override for mixed strategies
+[ForgeMap]
+public partial class AppForger
+{
+    [ForgeProperty(nameof(Assessment.Tags), nameof(SnapshotDto.Tags),
+        NullPropertyHandling = NullPropertyHandling.CoalesceToDefault)]
+    [ForgeProperty(nameof(Assessment.AuditLog), nameof(SnapshotDto.AuditLog),
+        NullPropertyHandling = NullPropertyHandling.ThrowException)]
+    public partial SnapshotDto Forge(Assessment source);
+}
 ```
