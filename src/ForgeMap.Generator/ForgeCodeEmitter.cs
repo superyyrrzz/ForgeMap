@@ -60,7 +60,7 @@ internal readonly struct ResolvedMethodConfig
     public Dictionary<string, string> ForgeWithMappings { get; }
     public List<string> BeforeForgeHooks { get; }
     public List<string> AfterForgeHooks { get; }
-    /// <summary>Per-property NullPropertyHandling overrides. Key = dest property name, Value = enum int value. -1 = not set.</summary>
+    /// <summary>Per-property NullPropertyHandling overrides. Key = dest property name, Value = enum int value (0–3). Only explicitly set overrides are included.</summary>
     public Dictionary<string, int> NullPropertyHandlingOverrides { get; }
 }
 
