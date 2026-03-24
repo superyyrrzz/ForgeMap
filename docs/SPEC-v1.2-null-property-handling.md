@@ -46,7 +46,7 @@ public enum NullPropertyHandling
 
     /// <summary>
     /// Skip the assignment when the source is null:
-    /// <c>if (source.X != null) target.X = source.X;</c>
+    /// <c>if (source.X is { } value) target.X = value;</c>
     /// The destination retains its constructor-initialized or default value.
     /// </summary>
     SkipNull,
@@ -61,8 +61,8 @@ public enum NullPropertyHandling
 
     /// <summary>
     /// Throw an exception when the source is null:
-    /// <c>if (source.X == null) throw new ArgumentNullException(...);</c>
-    /// Fail-fast behavior for strict null safety.
+    /// <c>target.X = source.X ?? throw new ArgumentNullException(nameof(source.X));</c>
+    /// Fail-fast behavior for strict null safety using a single-evaluation, coalesce-to-throw pattern.
     /// </summary>
     ThrowException
 }

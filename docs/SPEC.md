@@ -608,7 +608,7 @@ With nullable reference types enabled, the generator respects nullability annota
 
 ```csharp
 public class Source { public string? Name { get; set; } }
-public class Dest { public string Name { get; set; } }  // Non-nullable
+public class Dest { public string Name { get; set; } = ""; }  // Non-nullable
 
 // Generator applies NullPropertyHandling strategy (default: NullForgiving)
 // Generated: target.Name = source.Name!;
