@@ -1357,9 +1357,30 @@ internal sealed class ForgeCodeEmitter
         }
 
         // Try automatic flattening: destProp "CustomerName" → source.Customer.Name
-        var flattenResult = TryAutoFlatten(destProp, sourceParam, sourceType);
+        var flattenResult = TryAutoFlatten(destProp, sourceParam, sourceType, out var flattenLeafType);
         if (flattenResult != null)
+        {
+            // Check for nullable ref → non-nullable ref mismatch on auto-flattened result
+            if (flattenLeafType != null && IsNullableToNonNullableReferenceType(flattenLeafType, destProp.Type))
+            {
+                var strategy = ResolveNullPropertyHandling(destProp.Name, nullPropertyHandlingOverrides);
+                ReportFM0007(context, method, sourceType.Name, destProp.Name, destProp.ContainingType.Name, destProp.Name);
+                if (strategy == 1 && skipNullAssignments != null) // SkipNull
+                {
+                    if (destProp.SetMethod?.IsInitOnly == true)
+                        return $"{flattenResult}!";
+                    var localVar = GenerateSafeVariableName(destProp.Type) + "_" + destProp.Name;
+                    skipNullAssignments.Add((destProp.Name, flattenResult, localVar));
+                    return null;
+                }
+                var handledExpr = ApplyNullPropertyHandlingExpression(
+                    flattenResult, destProp.Type, destProp.Name,
+                    destProp.ContainingType.Name, strategy);
+                if (handledExpr != null) return handledExpr;
+                return $"{flattenResult}!";
+            }
             return flattenResult;
+        }
 
         return null;
     }
@@ -1552,10 +1573,11 @@ internal sealed class ForgeCodeEmitter
     /// Tries automatic flattening: matches dest property "CustomerName" to source path "Customer.Name".
     /// Walks the source type hierarchy looking for concatenated property name matches.
     /// </summary>
-    private string? TryAutoFlatten(IPropertySymbol destProp, string sourceParam, INamedTypeSymbol sourceType)
+    private string? TryAutoFlatten(IPropertySymbol destProp, string sourceParam, INamedTypeSymbol sourceType, out ITypeSymbol? leafTypeOut)
     {
         var destName = destProp.Name;
         var (expr, leafType) = TryAutoFlattenRecursive(destName, 0, sourceParam, sourceType);
+        leafTypeOut = leafType;
         if (expr == null || leafType == null)
             return null;
 
