@@ -14,7 +14,7 @@ It contains exact API mappings between AutoMapper and ForgeMap. Consult it for e
 
 ## Hard rules
 
-- **Always use the latest ForgeMap NuGet package.** The migration skill assumes all current features are available.
+- **Minimum ForgeMap version: 1.2.0.** Always install the latest release from NuGet (`dotnet add package ForgeMap`). The migration skill assumes all features up to v1.2 are available.
 - **NEVER write manual mapping code.** If ForgeMap can't support a required mapping, **stop and report the gap.** File an issue on `superyyrrzz/ForgeMap` with title `[Migration] <description>` and let the user decide.
 - **No git operations.** Do not run any git commands (checkout, commit, push, branch, etc.). The developer controls their own git workflow.
 
