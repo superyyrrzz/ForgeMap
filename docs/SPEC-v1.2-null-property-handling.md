@@ -337,7 +337,7 @@ return new Destination(name);
 return new Destination(source.Name!);
 ```
 
-`SkipNull` cannot skip a required constructor parameter, so it falls back to `NullForgiving` for constructor-mapped properties and reports FM0007.
+`SkipNull` cannot skip a required constructor parameter, so it falls back to `NullForgiving` for constructor-mapped properties; FM0007 is only reported for direct property-to-property mappings.
 
 ### Flattening
 
