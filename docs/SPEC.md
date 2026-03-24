@@ -577,7 +577,7 @@ public partial class AppForger
 | Scenario | Default Behavior | Override |
 |----------|-----------------|----------|
 | Source object is null | Return null | `[ForgeMap(NullHandling = NullHandling.ThrowException)]` |
-| Source property is null | Assign null to destination | Use `[ForgeFrom]` for custom default |
+| Source property is null (nullable ref → non-nullable ref) | Null-forgiving (`!`) | `[ForgeMap(NullPropertyHandling = ...)]` or per-property via `[ForgeProperty]` ([v1.2 spec](SPEC-v1.2-null-property-handling.md)) |
 | Nullable<T> → T | Use `.Value` (throws if null) | Use `[ForgeFrom]` for safe default |
 | T → Nullable<T> | Direct assignment | N/A |
 | Collection is null | Return null | N/A |
@@ -592,7 +592,7 @@ public class OrderDto { public DateTime ShippedAt { get; set; } }
 [ForgeMap]
 public partial class AppForger
 {
-    // DateTime? -> DateTime uses .Value (generator adds null check)
+    // DateTime? -> DateTime unwraps via .Value (throws at runtime if null)
     // Or provide default via [ForgeFrom]
     [ForgeFrom(nameof(OrderDto.ShippedAt), nameof(GetShippedAt))]
     public partial OrderDto Forge(OrderEntity source);
@@ -604,13 +604,15 @@ public partial class AppForger
 
 #### 5.2 Nullable Reference Types
 
-With nullable reference types enabled, the generator respects nullability annotations:
+With nullable reference types enabled, the generator respects nullability annotations and applies the configured `NullPropertyHandling` strategy (see [v1.2 spec](SPEC-v1.2-null-property-handling.md)):
 
 ```csharp
 public class Source { public string? Name { get; set; } }
-public class Dest { public string Name { get; set; } }  // Non-nullable
+public class Dest { public string Name { get; set; } = ""; }  // Non-nullable
 
-// Generator produces warning: Source.Name is nullable but Dest.Name is not
+// Generator applies NullPropertyHandling strategy (default: NullForgiving)
+// Generated: target.Name = source.Name!;
+// Also reports FM0007 warning: The nullable source 'Source.Name' is mapped to non-nullable destination 'Dest.Name'
 ```
 
 ### 6. Constructor Mapping
@@ -927,13 +929,15 @@ For project-wide defaults, use the `[ForgeMapDefaults]` assembly attribute:
 | `NullHandling` | `NullHandling` | `ReturnNull` | Default null handling mode for all forgers in the assembly |
 | `GenerateCollectionMappings` | `bool` | `true` | Enables auto-generation of collection mapping methods when element mappings exist |
 | `PropertyMatching` | `PropertyMatching` | `ByName` | Default property matching mode for all forgers in the assembly |
+| `NullPropertyHandling` | `NullPropertyHandling` | `NullForgiving` | Default strategy for nullable-to-non-nullable ref property assignments ([v1.2 spec](SPEC-v1.2-null-property-handling.md)) |
 
 ```csharp
 // In AssemblyInfo.cs or any file
 [assembly: ForgeMapDefaults(
     NullHandling = NullHandling.ReturnNull,
     GenerateCollectionMappings = true,
-    PropertyMatching = PropertyMatching.ByNameCaseInsensitive
+    PropertyMatching = PropertyMatching.ByNameCaseInsensitive,
+    NullPropertyHandling = NullPropertyHandling.CoalesceToDefault
 )]
 ```
 
@@ -1005,13 +1009,13 @@ namespace ForgeMap
         public NullHandling NullHandling { get; set; } = NullHandling.ReturnNull;
         public PropertyMatching PropertyMatching { get; set; } = PropertyMatching.ByName;
         public string[]? SuppressDiagnostics { get; set; }
-        public NullPropertyHandling NullPropertyHandling { get; set; } = NullPropertyHandling.NullForgiving;
+        public NullPropertyHandling NullPropertyHandling { get; set; } = NullPropertyHandling.NullForgiving; // v1.2
     }
 
     /// <summary>
     /// Ignores specified properties during forging.
     /// </summary>
-    [AttributeUsage(AttributeTargets.Method, AllowMultiple = true)]
+    [AttributeUsage(AttributeTargets.Method, AllowMultiple = true, Inherited = false)]
     public sealed class IgnoreAttribute : Attribute
     {
         public IgnoreAttribute(params string[] propertyNames);
@@ -1021,19 +1025,19 @@ namespace ForgeMap
     /// <summary>
     /// Maps a source property to a differently-named destination property.
     /// </summary>
-    [AttributeUsage(AttributeTargets.Method, AllowMultiple = true)]
+    [AttributeUsage(AttributeTargets.Method, AllowMultiple = true, Inherited = false)]
     public sealed class ForgePropertyAttribute : Attribute
     {
         public ForgePropertyAttribute(string sourceProperty, string destinationProperty);
         public string SourceProperty { get; }
         public string DestinationProperty { get; }
-        public NullPropertyHandling NullPropertyHandling { get; set; } = (NullPropertyHandling)(-1); // inherit
+        public NullPropertyHandling NullPropertyHandling { get; set; } = (NullPropertyHandling)(-1); // v1.2: "not set" sentinel
     }
 
     /// <summary>
     /// Maps a destination property using a custom resolver method.
     /// </summary>
-    [AttributeUsage(AttributeTargets.Method, AllowMultiple = true)]
+    [AttributeUsage(AttributeTargets.Method, AllowMultiple = true, Inherited = false)]
     public sealed class ForgeFromAttribute : Attribute
     {
         public ForgeFromAttribute(string destinationProperty, string resolverMethodName);
@@ -1044,7 +1048,7 @@ namespace ForgeMap
     /// <summary>
     /// Uses another forging method for a nested property.
     /// </summary>
-    [AttributeUsage(AttributeTargets.Method, AllowMultiple = true)]
+    [AttributeUsage(AttributeTargets.Method, AllowMultiple = true, Inherited = false)]
     public sealed class ForgeWithAttribute : Attribute
     {
         public ForgeWithAttribute(string destinationProperty, string forgingMethodName);
@@ -1055,13 +1059,13 @@ namespace ForgeMap
     /// <summary>
     /// Generates a reverse forging method.
     /// </summary>
-    [AttributeUsage(AttributeTargets.Method, AllowMultiple = false)]
+    [AttributeUsage(AttributeTargets.Method, AllowMultiple = false, Inherited = false)]
     public sealed class ReverseForgeAttribute : Attribute { }
 
     /// <summary>
     /// Calls a method after forging completes.
     /// </summary>
-    [AttributeUsage(AttributeTargets.Method, AllowMultiple = true)]
+    [AttributeUsage(AttributeTargets.Method, AllowMultiple = true, Inherited = false)]
     public sealed class AfterForgeAttribute : Attribute
     {
         public AfterForgeAttribute(string methodName);
@@ -1071,7 +1075,7 @@ namespace ForgeMap
     /// <summary>
     /// Calls a method before forging begins.
     /// </summary>
-    [AttributeUsage(AttributeTargets.Method, AllowMultiple = true)]
+    [AttributeUsage(AttributeTargets.Method, AllowMultiple = true, Inherited = false)]
     public sealed class BeforeForgeAttribute : Attribute
     {
         public BeforeForgeAttribute(string methodName);
@@ -1081,24 +1085,36 @@ namespace ForgeMap
     /// <summary>
     /// Marks a parameter as an existing value to forge into.
     /// </summary>
-    [AttributeUsage(AttributeTargets.Parameter, AllowMultiple = false)]
+    [AttributeUsage(AttributeTargets.Parameter, AllowMultiple = false, Inherited = false)]
     public sealed class UseExistingValueAttribute : Attribute { }
 
     /// <summary>
     /// Assembly-level defaults for all forgers.
     /// </summary>
-    [AttributeUsage(AttributeTargets.Assembly, AllowMultiple = false)]
+    [AttributeUsage(AttributeTargets.Assembly, AllowMultiple = false, Inherited = false)]
     public sealed class ForgeMapDefaultsAttribute : Attribute
     {
-        public NullHandling NullHandling { get; set; }
-        public bool GenerateCollectionMappings { get; set; }
-        public PropertyMatching PropertyMatching { get; set; }
-        public NullPropertyHandling NullPropertyHandling { get; set; } = NullPropertyHandling.NullForgiving;
+        public NullHandling NullHandling { get; set; } = NullHandling.ReturnNull;
+        public bool GenerateCollectionMappings { get; set; } = true;
+        public PropertyMatching PropertyMatching { get; set; } = PropertyMatching.ByName;
+        public NullPropertyHandling NullPropertyHandling { get; set; } = NullPropertyHandling.NullForgiving; // v1.2
     }
 
     public enum NullHandling
     {
         ReturnNull,
+        ThrowException
+    }
+
+    /// <summary>
+    /// Specifies how nullable source properties should be assigned to
+    /// non-nullable destination properties. (v1.2)
+    /// </summary>
+    public enum NullPropertyHandling
+    {
+        NullForgiving,
+        SkipNull,
+        CoalesceToDefault,
         ThrowException
     }
 
@@ -1137,7 +1153,7 @@ namespace ForgeMap
     /// <summary>
     /// Uses a custom converter class for the forging.
     /// </summary>
-    [AttributeUsage(AttributeTargets.Method, AllowMultiple = false)]
+    [AttributeUsage(AttributeTargets.Method, AllowMultiple = false, Inherited = false)]
     public sealed class ConvertWithAttribute : Attribute
     {
         public ConvertWithAttribute(Type converterType);
@@ -1191,5 +1207,5 @@ All forging behaviors are controlled by attributes. New features should:
 
 ---
 
-*Specification Version: 1.1*
+*Specification Version: 1.2*
 *License: MIT*
