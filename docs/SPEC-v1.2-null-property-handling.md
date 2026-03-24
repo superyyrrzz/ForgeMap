@@ -205,9 +205,9 @@ target.MetaDataTags = source.MetaDataTags!;
 ### 3.2 `SkipNull`
 
 ```csharp
-if (source.MetaDataTags != null)
+if (source.MetaDataTags is { } metaDataTags)
 {
-    target.MetaDataTags = source.MetaDataTags;
+    target.MetaDataTags = metaDataTags;
 }
 ```
 
@@ -243,10 +243,9 @@ When `CoalesceToDefault` cannot find a suitable default (no parameterless constr
 ### 3.4 `ThrowException`
 
 ```csharp
-if (source.MetaDataTags == null)
-    throw new global::System.ArgumentNullException(nameof(source.MetaDataTags),
+target.MetaDataTags = source.MetaDataTags
+    ?? throw new global::System.ArgumentNullException(nameof(source.MetaDataTags),
         "Cannot assign null source property 'Assessment.MetaDataTags' to non-nullable destination 'SnapshotDto.MetaDataTags'.");
-target.MetaDataTags = source.MetaDataTags;
 ```
 
 ---
@@ -330,9 +329,9 @@ return new Destination(source.Name!);
 return new Destination(source.Name ?? "");
 
 // ThrowException:
-if (source.Name == null)
-    throw new global::System.ArgumentNullException(nameof(source.Name), ...);
-return new Destination(source.Name);
+var name = source.Name
+    ?? throw new global::System.ArgumentNullException(nameof(source.Name), ...);
+return new Destination(name);
 
 // SkipNull — not applicable to required ctor params; falls back to NullForgiving
 return new Destination(source.Name!);
