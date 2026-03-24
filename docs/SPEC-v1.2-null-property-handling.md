@@ -411,10 +411,13 @@ private static bool IsNullableToNonNullableValueType(ITypeSymbol source, ITypeSy
 private static bool IsNullableToNonNullableReferenceType(ITypeSymbol source, ITypeSymbol dest)
 {
     return source.IsReferenceType
+        && dest.IsReferenceType
         && source.NullableAnnotation == NullableAnnotation.Annotated
-        && dest.NullableAnnotation != NullableAnnotation.Annotated;
+        && dest.NullableAnnotation == NullableAnnotation.NotAnnotated;
 }
 ```
+
+> **Note:** This intentionally excludes `NullableAnnotation.None` (oblivious) destinations. Oblivious types do not produce CS8601, so applying `NullPropertyHandling` would be unnecessary noise.
 
 ---
 
