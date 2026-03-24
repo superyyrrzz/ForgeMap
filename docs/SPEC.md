@@ -999,7 +999,7 @@ namespace ForgeMap
     /// <summary>
     /// Marks a partial class as a ForgeMap forger.
     /// </summary>
-    [AttributeUsage(AttributeTargets.Class, AllowMultiple = false)]
+    [AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = false)]
     public sealed class ForgeMapAttribute : Attribute
     {
         public NullHandling NullHandling { get; set; } = NullHandling.ReturnNull;
