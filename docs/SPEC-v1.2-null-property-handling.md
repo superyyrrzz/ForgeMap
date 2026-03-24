@@ -77,7 +77,7 @@ All four strategies eliminate CS8601 from generated code, but they differ in run
 | `NullForgiving` | Yes — `!` suppresses | Yes — if source is actually null | Minimal (single `!`) |
 | `SkipNull` | Yes — flow analysis | Yes — if constructor doesn't initialize the property | Moderate (`if` guard) |
 | `CoalesceToDefault` | Yes — `??` ensures non-null | **No** — always assigns a value | Moderate (`??` expression) |
-| `ThrowException` | Yes — unreachable after throw | **No** — throws before null reaches target | Moderate (`if` + throw) |
+| `ThrowException` | Yes — unreachable after throw | **No** — throws before null reaches target | Moderate (`?? throw` coalesce-to-throw) |
 
 ### Default Value
 
