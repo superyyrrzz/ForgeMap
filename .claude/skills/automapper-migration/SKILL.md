@@ -54,7 +54,7 @@ return source switch
 
 ## Null-property handling
 
-AutoMapper assigns null through by default (`AllowNullDestinationValues = true`). ForgeMap's `NullPropertyHandling` controls nullable-to-non-nullable **reference type** property assignments. During migration:
+AutoMapper assigns null through by default (`AllowNullDestinationValues = true`). ForgeMap's `NullPropertyHandling` controls nullable-to-non-nullable **reference type** property assignments and constructor-parameter expressions. During migration:
 
 | AutoMapper pattern | ForgeMap equivalent |
 |---|---|
