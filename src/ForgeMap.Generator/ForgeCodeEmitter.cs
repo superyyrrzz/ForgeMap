@@ -712,7 +712,7 @@ internal sealed class ForgeCodeEmitter
                 var separator = i < ctorParamMappings.Count - 1 ? "," : "";
                 var expr = GenerateCtorParamExpression(
                     mapping.SourceExpression, mapping.SourcePropertyType, mapping.DestPropertyType,
-                    mapping.DestPropertyName, reverseSourceType.ToDisplayString(), reverseDestType.ToDisplayString(),
+                    mapping.DestPropertyName, reverseDestType.ToDisplayString(),
                     new Dictionary<string, int>(StringComparer.Ordinal));
                 sb.AppendLine($"                {mapping.CtorParamName}: {expr}{separator}");
             }
@@ -1088,7 +1088,7 @@ internal sealed class ForgeCodeEmitter
                 var separator = i < ctorParamMappings.Count - 1 ? "," : "";
                 var expr = GenerateCtorParamExpression(
                     mapping.SourceExpression, mapping.SourcePropertyType, mapping.DestPropertyType,
-                    mapping.DestPropertyName, sourceType.ToDisplayString(), destinationType.ToDisplayString(),
+                    mapping.DestPropertyName, destinationType.ToDisplayString(),
                     nullPropertyHandlingOverrides);
                 sb.AppendLine($"                {mapping.CtorParamName}: {expr}{separator}");
             }
@@ -1304,7 +1304,7 @@ internal sealed class ForgeCodeEmitter
                 }
                 var handledExpr = ApplyNullPropertyHandlingExpression(
                     sourceExpr, destProp.Type, destProp.Name,
-                    sourceType.Name, destProp.ContainingType.Name, strategy);
+                    destProp.ContainingType.Name, strategy);
                 if (handledExpr != null) return handledExpr;
                 return $"{sourceExpr}!"; // Final fallback
             }
@@ -1340,7 +1340,7 @@ internal sealed class ForgeCodeEmitter
                 }
                 var handledExpr = ApplyNullPropertyHandlingExpression(
                     sourceExprConv, destProp.Type, destProp.Name,
-                    sourceType.Name, destProp.ContainingType.Name, strategy);
+                    destProp.ContainingType.Name, strategy);
                 if (handledExpr != null) return handledExpr;
                 return $"{sourceExprConv}!"; // Final fallback
             }
@@ -1505,7 +1505,6 @@ internal sealed class ForgeCodeEmitter
         ITypeSymbol? sourcePropertyType,
         ITypeSymbol destPropertyType,
         string destPropertyName,
-        string sourceTypeName,
         string destTypeName,
         Dictionary<string, int> nullPropertyHandlingOverrides)
     {
@@ -1542,7 +1541,7 @@ internal sealed class ForgeCodeEmitter
             // SkipNull (1) is not applicable for ctor params — fall back to NullForgiving
             if (strategy == 1)
                 strategy = 0;
-            return ApplyNullPropertyHandlingExpression(sourceExpression, destPropertyType, destPropertyName, sourceTypeName, destTypeName, strategy)
+            return ApplyNullPropertyHandlingExpression(sourceExpression, destPropertyType, destPropertyName, destTypeName, strategy)
                    ?? $"{sourceExpression}!"; // fallback if ApplyNullPropertyHandlingExpression returns null (SkipNull)
         }
 
@@ -2610,7 +2609,7 @@ internal sealed class ForgeCodeEmitter
 
         // Get mappable properties
         var sourceProperties = GetMappableProperties(sourceNamedType);
-        var destProperties = GetMappableProperties(destinationType).Where(p => p.SetMethod != null);
+        var destProperties = GetMappableProperties(destinationType).Where(p => p.SetMethod != null && !p.SetMethod.IsInitOnly);
 
         foreach (var destProp in destProperties)
         {
@@ -2784,7 +2783,7 @@ internal sealed class ForgeCodeEmitter
                     {
                         var handledExpr = ApplyNullPropertyHandlingExpression(
                             sourceExpr, destProp.Type, destProp.Name,
-                            sourceNamedType.Name, destProp.ContainingType.Name, strategy);
+                            destProp.ContainingType.Name, strategy);
                         sb.AppendLine($"            {destParam}.{destProp.Name} = {handledExpr ?? $"{sourceExpr}!"};");
                     }
                 }
@@ -2824,7 +2823,7 @@ internal sealed class ForgeCodeEmitter
                     {
                         var handledExpr = ApplyNullPropertyHandlingExpression(
                             sourceExprConv, destProp.Type, destProp.Name,
-                            sourceNamedType.Name, destProp.ContainingType.Name, strategy);
+                            destProp.ContainingType.Name, strategy);
                         sb.AppendLine($"            {destParam}.{destProp.Name} = {handledExpr ?? $"{sourceExprConv}!"};");
                     }
                 }
@@ -3318,7 +3317,6 @@ internal sealed class ForgeCodeEmitter
         string sourceExpr,
         ITypeSymbol destType,
         string destPropertyName,
-        string sourceTypeName,
         string destTypeName,
         int strategy)
     {
@@ -3338,8 +3336,7 @@ internal sealed class ForgeCodeEmitter
                 return $"{sourceExpr}!";
 
             case 3: // ThrowException
-                var propName = sourceExpr.Contains(".") ? sourceExpr.Split('.').Last() : sourceExpr;
-                return $"{sourceExpr} ?? throw new global::System.ArgumentNullException(\"{propName}\", \"Cannot assign null source property '{sourceTypeName}.{propName}' to non-nullable destination '{destTypeName}.{destPropertyName}'.\")";
+                return $"{sourceExpr} ?? throw new global::System.ArgumentNullException(\"{sourceExpr}\", \"Cannot assign null source property '{sourceExpr}' to non-nullable destination '{destTypeName}.{destPropertyName}'.\")";
 
             default:
                 return $"{sourceExpr}!";
