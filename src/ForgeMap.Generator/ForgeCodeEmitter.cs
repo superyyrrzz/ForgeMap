@@ -711,7 +711,9 @@ internal sealed class ForgeCodeEmitter
                 var mapping = ctorParamMappings[i];
                 var separator = i < ctorParamMappings.Count - 1 ? "," : "";
                 var expr = GenerateCtorParamExpression(
-                    mapping.SourceExpression, mapping.SourcePropertyType, mapping.DestPropertyType);
+                    mapping.SourceExpression, mapping.SourcePropertyType, mapping.DestPropertyType,
+                    mapping.DestPropertyName, reverseSourceType.ToDisplayString(), reverseDestType.ToDisplayString(),
+                    new Dictionary<string, int>(StringComparer.Ordinal));
                 sb.AppendLine($"                {mapping.CtorParamName}: {expr}{separator}");
             }
 
@@ -1085,7 +1087,9 @@ internal sealed class ForgeCodeEmitter
                 var mapping = ctorParamMappings[i];
                 var separator = i < ctorParamMappings.Count - 1 ? "," : "";
                 var expr = GenerateCtorParamExpression(
-                    mapping.SourceExpression, mapping.SourcePropertyType, mapping.DestPropertyType);
+                    mapping.SourceExpression, mapping.SourcePropertyType, mapping.DestPropertyType,
+                    mapping.DestPropertyName, sourceType.ToDisplayString(), destinationType.ToDisplayString(),
+                    nullPropertyHandlingOverrides);
                 sb.AppendLine($"                {mapping.CtorParamName}: {expr}{separator}");
             }
 
@@ -1496,10 +1500,14 @@ internal sealed class ForgeCodeEmitter
     /// <summary>
     /// Generates a mapping expression for a constructor parameter, handling Nullable&lt;T&gt; to T.
     /// </summary>
-    private static string GenerateCtorParamExpression(
+    private string GenerateCtorParamExpression(
         string sourceExpression,
         ITypeSymbol? sourcePropertyType,
-        ITypeSymbol destPropertyType)
+        ITypeSymbol destPropertyType,
+        string destPropertyName,
+        string sourceTypeName,
+        string destTypeName,
+        Dictionary<string, int> nullPropertyHandlingOverrides)
     {
         if (sourcePropertyType != null && IsNullableToNonNullableValueType(sourcePropertyType, destPropertyType))
             return sourceExpression.Contains("?.") ? $"({destPropertyType.ToDisplayString()})({sourceExpression})!" : $"({destPropertyType.ToDisplayString()}){sourceExpression}!";
@@ -1527,9 +1535,16 @@ internal sealed class ForgeCodeEmitter
         }
 
         // Handle nullable ref → non-nullable ref for constructor parameters
-        // Constructor params can't be skipped, so always use NullForgiving (append !)
+        // Apply strategy: SkipNull falls back to NullForgiving (ctor params can't be skipped)
         if (sourcePropertyType != null && IsNullableToNonNullableReferenceType(sourcePropertyType, destPropertyType))
-            return $"{sourceExpression}!";
+        {
+            var strategy = ResolveNullPropertyHandling(destPropertyName, nullPropertyHandlingOverrides);
+            // SkipNull (1) is not applicable for ctor params — fall back to NullForgiving
+            if (strategy == 1)
+                strategy = 0;
+            return ApplyNullPropertyHandlingExpression(sourceExpression, destPropertyType, destPropertyName, sourceTypeName, destTypeName, strategy)
+                   ?? $"{sourceExpression}!"; // fallback if ApplyNullPropertyHandlingExpression returns null (SkipNull)
+        }
 
         return sourceExpression;
     }
@@ -2062,9 +2077,10 @@ internal sealed class ForgeCodeEmitter
         HashSet<string> ignoredProperties,
         Dictionary<string, string> propertyMappings,
         Dictionary<string, string> resolverMappings,
-        Dictionary<string, string> forgeWithMappings)
+        Dictionary<string, string> forgeWithMappings,
+        Dictionary<string, int> nullPropertyHandlingOverrides)
     {
-        ResolveInheritedConfig(method, forger, context, ignoredProperties, propertyMappings, resolverMappings, forgeWithMappings, new HashSet<string>());
+        ResolveInheritedConfig(method, forger, context, ignoredProperties, propertyMappings, resolverMappings, forgeWithMappings, nullPropertyHandlingOverrides, new HashSet<string>());
     }
 
     private void ResolveInheritedConfig(
@@ -2075,6 +2091,7 @@ internal sealed class ForgeCodeEmitter
         Dictionary<string, string> propertyMappings,
         Dictionary<string, string> resolverMappings,
         Dictionary<string, string> forgeWithMappings,
+        Dictionary<string, int> nullPropertyHandlingOverrides,
         HashSet<string> visited)
     {
         var includeBaseForges = GetIncludeBaseForgeAttributes(method);
@@ -2149,7 +2166,8 @@ internal sealed class ForgeCodeEmitter
             var basePropertyMappings = GetPropertyMappings(baseMethod);
             var baseResolverMappings = GetResolverMappings(baseMethod);
             var baseForgeWithMappings = GetForgeWithMappings(baseMethod);
-            ResolveInheritedConfig(baseMethod, forger, context, baseIgnored, basePropertyMappings, baseResolverMappings, baseForgeWithMappings, visited);
+            var baseNullPropertyHandlingOverrides = GetNullPropertyHandlingOverrides(baseMethod);
+            ResolveInheritedConfig(baseMethod, forger, context, baseIgnored, basePropertyMappings, baseResolverMappings, baseForgeWithMappings, baseNullPropertyHandlingOverrides, visited);
 
             // Merge all base config into derived using first-wins semantics + FM0021 override reporting
             var diagLocation = attrData.ApplicationSyntaxReference?.GetSyntax().GetLocation() ?? method.Locations.FirstOrDefault();
@@ -2205,6 +2223,13 @@ internal sealed class ForgeCodeEmitter
                 if (!IsAlreadyConfigured(kvp.Key))
                     forgeWithMappings[kvp.Key] = kvp.Value;
             }
+
+            // Merge base NullPropertyHandling overrides using first-wins semantics
+            foreach (var kvp in baseNullPropertyHandlingOverrides)
+            {
+                if (!nullPropertyHandlingOverrides.ContainsKey(kvp.Key))
+                    nullPropertyHandlingOverrides[kvp.Key] = kvp.Value;
+            }
         }
     }
 
@@ -2224,7 +2249,7 @@ internal sealed class ForgeCodeEmitter
         var forgeWithMappings = GetForgeWithMappings(method);
         var nullPropertyHandlingOverrides = GetNullPropertyHandlingOverrides(method);
 
-        ResolveInheritedConfig(method, forger, context, ignoredProperties, propertyMappings, resolverMappings, forgeWithMappings);
+        ResolveInheritedConfig(method, forger, context, ignoredProperties, propertyMappings, resolverMappings, forgeWithMappings, nullPropertyHandlingOverrides);
 
         var beforeForgeHooks = GetBeforeForgeHooks(method)
             .Where(h => ValidateBeforeForgeHook(h, sourceType, forger, context, method))
