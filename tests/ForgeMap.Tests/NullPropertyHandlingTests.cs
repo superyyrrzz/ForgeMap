@@ -1,7 +1,6 @@
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using ForgeMap;
-using ForgeMap.Generator;
 using Xunit;
 using System.Diagnostics;
 
@@ -409,7 +408,7 @@ public class NullPropertyHandlingTests
         var (diagnostics, generatedTrees) = RunGenerator(source);
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
 
-        // FM0007 should be reported as info
+        // FM0007 should be reported for nullable-ref to non-nullable-ref mappings
         var fm0007 = diagnostics.Where(d => d.Id == "FM0007").ToList();
         Assert.NotEmpty(fm0007);
     }
