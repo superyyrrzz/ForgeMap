@@ -14,7 +14,7 @@ It contains exact API mappings between AutoMapper and ForgeMap. Consult it for e
 
 ## Hard rules
 
-- **Minimum ForgeMap version: 1.2.0** — `NullPropertyHandling`, `[IncludeBaseForge]`, `[ForgeAllDerived]`, compatible enum auto-conversion, and inherited property resolution all require it.
+- **Always use the latest ForgeMap NuGet package.** The migration skill assumes all current features are available.
 - **NEVER write manual mapping code.** If ForgeMap can't support a required mapping, **stop and report the gap.** File an issue on `superyyrrzz/ForgeMap` with title `[Migration] <description>` and let the user decide.
 - **No git operations.** Do not run any git commands (checkout, commit, push, branch, etc.). The developer controls their own git workflow.
 
@@ -52,14 +52,14 @@ return source switch
 - **`[ConvertWith]` is not functional** — the attribute exists but the generator ignores it. Use `[ForgeFrom]` resolvers instead.
 - **`[ForgeAllDerived]` auto-discovery needs same method name** — derived forge methods must be overloads with the same name in the same forger class. Differently-named methods won't be picked up.
 
-## Null-property handling (v1.2)
+## Null-property handling
 
-AutoMapper assigns null through by default (`AllowNullDestinationValues = true`). ForgeMap v1.2 adds `NullPropertyHandling` to control nullable-to-non-nullable **reference type** property assignments. During migration:
+AutoMapper assigns null through by default (`AllowNullDestinationValues = true`). ForgeMap's `NullPropertyHandling` controls nullable-to-non-nullable **reference type** property assignments. During migration:
 
-| AutoMapper pattern | ForgeMap v1.2 equivalent |
+| AutoMapper pattern | ForgeMap equivalent |
 |---|---|
 | Default (assigns null through) | `NullPropertyHandling.NullForgiving` (default) — no configuration needed |
-| `AllowNullCollections = false` (null → empty collection) | `NullPropertyHandling.CoalesceToDefault` |
+| `AllowNullCollections = false` (null → empty collection) | `NullPropertyHandling.CoalesceToDefault` (applies to any nullable-ref → non-nullable-ref where a default can be generated, e.g., collections → empty, `string?` → `""`) |
 | `.NullSubstitute(value)` | `[ForgeFrom]` resolver returning the substitute value |
 
 **Three-tier configuration** — settings resolve per-property > per-forger > assembly default:
@@ -77,7 +77,7 @@ public partial class StrictForger { ... }
     NullPropertyHandling = NullPropertyHandling.ThrowException)]
 ```
 
-**FM0007 is now active** — the generator reports a warning for every nullable ref → non-nullable ref mapping. If this is noisy during migration, suppress with `SuppressDiagnostics = new[] { "FM0007" }` on the forger class, or `<NoWarn>FM0007</NoWarn>` in `.csproj`.
+**FM0007 is active** — the generator reports a warning for every nullable ref → non-nullable ref mapping. If this is noisy during migration, suppress with `SuppressDiagnostics = new[] { "FM0007" }` on the forger class, or `<NoWarn>FM0007</NoWarn>` in `.csproj`.
 
 ## After migration completes
 

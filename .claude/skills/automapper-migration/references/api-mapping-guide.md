@@ -108,7 +108,7 @@ CreateMap<DerivedAEntity, DerivedADto>()
 CreateMap<DerivedBEntity, DerivedBDto>()
     .IncludeBase<BaseEntity, BaseDto>();
 
-// ForgeMap v1.1
+// ForgeMap
 [ForgeAllDerived]
 [Ignore(nameof(BaseDto.AuditTrail))]
 public partial BaseDto Forge(BaseEntity source);
@@ -140,7 +140,7 @@ When `[ForgeAllDerived]` is on a base forge method, collection forge methods for
 
 ## Null Handling
 
-### Source-object null handling (v1.1)
+### Source-object null handling
 
 | AutoMapper | ForgeMap | Notes |
 |---|---|---|
@@ -148,14 +148,14 @@ When `[ForgeAllDerived]` is on a base forge method, collection forge methods for
 | Custom null handling | `NullHandling.ThrowException` | Set on `[ForgeMap]` or `[ForgeMapDefaults]` |
 | `.NullSubstitute(value)` | Not directly supported | Use `[AfterForge]` hook to substitute |
 
-### Nullable-property handling (v1.2)
+### Nullable-property handling
 
 Controls how nullable-to-non-nullable **reference type** property assignments are generated. Does not apply to value types, `[ForgeFrom]` resolvers, or `[ForgeWith]` nested mappings.
 
 | AutoMapper | ForgeMap | Notes |
 |---|---|---|
 | Default (assigns null through / `AllowNullDestinationValues = true`) | `NullPropertyHandling.NullForgiving` (default) | `target.X = source.X!;` — same runtime behavior as AutoMapper |
-| `AllowNullCollections = false` | `NullPropertyHandling.CoalesceToDefault` | `target.X = source.X ?? <default>;` — type-aware defaults (empty string, empty list, etc.) |
+| `AllowNullCollections = false` | `NullPropertyHandling.CoalesceToDefault` | `target.X = source.X ?? <default>;` — type-aware defaults (empty string, empty list, etc.) for `string`, arrays, and concrete types with a public parameterless ctor; other reference types fall back to `NullForgiving` (`target.X = source.X!;`) |
 | `.NullSubstitute(value)` per property | `[ForgeFrom]` resolver returning the substitute | No direct attribute; resolver has full control |
 | No equivalent | `NullPropertyHandling.SkipNull` | `if (source.X is { } v) target.X = v;` — destination keeps its initialized value |
 | No equivalent | `NullPropertyHandling.ThrowException` | `target.X = source.X ?? throw new ArgumentNullException(...)` — fail-fast |
@@ -174,7 +174,7 @@ Controls how nullable-to-non-nullable **reference type** property assignments ar
     NullPropertyHandling = NullPropertyHandling.ThrowException)]
 ```
 
-**FM0007 diagnostic** — ForgeMap v1.2 reports a warning for every nullable ref → non-nullable ref property mapping, regardless of strategy. Suppress with `SuppressDiagnostics = new[] { "FM0007" }`, `#pragma warning disable FM0007`, or `<NoWarn>FM0007</NoWarn>` in `.csproj`.
+**FM0007 diagnostic** — ForgeMap reports a warning for every nullable ref → non-nullable ref property mapping, regardless of strategy. Suppress with `SuppressDiagnostics = new[] { "FM0007" }`, `#pragma warning disable FM0007`, or `<NoWarn>FM0007</NoWarn>` in `.csproj`.
 
 ## Collections
 
@@ -222,7 +222,7 @@ Controls how nullable-to-non-nullable **reference type** property assignments ar
     NullHandling = NullHandling.ThrowException,
     PropertyMatching = PropertyMatching.ByNameCaseInsensitive,
     GenerateCollectionMappings = true,
-    NullPropertyHandling = NullPropertyHandling.NullForgiving  // v1.2: default
+    NullPropertyHandling = NullPropertyHandling.NullForgiving  // default
 )]
 ```
 
@@ -398,7 +398,7 @@ public partial class AppForger
 // Usage — polymorphic: forger.Forge(anyEntity)
 ```
 
-### Pattern 9: Nullable-to-non-nullable property mapping (v1.2)
+### Pattern 9: Nullable-to-non-nullable property mapping
 
 ```csharp
 // BEFORE (AutoMapper)
