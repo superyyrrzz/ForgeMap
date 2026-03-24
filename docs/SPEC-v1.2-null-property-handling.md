@@ -18,7 +18,7 @@ This version adds a configurable `NullPropertyHandling` strategy that controls w
 
 ### Scope
 
-This feature applies **only** to nullable **reference type** properties mapped to non-nullable reference type destinations. `Nullable<T>` value types are already handled correctly in v1.1 (via explicit cast + `!`).
+This feature applies **only** to nullable **reference type** properties mapped to non-nullable reference type destinations. `Nullable<T>` value types are already handled in v1.1 by unwrapping via `nullableExpr!.Value` (with casts as needed), which will throw at runtime if the value is `null`.
 
 ---
 
@@ -244,7 +244,7 @@ When `CoalesceToDefault` cannot find a suitable default (no parameterless constr
 
 ```csharp
 if (source.MetaDataTags == null)
-    throw new global::System.ArgumentNullException("source.MetaDataTags",
+    throw new global::System.ArgumentNullException(nameof(source.MetaDataTags),
         "Cannot assign null source property 'Assessment.MetaDataTags' to non-nullable destination 'SnapshotDto.MetaDataTags'.");
 target.MetaDataTags = source.MetaDataTags;
 ```
@@ -331,7 +331,7 @@ return new Destination(source.Name ?? "");
 
 // ThrowException:
 if (source.Name == null)
-    throw new global::System.ArgumentNullException("source.Name", ...);
+    throw new global::System.ArgumentNullException(nameof(source.Name), ...);
 return new Destination(source.Name);
 
 // SkipNull — not applicable to required ctor params; falls back to NullForgiving

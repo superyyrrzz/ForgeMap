@@ -592,7 +592,7 @@ public class OrderDto { public DateTime ShippedAt { get; set; } }
 [ForgeMap]
 public partial class AppForger
 {
-    // DateTime? -> DateTime uses .Value (generator adds null check)
+    // DateTime? -> DateTime unwraps via .Value (throws at runtime if null)
     // Or provide default via [ForgeFrom]
     [ForgeFrom(nameof(OrderDto.ShippedAt), nameof(GetShippedAt))]
     public partial OrderDto Forge(OrderEntity source);
@@ -612,7 +612,7 @@ public class Dest { public string Name { get; set; } }  // Non-nullable
 
 // Generator applies NullPropertyHandling strategy (default: NullForgiving)
 // Generated: target.Name = source.Name!;
-// Also reports FM0007 warning: Source.Name is nullable but Dest.Name is not
+// Also reports FM0007 warning: The nullable source 'Source.Name' is mapped to non-nullable destination 'Dest.Name'
 ```
 
 ### 6. Constructor Mapping
