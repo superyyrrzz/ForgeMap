@@ -33,6 +33,7 @@
 | **v0.6** | `[BeforeForge]`, `[AfterForge]`, `ForgeInto()` |
 | **v1.0** | DI integration, full diagnostics, NuGet publish |
 | **v1.1** | Mapping inheritance, polymorphic dispatch, inherited property resolution ([spec](SPEC-v1.1-inheritance.md)) |
+| **v1.2** | Null-safe property assignment, `NullPropertyHandling` strategy ([spec](SPEC-v1.2-null-property-handling.md)) |
 | *Future* | `[ConvertWith]`, `ITypeConverter<S,D>` |
 | *Future* | `ProjectTo<T>()` |
 
@@ -576,7 +577,7 @@ public partial class AppForger
 | Scenario | Default Behavior | Override |
 |----------|-----------------|----------|
 | Source object is null | Return null | `[ForgeMap(NullHandling = NullHandling.ThrowException)]` |
-| Source property is null | Assign null to destination | Use `[ForgeFrom]` for custom default |
+| Source property is null (nullable ref → non-nullable ref) | Null-forgiving (`!`) | `[ForgeMap(NullPropertyHandling = ...)]` or per-property via `[ForgeProperty]` ([v1.2 spec](SPEC-v1.2-null-property-handling.md)) |
 | Nullable<T> → T | Use `.Value` (throws if null) | Use `[ForgeFrom]` for safe default |
 | T → Nullable<T> | Direct assignment | N/A |
 | Collection is null | Return null | N/A |
@@ -603,13 +604,15 @@ public partial class AppForger
 
 #### 5.2 Nullable Reference Types
 
-With nullable reference types enabled, the generator respects nullability annotations:
+With nullable reference types enabled, the generator respects nullability annotations and applies the configured `NullPropertyHandling` strategy (see [v1.2 spec](SPEC-v1.2-null-property-handling.md)):
 
 ```csharp
 public class Source { public string? Name { get; set; } }
 public class Dest { public string Name { get; set; } }  // Non-nullable
 
-// Generator produces warning: Source.Name is nullable but Dest.Name is not
+// Generator applies NullPropertyHandling strategy (default: NullForgiving)
+// Generated: target.Name = source.Name!;
+// Also reports FM0007 warning: Source.Name is nullable but Dest.Name is not
 ```
 
 ### 6. Constructor Mapping
@@ -926,13 +929,15 @@ For project-wide defaults, use the `[ForgeMapDefaults]` assembly attribute:
 | `NullHandling` | `NullHandling` | `ReturnNull` | Default null handling mode for all forgers in the assembly |
 | `GenerateCollectionMappings` | `bool` | `true` | Enables auto-generation of collection mapping methods when element mappings exist |
 | `PropertyMatching` | `PropertyMatching` | `ByName` | Default property matching mode for all forgers in the assembly |
+| `NullPropertyHandling` | `NullPropertyHandling` | `NullForgiving` | Default strategy for nullable-to-non-nullable ref property assignments ([v1.2 spec](SPEC-v1.2-null-property-handling.md)) |
 
 ```csharp
 // In AssemblyInfo.cs or any file
 [assembly: ForgeMapDefaults(
     NullHandling = NullHandling.ReturnNull,
     GenerateCollectionMappings = true,
-    PropertyMatching = PropertyMatching.ByNameCaseInsensitive
+    PropertyMatching = PropertyMatching.ByNameCaseInsensitive,
+    NullPropertyHandling = NullPropertyHandling.CoalesceToDefault
 )]
 ```
 
@@ -951,9 +956,9 @@ For project-wide defaults, use the `[ForgeMapDefaults]` assembly attribute:
 
 ---
 
-## Limitations (v1.1)
+## Limitations (v1.2)
 
-The following AutoMapper features are **not supported** in v1.1:
+The following AutoMapper features are **not supported** in v1.2:
 
 | Feature | Reason | Workaround |
 |---------|--------|------------|
@@ -1004,6 +1009,7 @@ namespace ForgeMap
         public NullHandling NullHandling { get; set; } = NullHandling.ReturnNull;
         public PropertyMatching PropertyMatching { get; set; } = PropertyMatching.ByName;
         public string[]? SuppressDiagnostics { get; set; }
+        public NullPropertyHandling NullPropertyHandling { get; set; } = NullPropertyHandling.NullForgiving; // v1.2
     }
 
     /// <summary>
@@ -1025,6 +1031,7 @@ namespace ForgeMap
         public ForgePropertyAttribute(string sourceProperty, string destinationProperty);
         public string SourceProperty { get; }
         public string DestinationProperty { get; }
+        public NullPropertyHandling NullPropertyHandling { get; set; } = (NullPropertyHandling)(-1); // v1.2: "not set" sentinel
     }
 
     /// <summary>
@@ -1090,11 +1097,24 @@ namespace ForgeMap
         public NullHandling NullHandling { get; set; }
         public bool GenerateCollectionMappings { get; set; }
         public PropertyMatching PropertyMatching { get; set; }
+        public NullPropertyHandling NullPropertyHandling { get; set; } = NullPropertyHandling.NullForgiving; // v1.2
     }
 
     public enum NullHandling
     {
         ReturnNull,
+        ThrowException
+    }
+
+    /// <summary>
+    /// Specifies how nullable source properties should be assigned to
+    /// non-nullable destination properties. (v1.2)
+    /// </summary>
+    public enum NullPropertyHandling
+    {
+        NullForgiving,
+        SkipNull,
+        CoalesceToDefault,
         ThrowException
     }
 
@@ -1172,5 +1192,5 @@ All forging behaviors are controlled by attributes. New features should:
 
 ---
 
-*Specification Version: 1.1*
+*Specification Version: 1.2*
 *License: MIT*
