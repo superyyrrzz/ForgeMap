@@ -59,7 +59,7 @@ AutoMapper assigns null through by default (`AllowNullDestinationValues = true`)
 | AutoMapper pattern | ForgeMap equivalent |
 |---|---|
 | Default (assigns null through) | `NullPropertyHandling.NullForgiving` (default) — no configuration needed |
-| `AllowNullCollections = false` (null → empty collection) | `NullPropertyHandling.CoalesceToDefault` (applies to any nullable-ref → non-nullable-ref where a default can be generated, e.g., collections → empty, `string?` → `""`) |
+| `AllowNullCollections = false` (null → empty collection) | `NullPropertyHandling.CoalesceToDefault` — but note this applies to **all** nullable-ref → non-nullable-ref properties (not just collections). Use per-property overrides if you only want collection-only coalescing. |
 | `.NullSubstitute(value)` | `[ForgeFrom]` resolver returning the substitute value |
 
 **Three-tier configuration** — settings resolve per-property > per-forger > assembly default:
