@@ -1091,12 +1091,12 @@ namespace ForgeMap
     /// <summary>
     /// Assembly-level defaults for all forgers.
     /// </summary>
-    [AttributeUsage(AttributeTargets.Assembly, AllowMultiple = false)]
+    [AttributeUsage(AttributeTargets.Assembly, AllowMultiple = false, Inherited = false)]
     public sealed class ForgeMapDefaultsAttribute : Attribute
     {
-        public NullHandling NullHandling { get; set; }
-        public bool GenerateCollectionMappings { get; set; }
-        public PropertyMatching PropertyMatching { get; set; }
+        public NullHandling NullHandling { get; set; } = NullHandling.ReturnNull;
+        public bool GenerateCollectionMappings { get; set; } = true;
+        public PropertyMatching PropertyMatching { get; set; } = PropertyMatching.ByName;
         public NullPropertyHandling NullPropertyHandling { get; set; } = NullPropertyHandling.NullForgiving; // v1.2
     }
 

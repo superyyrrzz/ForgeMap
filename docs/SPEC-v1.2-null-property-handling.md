@@ -236,9 +236,9 @@ target.Config = source.Config ?? new global::MyApp.Models.Config();
 | `List<T>` | `new global::System.Collections.Generic.List<T>()` | Named type with parameterless ctor |
 | `Dictionary<K,V>` | `new global::System.Collections.Generic.Dictionary<K, V>()` | Named type with parameterless ctor |
 | Any type with parameterless ctor | `new global::Fully.Qualified.TypeName()` | Has accessible parameterless constructor |
-| No parameterless ctor | **Fall back to `NullForgiving`** | Report FM0007 with additional note |
+| No parameterless ctor | **Fall back to `NullForgiving`** | Report FM0007 (standard message) |
 
-When `CoalesceToDefault` cannot find a suitable default (no parameterless constructor), the generator falls back to `NullForgiving` (`!`) and reports FM0007 with the message: *"Cannot coalesce '{SourceType}.{Prop}' to default for '{DestType}.{Prop}': type '{DestType}' has no accessible parameterless constructor. Using null-forgiving operator instead."*
+When `CoalesceToDefault` cannot find a suitable default (no parameterless constructor), the generator falls back to `NullForgiving` (`!`) and reports FM0007 using its existing descriptor message format (`"The nullable source '{0}.{1}' is mapped to non-nullable destination '{2}.{3}'"`).
 
 ### 3.4 `ThrowException`
 
@@ -282,13 +282,13 @@ FM0007 can be suppressed via the existing `SuppressDiagnostics` mechanism:
 public partial class AppForger { ... }
 ```
 
-Or at the assembly level via `#pragma`:
+Or at the file level via `#pragma`:
 
 ```csharp
 #pragma warning disable FM0007
 ```
 
-Assembly-level diagnostic suppression via `ForgeMapDefaults` is not included in v1.2. Use per-forger `SuppressDiagnostics` or `#pragma warning disable` as workarounds.
+For project-wide suppression, use `<NoWarn>FM0007</NoWarn>` or `<WarningsNotAsErrors>FM0007</WarningsNotAsErrors>` in `.csproj` / `Directory.Build.props`. Assembly-level diagnostic suppression via `ForgeMapDefaults` is not included in v1.2.
 
 ---
 
