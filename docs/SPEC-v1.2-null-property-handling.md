@@ -309,9 +309,9 @@ The `NullPropertyHandling` setting applies to reverse methods as well. The direc
 
 All four strategies work with `ForgeInto()`:
 - `NullForgiving`: `target.X = source.X!;`
-- `SkipNull`: `if (source.X != null) target.X = source.X;`
+- `SkipNull`: `if (source.X is { } x) target.X = x;`
 - `CoalesceToDefault`: `target.X = source.X ?? <default>;`
-- `ThrowException`: `if (source.X == null) throw ...; target.X = source.X;`
+- `ThrowException`: `target.X = source.X ?? throw ...;`
 
 ### `[IncludeBaseForge]` configuration inheritance
 

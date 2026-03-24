@@ -1048,7 +1048,7 @@ namespace ForgeMap
     /// <summary>
     /// Uses another forging method for a nested property.
     /// </summary>
-    [AttributeUsage(AttributeTargets.Method, AllowMultiple = true)]
+    [AttributeUsage(AttributeTargets.Method, AllowMultiple = true, Inherited = false)]
     public sealed class ForgeWithAttribute : Attribute
     {
         public ForgeWithAttribute(string destinationProperty, string forgingMethodName);
@@ -1059,13 +1059,13 @@ namespace ForgeMap
     /// <summary>
     /// Generates a reverse forging method.
     /// </summary>
-    [AttributeUsage(AttributeTargets.Method, AllowMultiple = false)]
+    [AttributeUsage(AttributeTargets.Method, AllowMultiple = false, Inherited = false)]
     public sealed class ReverseForgeAttribute : Attribute { }
 
     /// <summary>
     /// Calls a method after forging completes.
     /// </summary>
-    [AttributeUsage(AttributeTargets.Method, AllowMultiple = true)]
+    [AttributeUsage(AttributeTargets.Method, AllowMultiple = true, Inherited = false)]
     public sealed class AfterForgeAttribute : Attribute
     {
         public AfterForgeAttribute(string methodName);
@@ -1075,7 +1075,7 @@ namespace ForgeMap
     /// <summary>
     /// Calls a method before forging begins.
     /// </summary>
-    [AttributeUsage(AttributeTargets.Method, AllowMultiple = true)]
+    [AttributeUsage(AttributeTargets.Method, AllowMultiple = true, Inherited = false)]
     public sealed class BeforeForgeAttribute : Attribute
     {
         public BeforeForgeAttribute(string methodName);
@@ -1085,7 +1085,7 @@ namespace ForgeMap
     /// <summary>
     /// Marks a parameter as an existing value to forge into.
     /// </summary>
-    [AttributeUsage(AttributeTargets.Parameter, AllowMultiple = false)]
+    [AttributeUsage(AttributeTargets.Parameter, AllowMultiple = false, Inherited = false)]
     public sealed class UseExistingValueAttribute : Attribute { }
 
     /// <summary>
@@ -1138,7 +1138,7 @@ namespace ForgeMap
     /// <summary>
     /// Uses a custom converter class for the forging.
     /// </summary>
-    [AttributeUsage(AttributeTargets.Method, AllowMultiple = false)]
+    [AttributeUsage(AttributeTargets.Method, AllowMultiple = false, Inherited = false)]
     public sealed class ConvertWithAttribute : Attribute
     {
         public ConvertWithAttribute(Type converterType);
