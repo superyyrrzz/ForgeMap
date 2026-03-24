@@ -69,14 +69,9 @@ See [SPEC.md](docs/SPEC.md) for the full specification.
 
 | Version | Key Features |
 |---------|--------------|
-| **v0.1** | Core generator, property matching, `[Ignore]` |
-| **v0.2** | `[ForgeProperty]`, `[ForgeFrom]`, nullable handling |
-| **v0.3** | Collections, `[ForgeWith]` (nested objects) |
-| **v0.4** | Enums, constructor mapping, flattening |
-| **v0.5** | `[ReverseForge]` |
-| **v0.6** | `[BeforeForge]`, `[AfterForge]`, `ForgeInto()` |
-| **v1.0** | DI integration, full diagnostics, NuGet publish |
+| **v1.0** | Core generator, property matching, collections, enums, constructor mapping, flattening, `[ReverseForge]`, hooks, DI integration, full diagnostics |
 | **v1.1** | Mapping inheritance, `[IncludeBaseForge]`, `[ForgeAllDerived]` polymorphic dispatch |
+| **v1.2** | Null-safe property assignment: `NullPropertyHandling` with 4 strategies, three-tier config |
 
 ## License
 

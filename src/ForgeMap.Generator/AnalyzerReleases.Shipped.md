@@ -1,6 +1,13 @@
 ; Shipped analyzer releases
 ; https://github.com/dotnet/roslyn-analyzers/blob/main/src/Microsoft.CodeAnalysis.Analyzers/ReleaseTrackingAnalyzers.Help.md
 
+## Release 1.2.0
+
+### New Rules
+
+Rule ID | Category | Severity | Notes
+--------|----------|----------|-------
+
 ## Release 1.1.0
 
 ### New Rules
@@ -37,5 +44,3 @@ FM0015 | ForgeMap | Warning | [ForgeWith] nested method lacks [ReverseForge]
 FM0016 | ForgeMap | Error | Hook method not found or has invalid signature
 FM0017 | ForgeMap | Error | [UseExistingValue] on non-reference type or method returns non-void
 FM0018 | ForgeMap | Warning | [BeforeForge]/[AfterForge] not supported on enum or collection forge methods
-
-## Release 0.1.0
