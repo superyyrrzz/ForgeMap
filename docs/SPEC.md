@@ -25,13 +25,7 @@
 
 | Version | Key Features |
 |---------|--------------|
-| **v0.1** | Core generator, property matching, `[Ignore]` |
-| **v0.2** | `[ForgeProperty]`, `[ForgeFrom]`, nullable handling |
-| **v0.3** | Collections, `[ForgeWith]` (nested objects) |
-| **v0.4** | Enums, constructor mapping, flattening |
-| **v0.5** | `[ReverseForge]` |
-| **v0.6** | `[BeforeForge]`, `[AfterForge]`, `ForgeInto()` |
-| **v1.0** | DI integration, full diagnostics, NuGet publish |
+| **v1.0** | Core generator, property matching, collections, enums, constructor mapping, flattening, `[ReverseForge]`, hooks, DI integration, full diagnostics, NuGet publish |
 | **v1.1** | Mapping inheritance, polymorphic dispatch, inherited property resolution ([spec](SPEC-v1.1-inheritance.md)) |
 | **v1.2** | Null-safe property assignment: `NullPropertyHandling` enum with 4 strategies, three-tier config, FM0007 activation ([spec](SPEC-v1.2-null-property-handling.md)) |
 | *Future* | `[ConvertWith]`, `ITypeConverter<S,D>` |
@@ -973,18 +967,17 @@ The following AutoMapper features are **not supported** in v1.2:
 
 ## Performance Characteristics
 
-### Projected Benchmarks
+### Benchmarks
 
-**Note:** These are projected estimates based on source-generator architecture analysis. Actual benchmarks will be published after v1.0 implementation.
+Measured with BenchmarkDotNet v0.14.0 on .NET 9, AMD EPYC 7763. See [benchmarks/BENCHMARK_RESULTS.md](../benchmarks/BENCHMARK_RESULTS.md) for detailed results.
 
-| Scenario | AutoMapper (est.) | ForgeMap (proj.) | Projected Gain |
-|----------|-------------------|-------------------|----------------|
-| Simple object (10 props) | ~150ns | ~15-30ns | 5-10x |
-| Nested object (3 levels) | ~450ns | ~45-90ns | 5-10x |
-| Collection (100 items) | ~15μs | ~1.5-3μs | 5-10x |
-| Large object (50 props) | ~750ns | ~75-150ns | 5-10x |
-
-*Performance claims will be validated with BenchmarkDotNet in the v1.0 release.*
+| Scenario | ForgeMap | Mapperly | AutoMapper |
+|----------|----------|----------|------------|
+| Simple object (10 props) | **14.5 ns** | 15.9 ns (1.1x) | 80.7 ns (5.6x) |
+| Nested object (2 levels) | **27.3 ns** | 30.7 ns (1.1x) | 92.5 ns (3.4x) |
+| Deep graph (4 levels) | **31.3 ns** | 35.8 ns (1.1x) | 247.0 ns (7.9x) |
+| Collection (100 items) | **1.67 us** | 2.02 us (1.2x) | 2.44 us (1.5x) |
+| Collection (1000 items) | **17.7 us** | 20.1 us (1.1x) | 22.2 us (1.3x) |
 
 ### Why ForgeMap is Faster
 
