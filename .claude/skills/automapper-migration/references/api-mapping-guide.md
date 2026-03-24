@@ -150,14 +150,14 @@ When `[ForgeAllDerived]` is on a base forge method, collection forge methods for
 
 ### Nullable-property handling
 
-Controls how nullable-to-non-nullable **reference type** property assignments are generated. Does not apply to value types, `[ForgeFrom]` resolvers, or `[ForgeWith]` nested mappings.
+Controls how nullable-to-non-nullable **reference type** property assignments and constructor-parameter expressions are generated. Does not apply to value types, `[ForgeFrom]` resolvers, or `[ForgeWith]` nested mappings.
 
 | AutoMapper | ForgeMap | Notes |
 |---|---|---|
-| Default (assigns null through / `AllowNullDestinationValues = true`) | `NullPropertyHandling.NullForgiving` (default) | `target.X = source.X!;` — same runtime behavior as AutoMapper |
+| Default (assigns null through / `AllowNullDestinationValues = true`) | `NullPropertyHandling.NullForgiving` (default) | `target.X = source.X!;` — same runtime behavior as AutoMapper (for both property assignments and ctor parameters) |
 | `AllowNullCollections = false` | `NullPropertyHandling.CoalesceToDefault` | `target.X = source.X ?? <default>;` — type-aware defaults (empty string, empty list, etc.) for `string`, arrays, and concrete types with a public parameterless ctor; other reference types fall back to `NullForgiving` (`target.X = source.X!;`) |
 | `.NullSubstitute(value)` per property | `[ForgeFrom]` resolver returning the substitute | No direct attribute; resolver has full control |
-| No equivalent | `NullPropertyHandling.SkipNull` | `if (source.X is { } v) target.X = v;` — destination keeps its initialized value |
+| No equivalent | `NullPropertyHandling.SkipNull` | `if (source.X is { } v) target.X = v;` — destination keeps its initialized value; for constructor parameters, `SkipNull` cannot omit the argument, so it falls back to `NullForgiving` (e.g., `new Dest(source.X!)`) |
 | No equivalent | `NullPropertyHandling.ThrowException` | `target.X = source.X ?? throw new ArgumentNullException(...)` — fail-fast |
 
 **Three-tier configuration** — per-property > per-forger > assembly default:
@@ -174,7 +174,7 @@ Controls how nullable-to-non-nullable **reference type** property assignments ar
     NullPropertyHandling = NullPropertyHandling.ThrowException)]
 ```
 
-**FM0007 diagnostic** — ForgeMap reports a warning for every nullable ref → non-nullable ref property mapping, regardless of strategy. Suppress with `SuppressDiagnostics = new[] { "FM0007" }`, `#pragma warning disable FM0007`, or `<NoWarn>FM0007</NoWarn>` in `.csproj`.
+**FM0007 diagnostic** — ForgeMap reports a warning for nullable ref → non-nullable ref *direct* property assignments (by convention, `[ForgeProperty]`, or auto-flatten). It is not reported when the destination is mapped via `[ForgeFrom]` resolver or `[ForgeWith]` nested forging. Suppress with `SuppressDiagnostics = new[] { "FM0007" }`, `#pragma warning disable FM0007`, or `<NoWarn>FM0007</NoWarn>` in `.csproj`.
 
 ## Collections
 
@@ -413,7 +413,7 @@ public partial class AppForger
 {
     public partial SnapshotDto Forge(Assessment source);
 }
-// Generated: target.Tags = source.Tags!;
+// Effectively: target.Tags = source.Tags!;
 
 // AFTER (ForgeMap) — CoalesceToDefault matches AllowNullCollections = false
 [ForgeMap(NullPropertyHandling = NullPropertyHandling.CoalesceToDefault)]
@@ -421,7 +421,7 @@ public partial class AppForger
 {
     public partial SnapshotDto Forge(Assessment source);
 }
-// Generated: target.Tags = source.Tags ?? new List<string>();
+// Effectively: target.Tags = source.Tags ?? new List<string>();
 
 // Per-property override for mixed strategies
 [ForgeMap]
