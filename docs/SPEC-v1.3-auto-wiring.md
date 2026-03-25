@@ -318,12 +318,16 @@ Items = source.Items is { } __autoItems
     : null!,
 ```
 
-**HashSet:**
+**HashSet (pre-sized `foreach` + `Add`):**
 
 ```csharp
 Labels = source.Labels is { } __autoLabels
-    ? new global::System.Collections.Generic.HashSet<LabelDto>(
-        __autoLabels.Select(item => Forge(item)))
+    ? (() => {
+          var __set = new global::System.Collections.Generic.HashSet<LabelDto>(__autoLabels.Count);
+          foreach (var item in __autoLabels)
+              __set.Add(Forge(item));
+          return __set;
+      })()
     : null!,
 ```
 
@@ -437,11 +441,10 @@ public partial class AppForger { ... }
 
 FM0011 is an info-level diagnostic (disabled by default). Enable it to see which properties are auto-wired:
 
-```xml
-<!-- In .csproj — promote FM0011 to a visible warning -->
-<PropertyGroup>
-    <WarningsAsErrors>FM0011</WarningsAsErrors>
-</PropertyGroup>
+```ini
+# In .editorconfig (solution or project root)
+[*.cs]
+dotnet_diagnostic.FM0011.severity = suggestion
 ```
 
 Or per-file:
