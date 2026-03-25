@@ -266,7 +266,7 @@ Explicitly declared collection forge methods always take precedence.
 
 #### Interaction with `GenerateCollectionMappings`
 
-The existing `GenerateCollectionMappings` flag (default `true`) controls whether **explicitly declared** collection forge methods get auto-generated bodies. The new inline collection feature is separate — it generates collection iteration **inline in property assignments** rather than as standalone methods. The behavior matrix:
+The existing `GenerateCollectionMappings` flag (default `true`, assembly-level only via `[assembly: ForgeMapDefaults(...)]`) controls whether **explicitly declared** collection forge methods get auto-generated bodies. The new inline collection feature is separate — it generates collection iteration **inline in property assignments** rather than as standalone methods. Since `GenerateCollectionMappings` is assembly-scoped and `AutoWireNestedMappings` is per-forger, the effective behavior for a given forger combines both settings. The behavior matrix:
 
 | `AutoWireNestedMappings` | `GenerateCollectionMappings` | Behavior |
 |--------------------------|------------------------------|----------|
