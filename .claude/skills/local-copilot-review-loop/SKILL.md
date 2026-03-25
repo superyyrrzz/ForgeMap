@@ -65,13 +65,12 @@ This is a known friction point — the CLI may initially try the wrong repo URL 
 
 ### Timeout
 
-The CLI can take 30-90 seconds per invocation (it runs multiple LLM calls internally). Use a 120s timeout:
+The CLI can take 30-90 seconds per invocation (it runs multiple LLM calls internally). Set `timeout: 120000` on the Bash tool call to avoid hanging:
 
-```bash
-timeout 120 copilot -p "..."
 ```
-
-Or set `timeout: 120000` on the Bash tool call.
+# The timeout parameter on the Bash tool call handles this automatically.
+# Do NOT use the Unix `timeout` command (unavailable on Windows).
+```
 
 ## Processing findings
 
