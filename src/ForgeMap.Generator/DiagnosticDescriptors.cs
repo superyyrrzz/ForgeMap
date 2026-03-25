@@ -192,4 +192,12 @@ internal static class DiagnosticDescriptors
         category: Category,
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor ForgeAllDerivedAbstractDestination = new(
+        id: "FM0024",
+        title: "[ForgeAllDerived] on abstract/interface destination",
+        messageFormat: "[ForgeAllDerived] on abstract/interface destination type '{0}': unmatched source subtypes will throw NotSupportedException at runtime",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
 }

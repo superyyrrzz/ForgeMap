@@ -3559,6 +3559,273 @@ public class ForgeAllDerivedTests
         Assert.Contains("Polymorphic dispatch", generatedCode);
     }
 
+    [Fact]
+    public void ForgeAllDerived_AbstractDestination_GeneratesDispatchOnly()
+    {
+        var source = """
+            using ForgeMap;
+
+            namespace TestNamespace
+            {
+                public class BaseEntity { public int Id { get; set; } }
+                public class DerivedAEntity : BaseEntity { public string Extra { get; set; } }
+                public class DerivedBEntity : BaseEntity { public int Score { get; set; } }
+
+                public abstract class BaseDto { public int Id { get; set; } }
+                public class DerivedADto : BaseDto { public string Extra { get; set; } }
+                public class DerivedBDto : BaseDto { public int Score { get; set; } }
+
+                [ForgeMap]
+                public partial class TestForger
+                {
+                    [ForgeAllDerived]
+                    public partial BaseDto Forge(BaseEntity source);
+                    public partial DerivedADto Forge(DerivedAEntity source);
+                    public partial DerivedBDto Forge(DerivedBEntity source);
+                }
+            }
+            """;
+
+        var (diagnostics, generatedTrees) = RunGenerator(source);
+
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        Assert.Single(generatedTrees);
+        var generatedCode = generatedTrees[0].GetText().ToString();
+
+        // Should contain dispatch is-checks
+        Assert.Contains("source is TestNamespace.DerivedAEntity", generatedCode);
+        Assert.Contains("source is TestNamespace.DerivedBEntity", generatedCode);
+        Assert.Contains("return Forge(", generatedCode);
+
+        // Should throw NotSupportedException as fallback
+        Assert.Contains("throw new global::System.NotSupportedException(", generatedCode);
+        Assert.Contains("abstract destination type", generatedCode);
+
+        // Should NOT contain base-type object initializer (no "new BaseDto" for abstract type)
+        Assert.DoesNotContain("new TestNamespace.BaseDto", generatedCode);
+    }
+
+    [Fact]
+    public void ForgeAllDerived_InterfaceDestination_GeneratesDispatchOnly()
+    {
+        var source = """
+            using ForgeMap;
+
+            namespace TestNamespace
+            {
+                public class BaseEntity { public int Id { get; set; } }
+                public class DerivedEntity : BaseEntity { public string Name { get; set; } }
+
+                public interface IBaseDto { int Id { get; set; } }
+                public class DerivedDto : IBaseDto { public int Id { get; set; } public string Name { get; set; } }
+
+                [ForgeMap]
+                public partial class TestForger
+                {
+                    [ForgeAllDerived]
+                    public partial IBaseDto Forge(BaseEntity source);
+                    public partial DerivedDto Forge(DerivedEntity source);
+                }
+            }
+            """;
+
+        var (diagnostics, generatedTrees) = RunGenerator(source);
+
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        Assert.Single(generatedTrees);
+        var generatedCode = generatedTrees[0].GetText().ToString();
+
+        // Should contain dispatch
+        Assert.Contains("source is TestNamespace.DerivedEntity", generatedCode);
+
+        // Should throw NotSupportedException as fallback
+        Assert.Contains("throw new global::System.NotSupportedException(", generatedCode);
+
+        // Should NOT attempt to instantiate the interface
+        Assert.DoesNotContain("new TestNamespace.IBaseDto", generatedCode);
+    }
+
+    [Fact]
+    public void ForgeAllDerived_AbstractDestination_EmitsFM0024Warning()
+    {
+        var source = """
+            using ForgeMap;
+
+            namespace TestNamespace
+            {
+                public class BaseEntity { public int Id { get; set; } }
+                public class DerivedEntity : BaseEntity { public string Name { get; set; } }
+
+                public abstract class BaseDto { public int Id { get; set; } }
+                public class DerivedDto : BaseDto { public string Name { get; set; } }
+
+                [ForgeMap]
+                public partial class TestForger
+                {
+                    [ForgeAllDerived]
+                    public partial BaseDto Forge(BaseEntity source);
+                    public partial DerivedDto Forge(DerivedEntity source);
+                }
+            }
+            """;
+
+        var (diagnostics, generatedTrees) = RunGenerator(source);
+
+        Assert.Single(generatedTrees);
+        var fm0024 = diagnostics.Where(d => d.Id == "FM0024").ToList();
+        Assert.Single(fm0024);
+        Assert.Equal(DiagnosticSeverity.Warning, fm0024[0].Severity);
+        // Should NOT have FM0004 (no accessible constructor)
+        Assert.Empty(diagnostics.Where(d => d.Id == "FM0004"));
+    }
+
+    [Fact]
+    public void ForgeAllDerived_AbstractDestination_NoDerived_EmitsFM0022Warning()
+    {
+        var source = """
+            using ForgeMap;
+
+            namespace TestNamespace
+            {
+                public class BaseEntity { public int Id { get; set; } }
+
+                public abstract class BaseDto { public int Id { get; set; } }
+
+                [ForgeMap]
+                public partial class TestForger
+                {
+                    [ForgeAllDerived]
+                    public partial BaseDto Forge(BaseEntity source);
+                }
+            }
+            """;
+
+        var (diagnostics, generatedTrees) = RunGenerator(source);
+
+        Assert.Single(generatedTrees);
+        // FM0022 still emitted
+        var fm0022 = diagnostics.Where(d => d.Id == "FM0022").ToList();
+        Assert.Single(fm0022);
+        // FM0024 NOT emitted (no derived methods found, so no dispatch)
+        Assert.Empty(diagnostics.Where(d => d.Id == "FM0024"));
+        // FM0004 NOT emitted
+        Assert.Empty(diagnostics.Where(d => d.Id == "FM0004"));
+
+        var generatedCode = generatedTrees[0].GetText().ToString();
+        // Should still have throw fallback
+        Assert.Contains("throw new global::System.NotSupportedException(", generatedCode);
+    }
+
+    [Fact]
+    public void ForgeAllDerived_AbstractDestination_NoFM0004Error()
+    {
+        var source = """
+            using ForgeMap;
+
+            namespace TestNamespace
+            {
+                public class BaseEntity { public int Id { get; set; } }
+                public class DerivedEntity : BaseEntity { public string Extra { get; set; } }
+
+                public abstract class BaseDto { public int Id { get; set; } }
+                public class DerivedDto : BaseDto { public string Extra { get; set; } }
+
+                [ForgeMap]
+                public partial class TestForger
+                {
+                    [ForgeAllDerived]
+                    public partial BaseDto Forge(BaseEntity source);
+                    public partial DerivedDto Forge(DerivedEntity source);
+                }
+            }
+            """;
+
+        var (diagnostics, generatedTrees) = RunGenerator(source);
+
+        // No errors at all
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        // FM0004 specifically should not appear
+        Assert.Empty(diagnostics.Where(d => d.Id == "FM0004"));
+    }
+
+    [Fact]
+    public void ForgeAllDerived_AbstractDestination_ThrowExceptionNullHandling()
+    {
+        var source = """
+            using ForgeMap;
+
+            namespace TestNamespace
+            {
+                public class BaseEntity { public int Id { get; set; } }
+                public class DerivedEntity : BaseEntity { public string Name { get; set; } }
+
+                public abstract class BaseDto { public int Id { get; set; } }
+                public class DerivedDto : BaseDto { public string Name { get; set; } }
+
+                [ForgeMap(NullHandling = NullHandling.ThrowException)]
+                public partial class TestForger
+                {
+                    [ForgeAllDerived]
+                    public partial BaseDto Forge(BaseEntity source);
+                    public partial DerivedDto Forge(DerivedEntity source);
+                }
+            }
+            """;
+
+        var (diagnostics, generatedTrees) = RunGenerator(source);
+
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        Assert.Single(generatedTrees);
+        var generatedCode = generatedTrees[0].GetText().ToString();
+
+        // ThrowException null handling: should throw ArgumentNullException for null source
+        Assert.Contains("throw new global::System.ArgumentNullException(nameof(source))", generatedCode);
+        // Still has dispatch + NotSupportedException fallback
+        Assert.Contains("source is TestNamespace.DerivedEntity", generatedCode);
+        Assert.Contains("throw new global::System.NotSupportedException(", generatedCode);
+    }
+
+    [Fact]
+    public void ForgeAllDerived_ConcreteDestination_UnchangedBehavior()
+    {
+        // Regression test: concrete destinations should still produce base-type mapping fallback
+        var source = """
+            using ForgeMap;
+
+            namespace TestNamespace
+            {
+                public class BaseEntity { public int Id { get; set; } }
+                public class DerivedEntity : BaseEntity { public string Name { get; set; } }
+
+                public class BaseDto { public int Id { get; set; } }
+                public class DerivedDto : BaseDto { public string Name { get; set; } }
+
+                [ForgeMap]
+                public partial class TestForger
+                {
+                    [ForgeAllDerived]
+                    public partial BaseDto Forge(BaseEntity source);
+                    public partial DerivedDto Forge(DerivedEntity source);
+                }
+            }
+            """;
+
+        var (diagnostics, generatedTrees) = RunGenerator(source);
+
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        Assert.Single(generatedTrees);
+        var generatedCode = generatedTrees[0].GetText().ToString();
+
+        // Should have dispatch
+        Assert.Contains("source is TestNamespace.DerivedEntity", generatedCode);
+        // Should have base-type mapping fallback (concrete — NOT abstract)
+        Assert.Contains("Id = source.Id,", generatedCode);
+        // Should NOT have NotSupportedException throw
+        Assert.DoesNotContain("NotSupportedException", generatedCode);
+        // Should NOT have FM0024
+        Assert.Empty(diagnostics.Where(d => d.Id == "FM0024"));
+    }
+
     private static (IReadOnlyList<Diagnostic> Diagnostics, IReadOnlyList<SyntaxTree> GeneratedTrees) RunGenerator(string source)
     {
         return SourceGeneratorTests.RunGenerator(source);
