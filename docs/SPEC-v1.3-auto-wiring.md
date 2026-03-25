@@ -202,7 +202,7 @@ Following the existing three-tier precedent:
 |-------|--------------|---------|
 | Assembly | `[assembly: ForgeMapDefaults(AutoWireNestedMappings = false)]` | Disable project-wide |
 | Forger | `[ForgeMap(AutoWireNestedMappings = false)]` | Disable per-forger |
-| Property | `[ForgeWith]`, `[ForgeFrom]`, `[Ignore]` | Override individual properties |
+| Property | `[ForgeProperty]`, `[ForgeWith]`, `[ForgeFrom]`, `[Ignore]` | Override individual properties |
 
 ### Generated Code
 
