@@ -1009,14 +1009,18 @@ internal sealed class ForgeCodeEmitter
         if (hasForgeAllDerived)
         {
             var derivedMethods = DiscoverDerivedForgeMethods(method, sourceType, destinationType, forger);
+            var isAbstractOrInterface = destinationType.IsAbstract || destinationType.TypeKind == TypeKind.Interface;
 
             if (derivedMethods.Count == 0)
             {
-                // FM0022: no derived forge methods found
+                // FM0022: no derived forge methods found — use abstract-specific message when applicable
                 ReportDiagnosticIfNotSuppressed(context,
                     DiagnosticDescriptors.ForgeAllDerivedNoDerivedMethods,
                     method.Locations.FirstOrDefault(),
-                    method.Name);
+                    method.Name,
+                    isAbstractOrInterface
+                        ? "dispatch-only body has no base-type fallback \u2014 all non-null inputs will throw NotSupportedException"
+                        : "polymorphic dispatch will only map the base type");
             }
             else
             {
@@ -1049,6 +1053,26 @@ internal sealed class ForgeCodeEmitter
                     sb.AppendLine($"            if ({sourceParam} is {derivedSourceDisplay} {finalName}) return {method.Name}({finalName});");
                 }
                 sb.AppendLine();
+
+                // FM0024: warn about abstract/interface destination — unmatched subtypes throw at runtime
+                if (isAbstractOrInterface)
+                {
+                    ReportDiagnosticIfNotSuppressed(context,
+                        DiagnosticDescriptors.ForgeAllDerivedAbstractDestination,
+                        method.Locations.FirstOrDefault(),
+                        destinationType.ToDisplayString());
+                }
+            }
+
+            // Abstract/interface destinations: dispatch-only body with throw fallback — no base-type mapping
+            if (isAbstractOrInterface)
+            {
+                var destDisplayName = destinationType.ToDisplayString();
+                sb.AppendLine($"            throw new global::System.NotSupportedException(");
+                sb.AppendLine($"                $\"No forge mapping for source type '{{({sourceParam}).GetType().FullName}}' \" +");
+                sb.AppendLine($"                $\"to non-instantiable destination type '{destDisplayName}'.\");");
+                sb.AppendLine("        }");
+                return sb.ToString();
             }
         }
 
