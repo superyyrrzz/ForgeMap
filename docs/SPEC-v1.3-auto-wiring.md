@@ -290,7 +290,9 @@ public partial class AppForger
 
 ### Generated Code Examples
 
-Multi-statement collection mappings (List, HashSet) are assigned via post-construction statements to avoid IIFE overhead. Single-expression mappings (Array, IEnumerable) can remain inline in object initializers since they don't require an IIFE or statement-based assignment (note: lambdas still allocate delegates, but avoid the extra closure + IIFE overhead of multi-statement blocks).
+Multi-statement collection mappings (List, HashSet) are assigned via post-construction statements to avoid IIFE overhead when the destination property has a regular setter. For `init`-only properties, the generator builds the collection into a local variable before object construction and assigns it within the object initializer. Single-expression mappings (Array, IEnumerable) can remain inline in object initializers since they don't require an IIFE or statement-based assignment (note: lambdas still allocate delegates, but avoid the extra closure + IIFE overhead of multi-statement blocks).
+
+> **Note:** The inline `List<T>` / `HashSet<T>` examples that follow assume the default configuration `NullPropertyHandling = NullForgiving` and a settable destination property. When `SkipNull`, `CoalesceToDefault`, or `ThrowException` are used instead, only the outer-collection behavior in the generated code changes, as described in the Null Handling table below. When the property is `init`-only, the post-construction pattern is replaced with a pre-construction local variable assigned in the object initializer.
 
 **List with pre-sizing (source has `.Count`) — post-construction statements:**
 
@@ -392,7 +394,7 @@ Auto-wired nested and collection properties participate in `[ReverseForge]` gene
 
 ### Diagnostics
 
-No new diagnostics — reuses FM0006 when element method isn't found, FM0025 for ambiguous element matches, and FM0026 for missing reverse forge methods on auto-wired properties.
+No additional diagnostics introduced by this feature — it reuses FM0006 when an element method isn't found, FM0025 for ambiguous element matches, and FM0026 for missing reverse forge methods on auto-wired properties (all of which are new in v1.3).
 
 ### Competitor Comparison
 
@@ -482,5 +484,5 @@ FM0011 messages distinguish between convention-mapped and auto-wired properties 
 ---
 
 *Specification Version: 1.3*
-*Status: Proposal — not yet implemented. `AutoWireNestedMappings`, FM0024, and FM0025 do not exist in the current codebase.*
+*Status: Proposal — the features, diagnostics (including `AutoWireNestedMappings`, FM0024–FM0026), and behavioral changes described here are not yet implemented in the current codebase.*
 *License: MIT*
