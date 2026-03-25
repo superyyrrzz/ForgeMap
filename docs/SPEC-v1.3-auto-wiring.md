@@ -154,7 +154,7 @@ For each destination property during code generation:
 
 1. **Explicit wins**: If the property has `[ForgeWith]`, `[ForgeFrom]`, `[Ignore]`, or a `[ForgeProperty]` to a directly assignable source — no auto-wiring
 2. **Find source property**: Match by name convention or `[ForgeProperty]` mapping
-3. **Check assignability**: If source type is directly assignable to destination type, or is a primitive/enum/string — use direct assignment (no auto-wiring needed)
+3. **Check assignability**: If the source type is directly assignable to the destination type, use direct assignment (no auto-wiring needed). Primitive/enum/string (scalar) types are treated as non-auto-wirable: normal assignment and enum-compatibility rules apply, and if no compatible assignment exists, the property remains unmapped (falling through to FM0006)
 4. **Flattening takes precedence**: If auto-flattening resolves the property (e.g., `CustomerName` → `source.Customer.Name`), the flattened scalar value is used — no auto-wiring. Flattened paths always produce direct assignments, not nested forge calls
 5. **Search forge methods**: Look for partial forge methods on the forger class where:
    - Source parameter type matches the source property type
@@ -394,7 +394,7 @@ Auto-wired nested and collection properties participate in `[ReverseForge]` gene
 
 ### Diagnostics
 
-No additional diagnostics introduced by this feature — it reuses FM0006 when an element method isn't found, FM0025 for ambiguous element matches, and FM0026 for missing reverse forge methods on auto-wired properties (all of which are new in v1.3).
+No additional diagnostics introduced by this feature — it reuses existing FM0006 when an element method isn't found, and uses new FM0025 for ambiguous element matches and new FM0026 for missing reverse forge methods on auto-wired properties (both added in v1.3).
 
 ### Competitor Comparison
 
