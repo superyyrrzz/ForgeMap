@@ -706,7 +706,8 @@ internal sealed class ForgeCodeEmitter
                 if (forwardCandidates.Count != 1) continue; // Only check properties that are actually auto-wired forward
 
                 // Now check if reverse forge method exists (destProp.Type → forwardSourcePropType)
-                var reverseCandidates = FindAutoWireForgeMethodCandidates(forger.Symbol, destProp.Type, forwardSourcePropType);
+                // For the reverse check, also consider non-partial methods (explicit reverse implementations)
+                var reverseCandidates = FindReverseForgeMethodCandidates(forger.Symbol, destProp.Type, forwardSourcePropType);
                 if (reverseCandidates.Count == 0)
                 {
                     // Also check if the forward auto-wire candidate has [ReverseForge],
@@ -2590,6 +2591,23 @@ internal sealed class ForgeCodeEmitter
             .OfType<IMethodSymbol>()
             .Where(m =>
                 m.IsPartialDefinition &&
+                m.Parameters.Length == 1 &&
+                !m.ReturnsVoid &&
+                SymbolEqualityComparer.Default.Equals(m.Parameters[0].Type, sourcePropertyType) &&
+                SymbolEqualityComparer.Default.Equals(m.ReturnType, destPropertyType))
+            .ToList();
+    }
+
+    /// <summary>
+    /// Finds forge method candidates for FM0026 reverse checking, including both partial definitions
+    /// and non-partial methods (explicit reverse implementations provided by the user).
+    /// </summary>
+    private static List<IMethodSymbol> FindReverseForgeMethodCandidates(
+        INamedTypeSymbol forgerType, ITypeSymbol sourcePropertyType, ITypeSymbol destPropertyType)
+    {
+        return forgerType.GetMembers()
+            .OfType<IMethodSymbol>()
+            .Where(m =>
                 m.Parameters.Length == 1 &&
                 !m.ReturnsVoid &&
                 SymbolEqualityComparer.Default.Equals(m.Parameters[0].Type, sourcePropertyType) &&

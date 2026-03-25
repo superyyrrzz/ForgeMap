@@ -4238,55 +4238,16 @@ namespace TestNamespace
     }
 }";
         var (diagnostics, generatedTrees) = RunGenerator(source);
-        
-        // Check for diagnostics
-        Console.WriteLine("=== DIAGNOSTICS ===");
-        if (!diagnostics.Any())
-        {
-            Console.WriteLine("(none)");
-        }
-        else
-        {
-            foreach (var d in diagnostics)
-            {
-                Console.WriteLine($"[{d.Severity}] {d.Id}: {d.GetMessage()}");
-            }
-        }
-        
-        // Check generated code
-        Console.WriteLine();
-        Console.WriteLine("=== GENERATED CODE ===");
-        foreach (var tree in generatedTrees)
-        {
-            Console.WriteLine(tree.GetText().ToString());
-        }
-        
-        // The bug: FM0026 should NOT be emitted because the reverse forge method for Inner should exist
-        // But if FindAutoWireForgeMethodCandidates only looks for partial definitions,
-        // it won't find the generated (non-partial) reverse methods
-        var fm0026 = diagnostics.Where(d => d.Id == "FM0026").ToList();
         var generatedCode = string.Join("\n", generatedTrees.Select(t => t.GetText().ToString()));
-        
-        // Log the findings
-        Console.WriteLine();
-        Console.WriteLine("=== TEST RESULTS ===");
-        Console.WriteLine($"FM0026 diagnostics found: {fm0026.Count}");
-        Console.WriteLine($"Contains 'ForgeInner' in generated code: {generatedCode.Contains("ForgeInner")}");
-        Console.WriteLine($"Contains reverse 'Forge' call in outer method: {generatedCode.Contains("Forge(source.Inner")}");
-        
-        // The test expectation
-        if (fm0026.Count > 0)
-        {
-            Console.WriteLine("\n*** BUG DETECTED: FM0026 emitted when it shouldn't be ***");
-            foreach (var d in fm0026)
-            {
-                Console.WriteLine($"  {d.GetMessage()}");
-            }
-        }
-        else
-        {
-            Console.WriteLine("\n*** Test PASSED: No FM0026 warnings ***");
-        }
+
+        // FM0026 should NOT be emitted because inner method has [ReverseForge]
+        Assert.Empty(diagnostics.Where(d => d.Id == "FM0026"));
+
+        // Forward auto-wire should use ForgeInner for the Inner property
+        Assert.Contains("ForgeInner", generatedCode);
+
+        // Reverse method should be generated for outer
+        Assert.Contains("ForgeOuter", generatedCode);
     }
 
 
