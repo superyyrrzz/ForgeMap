@@ -4153,6 +4153,35 @@ namespace TestNamespace
     }
 
     [Fact]
+    public void AutoWire_ReverseForge_NoFM0026_WhenInnerHasReverseForge()
+    {
+        var source = @"
+using ForgeMap;
+
+namespace TestNamespace
+{
+    public class InnerSource { public int Value { get; set; } }
+    public class InnerDest { public int Value { get; set; } }
+    public class OuterSource { public InnerSource Inner { get; set; } }
+    public class OuterDest { public InnerDest Inner { get; set; } }
+
+    [ForgeMap]
+    public partial class TestForger
+    {
+        [ReverseForge]
+        public partial InnerDest Forge(InnerSource source);
+
+        [ReverseForge]
+        public partial OuterDest Forge(OuterSource source);
+    }
+}";
+        var (diagnostics, _) = RunGenerator(source);
+        // Inner forge method has [ReverseForge], so reverse auto-wire should be possible
+        // Should NOT get FM0026
+        Assert.Empty(diagnostics.Where(d => d.Id == "FM0026"));
+    }
+
+    [Fact]
     public void AutoWire_ForgePropertyDotPath_AutoWiresLeafType()
     {
         var source = @"

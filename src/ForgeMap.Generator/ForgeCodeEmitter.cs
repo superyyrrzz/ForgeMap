@@ -708,10 +708,16 @@ internal sealed class ForgeCodeEmitter
                 var reverseCandidates = FindAutoWireForgeMethodCandidates(forger.Symbol, destProp.Type, forwardSourcePropType);
                 if (reverseCandidates.Count == 0)
                 {
-                    ReportDiagnosticIfNotSuppressed(context,
-                        DiagnosticDescriptors.AutoWiredPropertyLacksReverseForge,
-                        forwardMethod.Locations.FirstOrDefault(),
-                        destProp.Name);
+                    // Also check if the forward auto-wire candidate has [ReverseForge],
+                    // which means a reverse method will be generated automatically
+                    var forwardCandidate = forwardCandidates[0];
+                    if (!HasReverseForgeAttribute(forwardCandidate))
+                    {
+                        ReportDiagnosticIfNotSuppressed(context,
+                            DiagnosticDescriptors.AutoWiredPropertyLacksReverseForge,
+                            forwardMethod.Locations.FirstOrDefault(),
+                            destProp.Name);
+                    }
                 }
             }
         }
