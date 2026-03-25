@@ -218,7 +218,7 @@ internal static class DiagnosticDescriptors
         isEnabledByDefault: true);
 
     public static readonly DiagnosticDescriptor PropertyAutoWired = new(
-        id: "FM0011",
+        id: "FM0027",
         title: "Property auto-wired via forge method",
         messageFormat: "Property '{0}' auto-wired via forge method '{1}'",
         category: Category,
