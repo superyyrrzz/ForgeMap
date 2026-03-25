@@ -154,7 +154,7 @@ For each destination property during code generation:
 3. **Check assignability**: If source type is directly assignable to destination type, or is a primitive/enum/string — use direct assignment (no auto-wiring needed)
 4. **Search forge methods**: Look for partial forge methods on the forger class where:
    - Source parameter type matches the source property type
-   - Return type is assignable to the destination property type
+   - Return type exactly matches the destination property type
 5. **Resolution**:
    - Exactly 1 match → auto-wire (same codegen as `[ForgeWith]`)
    - 0 matches → fall through to normal unmapped behavior (FM0006)
@@ -349,7 +349,7 @@ else
 | `List<T>` | `List<U>` | Pre-sized `new List<U>(Count)` + `foreach` |
 | `IList<T>` | `List<U>` | Pre-sized + `foreach` |
 | `ICollection<T>` | `List<U>` | Pre-sized + `foreach` |
-| `IEnumerable<T>` | `List<U>` | `.Select().ToList()` |
+| `IEnumerable<T>` | `List<U>` | `foreach` + `Add` (no pre-sizing; LINQ `.Select().ToList()` as fallback) |
 | `T[]` | `U[]` | `Array.ConvertAll` or indexed loop |
 | `IEnumerable<T>` | `IEnumerable<U>` | `.Select()` (lazy) |
 | `IReadOnlyList<T>` | `List<U>` | Pre-sized + `foreach` |
@@ -358,13 +358,13 @@ else
 
 ### Null Handling
 
-Inline collection mapping follows the same null patterns as existing collection methods:
+Inline collection mapping uses the same null guarding pattern as `[ForgeWith]` for source collections, and the same `NullHandling` semantics as element forge methods for individual elements:
 
 | Source Value | Generated Behavior |
 |--------------|--------------------|
-| `null` | Returns `null!` (reference types) or `default` (value types) |
-| Empty collection | Returns empty collection of destination type |
-| Elements are `null` | Passed to `Forge(null)` — result depends on forger's `NullHandling` setting (`ReturnNull` → null element preserved; `ThrowException` → throws) |
+| Collection is `null` | Destination assigned `null!` (reference types) or `default` (value types); no element forge method is invoked (matches `[ForgeWith]`-style guarding, regardless of `NullHandling`) |
+| Collection is empty | Returns an empty collection of the destination type |
+| Elements are `null` | Each element (including `null`) is passed to the element forge method; result depends on that method's `NullHandling` (`ReturnNull` → null element preserved; `ThrowException` → throws) |
 
 ### `[ReverseForge]` Interaction
 
