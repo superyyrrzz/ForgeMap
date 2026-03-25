@@ -375,7 +375,7 @@ Inline collection mapping follows existing `NullPropertyHandling` semantics for 
 |--------------|--------------------|
 | Collection is `null` | Governed by `NullPropertyHandling`: `NullForgiving` → `null!`, `CoalesceToDefault` → empty collection, `SkipNull` → skip assignment, `ThrowException` → throw. Default (`NullForgiving`) matches `[ForgeWith]`-style guarding |
 | Collection is empty | Returns an empty collection of the destination type |
-| Elements are `null` | Each element (including `null`) is passed to the element forge method; result depends on that method's `NullHandling` (`ReturnNull` → null element preserved; `ThrowException` → throws) |
+| Elements are `null` | Each element (including `null`) is passed to the element forge method; result depends on that method's `NullHandling` (`ReturnNull` → `null!` for reference-type destinations / `default` for non-nullable value-type destinations; `ThrowException` → throws) |
 
 ### `[ReverseForge]` Interaction
 
