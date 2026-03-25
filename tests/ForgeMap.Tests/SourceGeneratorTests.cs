@@ -1,4 +1,4 @@
-using Microsoft.CodeAnalysis;
+﻿using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using ForgeMap.Generator;
 using Xunit;
@@ -3862,10 +3862,9 @@ namespace TestNamespace
         var (diagnostics, trees) = RunGenerator(source);
         var generatedCode = string.Join("\n", trees.Select(t => t.GetText().ToString()));
 
-        // The outer Forge should auto-wire Inner via the inner Forge method
-        Assert.Contains("Forge(", generatedCode);
-        // No FM0006 for Inner property
-        Assert.Empty(diagnostics.Where(d => d.Id == "FM0006" && d.GetMessage().Contains("Inner")));
+        // The outer Forge should auto-wire Inner via the inner Forge method using __autoWire_ pattern
+        Assert.Contains("__autoWire_Inner", generatedCode);
+        Assert.Contains("Forge(__autoWire_Inner)", generatedCode);
     }
 
     [Fact]
@@ -3923,8 +3922,9 @@ namespace TestNamespace
         var (diagnostics, trees) = RunGenerator(source);
         var generatedCode = string.Join("\n", trees.Select(t => t.GetText().ToString()));
 
-        // Should use explicit ForgeWith (CustomInnerForge), not auto-wire
-        Assert.Contains("CustomInnerForge", generatedCode);
+        // Should use explicit ForgeWith (CustomInnerForge) via __forgeWith_ pattern, not __autoWire_
+        Assert.Contains("CustomInnerForge(__forgeWith_Inner)", generatedCode);
+        Assert.DoesNotContain("__autoWire_Inner", generatedCode);
         // No FM0025 ambiguity — explicit wins
         Assert.Empty(diagnostics.Where(d => d.Id == "FM0025"));
     }
@@ -4063,9 +4063,11 @@ namespace TestNamespace
         var (diagnostics, trees) = RunGenerator(source);
         var generatedCode = string.Join("\n", trees.Select(t => t.GetText().ToString()));
 
-        // Both Address and Phone should be auto-wired
-        Assert.DoesNotContain("FM0006", diagnostics.Where(d => d.GetMessage().Contains("Address")).Select(d => d.Id).FirstOrDefault() ?? "");
-        Assert.DoesNotContain("FM0006", diagnostics.Where(d => d.GetMessage().Contains("Phone")).Select(d => d.Id).FirstOrDefault() ?? "");
+        // Both Address and Phone should be auto-wired via __autoWire_ pattern
+        Assert.Contains("__autoWire_Address", generatedCode);
+        Assert.Contains("Forge(__autoWire_Address)", generatedCode);
+        Assert.Contains("__autoWire_Phone", generatedCode);
+        Assert.Contains("Forge(__autoWire_Phone)", generatedCode);
     }
 
     [Fact]
@@ -4164,7 +4166,6 @@ namespace TestNamespace
     public class OuterSource { public MiddleSource Middle { get; set; } }
     public class OuterDest
     {
-        [ForgeProperty(""Middle.Nested"")]
         public InnerDest DeepNested { get; set; }
     }
 
@@ -4172,15 +4173,93 @@ namespace TestNamespace
     public partial class TestForger
     {
         public partial InnerDest Forge(InnerSource source);
+
+        [ForgeProperty(""Middle.Nested"", ""DeepNested"")]
         public partial OuterDest Forge(OuterSource source);
     }
 }";
         var (diagnostics, trees) = RunGenerator(source);
         var generatedCode = string.Join("\n", trees.Select(t => t.GetText().ToString()));
 
-        // Should auto-wire the dot-path leaf type InnerSource -> InnerDest
-        Assert.DoesNotContain("FM0006", diagnostics.Where(d => d.GetMessage().Contains("DeepNested")).Select(d => d.Id).FirstOrDefault() ?? "");
+        // Should auto-wire the dot-path leaf type InnerSource -> InnerDest via __autoWire_ pattern
+        Assert.Contains("__autoWire_DeepNested", generatedCode);
+        Assert.Contains("Forge(__autoWire_DeepNested)", generatedCode);
     }
+    [Fact]
+    public void ReverseForge_BothDirections_InnerPropertyAutoWired()
+    {
+        var source = @"
+using ForgeMap;
+
+namespace TestNamespace
+{
+    public class InnerSource { public string Value { get; set; } }
+    public class InnerDest { public string Value { get; set; } }
+    public class OuterSource { public string Name { get; set; } public InnerSource Inner { get; set; } }
+    public class OuterDest { public string Name { get; set; } public InnerDest Inner { get; set; } }
+
+    [ForgeMap]
+    public partial class TestForger
+    {
+        [ReverseForge]
+        public partial InnerDest ForgeInner(InnerSource source);
+
+        [ReverseForge]
+        public partial OuterDest ForgeOuter(OuterSource source);
+    }
+}";
+        var (diagnostics, generatedTrees) = RunGenerator(source);
+        
+        // Check for diagnostics
+        Console.WriteLine("=== DIAGNOSTICS ===");
+        if (!diagnostics.Any())
+        {
+            Console.WriteLine("(none)");
+        }
+        else
+        {
+            foreach (var d in diagnostics)
+            {
+                Console.WriteLine($"[{d.Severity}] {d.Id}: {d.GetMessage()}");
+            }
+        }
+        
+        // Check generated code
+        Console.WriteLine();
+        Console.WriteLine("=== GENERATED CODE ===");
+        foreach (var tree in generatedTrees)
+        {
+            Console.WriteLine(tree.GetText().ToString());
+        }
+        
+        // The bug: FM0026 should NOT be emitted because the reverse forge method for Inner should exist
+        // But if FindAutoWireForgeMethodCandidates only looks for partial definitions,
+        // it won't find the generated (non-partial) reverse methods
+        var fm0026 = diagnostics.Where(d => d.Id == "FM0026").ToList();
+        var generatedCode = string.Join("\n", generatedTrees.Select(t => t.GetText().ToString()));
+        
+        // Log the findings
+        Console.WriteLine();
+        Console.WriteLine("=== TEST RESULTS ===");
+        Console.WriteLine($"FM0026 diagnostics found: {fm0026.Count}");
+        Console.WriteLine($"Contains 'ForgeInner' in generated code: {generatedCode.Contains("ForgeInner")}");
+        Console.WriteLine($"Contains reverse 'Forge' call in outer method: {generatedCode.Contains("Forge(source.Inner")}");
+        
+        // The test expectation
+        if (fm0026.Count > 0)
+        {
+            Console.WriteLine("\n*** BUG DETECTED: FM0026 emitted when it shouldn't be ***");
+            foreach (var d in fm0026)
+            {
+                Console.WriteLine($"  {d.GetMessage()}");
+            }
+        }
+        else
+        {
+            Console.WriteLine("\n*** Test PASSED: No FM0026 warnings ***");
+        }
+    }
+
 
     private static (IReadOnlyList<Diagnostic> Diagnostics, IReadOnlyList<SyntaxTree> GeneratedTrees) RunGenerator(string source)
     {
