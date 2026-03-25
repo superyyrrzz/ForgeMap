@@ -1015,11 +1015,12 @@ internal sealed class ForgeCodeEmitter
             {
                 // FM0022: no derived forge methods found — use abstract-specific message when applicable
                 ReportDiagnosticIfNotSuppressed(context,
-                    isAbstractOrInterface
-                        ? DiagnosticDescriptors.ForgeAllDerivedNoDerivedMethodsAbstract
-                        : DiagnosticDescriptors.ForgeAllDerivedNoDerivedMethods,
+                    DiagnosticDescriptors.ForgeAllDerivedNoDerivedMethods,
                     method.Locations.FirstOrDefault(),
-                    method.Name);
+                    method.Name,
+                    isAbstractOrInterface
+                        ? "dispatch-only body has no base-type fallback \u2014 all non-null inputs will throw NotSupportedException"
+                        : "polymorphic dispatch will only map the base type");
             }
             else
             {

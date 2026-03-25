@@ -180,15 +180,7 @@ internal static class DiagnosticDescriptors
     public static readonly DiagnosticDescriptor ForgeAllDerivedNoDerivedMethods = new(
         id: "FM0022",
         title: "[ForgeAllDerived] found no derived forge methods",
-        messageFormat: "[ForgeAllDerived] on '{0}' found no derived forge methods; polymorphic dispatch will only map the base type",
-        category: Category,
-        defaultSeverity: DiagnosticSeverity.Warning,
-        isEnabledByDefault: true);
-
-    public static readonly DiagnosticDescriptor ForgeAllDerivedNoDerivedMethodsAbstract = new(
-        id: "FM0022",
-        title: "[ForgeAllDerived] found no derived forge methods",
-        messageFormat: "[ForgeAllDerived] on '{0}' found no derived forge methods; dispatch-only body has no base-type fallback — all non-null inputs will throw NotSupportedException",
+        messageFormat: "[ForgeAllDerived] on '{0}' found no derived forge methods; {1}",
         category: Category,
         defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
