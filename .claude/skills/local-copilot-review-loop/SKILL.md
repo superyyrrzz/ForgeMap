@@ -15,7 +15,7 @@ Iterative loop: run the **local** Copilot CLI → Claude Code fixes findings →
 
 | | Local Copilot CLI (THIS skill) | Online Copilot PR Reviewer (`copilot-review-loop` skill) |
 |---|---|---|
-| **What** | npm-installed CLI at `C:\ProgramData\global-npm\copilot` | GitHub's built-in PR review bot |
+| **What** | npm-installed CLI (`copilot` on PATH; locate via `where copilot` / `which copilot`) | GitHub's built-in PR review bot |
 | **Invocation** | `copilot -p "..."` in terminal | `gh api .../requested_reviewers` REST call |
 | **How it reads code** | Reads files directly from disk | Reads PR diff via GitHub API |
 | **Output** | Stdout text (findings, suggestions) | PR review comments (GraphQL threads) |

@@ -2,10 +2,15 @@
 
 ## Installation
 
-The local Copilot CLI is installed globally via npm:
+The local Copilot CLI is installed globally via npm. The actual path depends on the OS and npm prefix:
 
-```
-C:\ProgramData\global-npm\copilot
+```bash
+# Locate the CLI:
+where copilot    # Windows
+which copilot    # macOS / Linux
+
+# Or check npm's global prefix:
+npm config get prefix
 ```
 
 It is separate from `gh copilot` (GitHub CLI extension) and the online Copilot PR reviewer.
