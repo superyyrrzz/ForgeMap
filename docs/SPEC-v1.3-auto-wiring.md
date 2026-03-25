@@ -68,9 +68,10 @@ public partial UDSModels.QuestionnaireChildBase Forge(QuestionnaireChildBase sou
 {
     if (source == null) return null!;
 
-    // [BeforeForge] hooks execute here (after null check, before dispatch)
-
-    // Polymorphic dispatch — most-derived types checked first
+    // Polymorphic dispatch — most-derived types checked first.
+    // Each branch returns immediately, so [BeforeForge]/[AfterForge] hooks
+    // declared on THIS method do NOT run — the derived method's own hooks
+    // run instead when Forge(derived) is called.
     if (source is NormalSelectQuestion normalSelectQuestion) return Forge(normalSelectQuestion);
     if (source is QuestionSet questionSet) return Forge(questionSet);
 
@@ -97,8 +98,8 @@ public partial UDSModels.QuestionnaireChildBase Forge(QuestionnaireChildBase sou
 | Concrete destination (unchanged) | Is-cascade + base-type mapping fallback |
 | No derived methods found | FM0022 warning, base mapping fallback (concrete) or `throw` (abstract) |
 | `[ForgeAllDerived]` + `[ConvertWith]` | FM0023 error (unchanged) |
-| `[BeforeForge]` on abstract dispatch | **Executed** — receives source object only, does not require a destination instance |
-| `[AfterForge]` on abstract dispatch | **Skipped** — requires a destination instance which does not exist for dispatch-only methods |
+| `[BeforeForge]` on abstract dispatch | **Not executed** — dispatch branches `return` immediately before hooks are reached; each derived method's own hooks run instead |
+| `[AfterForge]` on abstract dispatch | **Not executed** — dispatch branches `return` immediately; no destination instance exists for dispatch-only methods |
 | Null source | `return null!` (or throw per `NullHandling`) |
 
 ### Competitor Comparison
@@ -154,13 +155,16 @@ For each destination property during code generation:
 1. **Explicit wins**: If the property has `[ForgeWith]`, `[ForgeFrom]`, `[Ignore]`, or a `[ForgeProperty]` to a directly assignable source — no auto-wiring
 2. **Find source property**: Match by name convention or `[ForgeProperty]` mapping
 3. **Check assignability**: If source type is directly assignable to destination type, or is a primitive/enum/string — use direct assignment (no auto-wiring needed)
-4. **Search forge methods**: Look for partial forge methods on the forger class where:
+4. **Flattening takes precedence**: If auto-flattening resolves the property (e.g., `CustomerName` → `source.Customer.Name`), the flattened scalar value is used — no auto-wiring. Flattened paths always produce direct assignments, not nested forge calls
+5. **Search forge methods**: Look for partial forge methods on the forger class where:
    - Source parameter type matches the source property type
    - Return type exactly matches the destination property type
-5. **Resolution**:
+6. **Resolution**:
    - Exactly 1 match → auto-wire (same codegen as `[ForgeWith]`)
    - 0 matches → fall through to normal unmapped behavior (FM0006)
    - Multiple matches → FM0025 warning, skip auto-wiring
+
+> **Note**: `[ForgeProperty]` dot-path mappings (e.g., `[ForgeProperty("Order.Customer", "Customer")]`) resolve to a leaf type via path traversal. If the leaf type is not directly assignable, auto-wiring applies to the leaf type — not the intermediate path segments.
 
 ### API Surface
 
@@ -246,7 +250,7 @@ Users must declare explicit collection forge methods for every collection type i
 // v1.2: Required even though Forge(ProductEntity) → ProductDto exists
 public partial List<ProductDto> Forge(List<ProductEntity> source);
 public partial List<AddressDto> Forge(List<AddressEntity> source);
-public partial HashSet<TagDto> Forge(HashSet<TagEntity> source);
+// v1.2: HashSet<T> not supported at all — requires hand-written method
 ```
 
 ### Design
@@ -356,15 +360,15 @@ else
 | `IEnumerable<T>` | `IEnumerable<U>` | `.Select()` (lazy) |
 | `IReadOnlyList<T>` | `List<U>` | Pre-sized + `foreach` |
 | `IReadOnlyCollection<T>` | `List<U>` | Pre-sized + `foreach` |
-| `HashSet<T>` | `HashSet<U>` | `new HashSet<U>()` + `foreach` + `Add` |
+| `HashSet<T>` | `HashSet<U>` | **New in v1.3.** `new HashSet<U>()` + `foreach` + `Add` |
 
 ### Null Handling
 
-Inline collection mapping uses the same null guarding pattern as `[ForgeWith]` for source collections, and the same `NullHandling` semantics as element forge methods for individual elements:
+Inline collection mapping follows existing `NullPropertyHandling` semantics for the **outer collection reference** (consistent with v1.2 — see [SPEC-v1.2-null-property-handling.md](SPEC-v1.2-null-property-handling.md#collection-properties)), and the element forge method's `NullHandling` for individual elements:
 
 | Source Value | Generated Behavior |
 |--------------|--------------------|
-| Collection is `null` | Destination assigned `null!` (reference types) or `default` (value types); no element forge method is invoked (matches `[ForgeWith]`-style guarding, regardless of `NullHandling`) |
+| Collection is `null` | Governed by `NullPropertyHandling`: `NullForgiving` → `null!`, `CoalesceToDefault` → empty collection, `SkipNull` → skip assignment, `ThrowException` → throw. Default (`NullForgiving`) matches `[ForgeWith]`-style guarding |
 | Collection is empty | Returns an empty collection of the destination type |
 | Elements are `null` | Each element (including `null`) is passed to the element forge method; result depends on that method's `NullHandling` (`ReturnNull` → null element preserved; `ThrowException` → throws) |
 
@@ -376,7 +380,7 @@ Auto-wired nested and collection properties participate in `[ReverseForge]` gene
 |----------|----------|
 | Auto-wired nested property + `[ReverseForge]` | Reverse auto-wiring applies if the reverse forge method exists (same discovery algorithm in reverse direction) |
 | Auto-wired collection property + `[ReverseForge]` | Reverse collection inline generated if reverse element forge method exists |
-| Reverse method not found for auto-wired property | FM0015 warning (same as explicit `[ForgeWith]` without reverse) |
+| Reverse method not found for auto-wired property | New diagnostic FM0026 (Warning): auto-wired property '{0}' has no reverse forge method (analogous to FM0015 for explicit `[ForgeWith]`) |
 | Explicit `[ForgeWith]` on forward + auto-wire on reverse | Each direction resolved independently |
 
 ### Precedence Rules
@@ -388,7 +392,7 @@ Auto-wired nested and collection properties participate in `[ReverseForge]` gene
 
 ### Diagnostics
 
-No new diagnostics — reuses FM0006 when element method isn't found, and FM0025 for ambiguous element matches.
+No new diagnostics — reuses FM0006 when element method isn't found, FM0025 for ambiguous element matches, and FM0026 for missing reverse forge methods on auto-wired properties.
 
 ### Competitor Comparison
 
@@ -409,6 +413,7 @@ No new diagnostics — reuses FM0006 when element method isn't found, and FM0025
 |------|----------|----------|-------------|
 | FM0024 | Warning | `ForgeMap` | `[ForgeAllDerived]` on abstract/interface destination type '{0}': unmatched source subtypes will throw `NotSupportedException` at runtime |
 | FM0025 | Warning | `ForgeMap` | Multiple forge methods match for auto-wiring property '{0}' on '{1}'. Use explicit `[ForgeWith]` to resolve the ambiguity |
+| FM0026 | Warning | `ForgeMap` | Auto-wired property '{0}' has no reverse forge method; reverse mapping may be incomplete |
 
 ---
 
@@ -468,13 +473,14 @@ FM0011 messages distinguish between convention-mapped and auto-wired properties 
 
 | Limitation | Reason | Workaround |
 |-----------|--------|------------|
-| Auto-wiring only within same forger class | Cross-class method discovery would require global analysis | Use `[ForgeWith]` to reference methods on other forgers |
+| Auto-wiring only within same forger class | Cross-class method discovery would require global analysis | Use explicit `[ForgeWith]` referencing a method on the same forger that delegates to the other forger |
 | No auto-wiring for `[ForgeFrom]` resolvers | Resolvers have arbitrary signatures, not discoverable | Continue using explicit `[ForgeFrom]` |
-| `[ReverseForge]` + auto-wired properties emit FM0015 if reverse method missing | Consistent with explicit `[ForgeWith]` behavior | Add `[ReverseForge]` to the nested forge method, or use `[Ignore]` on the reverse direction |
+| `[ReverseForge]` + auto-wired properties emit FM0026 if reverse method missing | Consistent with FM0015 for explicit `[ForgeWith]` | Add the reverse forge method, or add `[Ignore(nameof(Prop))]` on the reverse forge method's `[ForgeWith]` attributes |
 | No Span/Memory collection support | Complex codegen for stack-allocated types | Use explicit collection methods |
 | Abstract dispatch requires concrete derived methods | Source generator cannot discover types at runtime | Ensure all subtypes have forge methods; FM0024 warns |
 
 ---
 
 *Specification Version: 1.3*
+*Status: Proposal — not yet implemented. `AutoWireNestedMappings`, FM0024, and FM0025 do not exist in the current codebase.*
 *License: MIT*
