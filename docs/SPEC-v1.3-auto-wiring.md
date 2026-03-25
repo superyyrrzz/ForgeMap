@@ -68,6 +68,8 @@ public partial UDSModels.QuestionnaireChildBase Forge(QuestionnaireChildBase sou
 {
     if (source == null) return null!;
 
+    // [BeforeForge] hooks execute here (after null check, before dispatch)
+
     // Polymorphic dispatch — most-derived types checked first
     if (source is NormalSelectQuestion normalSelectQuestion) return Forge(normalSelectQuestion);
     if (source is QuestionSet questionSet) return Forge(questionSet);
@@ -253,7 +255,7 @@ When `AutoWireNestedMappings = true` (default) and a destination property is a c
 
 1. Detects the property as a collection type
 2. Unwraps element types (`List<TSource>` → `TSource`, `List<TDest>` → `TDest`)
-3. Searches for a matching element forge method (`Forge(TSource) → TDest`)
+3. Searches for a matching element forge method (any partial forge method with signature `TSource → TDest`)
 4. Generates **inline iteration code** in the property assignment
 
 Explicitly declared collection forge methods always take precedence.
@@ -284,7 +286,7 @@ public partial class AppForger
 
 ### Generated Code Examples
 
-Multi-statement collection mappings (List, HashSet) are assigned via post-construction statements to avoid IIFE closure overhead. Single-expression mappings (Array, IEnumerable) can remain inline in object initializers since they don't require closures.
+Multi-statement collection mappings (List, HashSet) are assigned via post-construction statements to avoid IIFE overhead. Single-expression mappings (Array, IEnumerable) can remain inline in object initializers since they don't require an IIFE or statement-based assignment (note: lambdas still allocate delegates, but avoid the extra closure + IIFE overhead of multi-statement blocks).
 
 **List with pre-sizing (source has `.Count`) — post-construction statements:**
 
@@ -305,19 +307,19 @@ else
 
 > Implementation note: The pre-sized `foreach` approach is preferred over LINQ `.Select().ToList()` for performance consistency with existing explicit collection method codegen. The exact codegen pattern is an implementation detail.
 
-**Array — inline expression (no closure needed):**
+**Array — inline expression (no IIFE needed):**
 
 ```csharp
-// Single expression → safe in object initializer
+// Single expression → safe in object initializer (no IIFE needed)
 Tags = source.Tags is { } __autoTags
     ? global::System.Array.ConvertAll(__autoTags, item => Forge(item))
     : null!,
 ```
 
-**IEnumerable (lazy) — inline expression (no closure needed):**
+**IEnumerable (lazy) — inline expression (no IIFE needed):**
 
 ```csharp
-// Single expression → safe in object initializer
+// Single expression → safe in object initializer (no IIFE needed)
 Items = source.Items is { } __autoItems
     ? __autoItems.Select(item => Forge(item))
     : null!,
