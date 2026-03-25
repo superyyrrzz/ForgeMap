@@ -3834,3 +3834,358 @@ public class ForgeAllDerivedTests
 }
 
 #endregion
+
+#region Auto-Wire Nested Forge Tests
+
+public class AutoWireNestedForgeTests
+{
+    [Fact]
+    public void AutoWire_BasicNestedProperty_GeneratesForgeCall()
+    {
+        var source = @"
+using ForgeMap;
+
+namespace TestNamespace
+{
+    public class InnerSource { public int Value { get; set; } }
+    public class InnerDest { public int Value { get; set; } }
+    public class OuterSource { public InnerSource Inner { get; set; } }
+    public class OuterDest { public InnerDest Inner { get; set; } }
+
+    [ForgeMap]
+    public partial class TestForger
+    {
+        public partial InnerDest Forge(InnerSource source);
+        public partial OuterDest Forge(OuterSource source);
+    }
+}";
+        var (diagnostics, trees) = RunGenerator(source);
+        var generatedCode = string.Join("\n", trees.Select(t => t.GetText().ToString()));
+
+        // The outer Forge should auto-wire Inner via the inner Forge method
+        Assert.Contains("Forge(", generatedCode);
+        // No FM0006 for Inner property
+        Assert.Empty(diagnostics.Where(d => d.Id == "FM0006" && d.GetMessage().Contains("Inner")));
+    }
+
+    [Fact]
+    public void AutoWire_OptOut_DoesNotAutoWire()
+    {
+        var source = @"
+using ForgeMap;
+
+namespace TestNamespace
+{
+    public class InnerSource { public int Value { get; set; } }
+    public class InnerDest { public int Value { get; set; } }
+    public class OuterSource { public InnerSource Inner { get; set; } }
+    public class OuterDest { public InnerDest Inner { get; set; } }
+
+    [ForgeMap(AutoWireNestedMappings = false)]
+    public partial class TestForger
+    {
+        public partial InnerDest Forge(InnerSource source);
+        public partial OuterDest Forge(OuterSource source);
+    }
+}";
+        var (diagnostics, trees) = RunGenerator(source);
+        var generatedCode = string.Join("\n", trees.Select(t => t.GetText().ToString()));
+        // With auto-wire disabled, Inner should NOT be auto-wired — no Forge call for Inner
+        // The property is simply omitted from the initializer (generator doesn't emit FM0006)
+        Assert.DoesNotContain("__autoWire_Inner", generatedCode);
+        // But the inner Forge method should still generate for InnerSource -> InnerDest
+        Assert.Contains("Value = source.Value", generatedCode);
+    }
+
+    [Fact]
+    public void AutoWire_ExplicitForgeWithTakesPrecedence()
+    {
+        var source = @"
+using ForgeMap;
+
+namespace TestNamespace
+{
+    public class InnerSource { public int Value { get; set; } }
+    public class InnerDest { public int Value { get; set; } }
+    public class OuterSource { public InnerSource Inner { get; set; } }
+    public class OuterDest { public InnerDest Inner { get; set; } }
+
+    [ForgeMap]
+    public partial class TestForger
+    {
+        public partial InnerDest Forge(InnerSource source);
+        public partial InnerDest CustomInnerForge(InnerSource source);
+
+        [ForgeWith(""Inner"", nameof(CustomInnerForge))]
+        public partial OuterDest Forge(OuterSource source);
+    }
+}";
+        var (diagnostics, trees) = RunGenerator(source);
+        var generatedCode = string.Join("\n", trees.Select(t => t.GetText().ToString()));
+
+        // Should use explicit ForgeWith (CustomInnerForge), not auto-wire
+        Assert.Contains("CustomInnerForge", generatedCode);
+        // No FM0025 ambiguity — explicit wins
+        Assert.Empty(diagnostics.Where(d => d.Id == "FM0025"));
+    }
+
+    [Fact]
+    public void AutoWire_AmbiguousMultipleMethods_FM0025()
+    {
+        var source = @"
+using ForgeMap;
+
+namespace TestNamespace
+{
+    public class InnerSource { public int Value { get; set; } }
+    public class InnerDest { public int Value { get; set; } }
+    public class OuterSource { public InnerSource Inner { get; set; } }
+    public class OuterDest { public InnerDest Inner { get; set; } }
+
+    [ForgeMap]
+    public partial class TestForger
+    {
+        public partial InnerDest Forge(InnerSource source);
+        public partial InnerDest ForgeAlternate(InnerSource source);
+        public partial OuterDest Forge(OuterSource source);
+    }
+}";
+        var (diagnostics, _) = RunGenerator(source);
+        // Should get FM0025 for ambiguous auto-wire
+        Assert.Contains(diagnostics, d => d.Id == "FM0025" && d.GetMessage().Contains("Inner"));
+    }
+
+    [Fact]
+    public void AutoWire_ScalarTypes_NotAutoWired()
+    {
+        // Scalar types (int, string, enum) should never trigger auto-wiring
+        var source = @"
+using ForgeMap;
+
+namespace TestNamespace
+{
+    public class Source { public int Value { get; set; } public string Name { get; set; } }
+    public class Dest { public int Value { get; set; } public string Name { get; set; } }
+
+    [ForgeMap]
+    public partial class TestForger
+    {
+        public partial Dest Forge(Source source);
+    }
+}";
+        var (diagnostics, trees) = RunGenerator(source);
+        var generatedCode = string.Join("\n", trees.Select(t => t.GetText().ToString()));
+
+        // Should directly assign, not auto-wire
+        Assert.Contains("Value = source.Value", generatedCode);
+        Assert.Contains("Name = source.Name", generatedCode);
+        // No FM0025 ambiguity warnings
+        Assert.Empty(diagnostics.Where(d => d.Id == "FM0025"));
+    }
+
+    [Fact]
+    public void AutoWire_DirectlyAssignable_NotAutoWired()
+    {
+        // If types are directly assignable, auto-wiring should not kick in
+        var source = @"
+using ForgeMap;
+
+namespace TestNamespace
+{
+    public class Shared { public int Value { get; set; } }
+    public class Source { public Shared Inner { get; set; } }
+    public class Dest { public Shared Inner { get; set; } }
+
+    [ForgeMap]
+    public partial class TestForger
+    {
+        public partial Dest Forge(Source source);
+    }
+}";
+        var (diagnostics, trees) = RunGenerator(source);
+        var generatedCode = string.Join("\n", trees.Select(t => t.GetText().ToString()));
+
+        // Should directly assign since types are the same
+        Assert.Contains("Inner = source.Inner", generatedCode);
+    }
+
+    [Fact]
+    public void AutoWire_AssemblyLevelOptOut_DisablesAutoWiring()
+    {
+        var source = @"
+using ForgeMap;
+
+[assembly: ForgeMapDefaults(AutoWireNestedMappings = false)]
+
+namespace TestNamespace
+{
+    public class InnerSource { public int Value { get; set; } }
+    public class InnerDest { public int Value { get; set; } }
+    public class OuterSource { public InnerSource Inner { get; set; } }
+    public class OuterDest { public InnerDest Inner { get; set; } }
+
+    [ForgeMap]
+    public partial class TestForger
+    {
+        public partial InnerDest Forge(InnerSource source);
+        public partial OuterDest Forge(OuterSource source);
+    }
+}";
+        var (diagnostics, trees) = RunGenerator(source);
+        var generatedCode = string.Join("\n", trees.Select(t => t.GetText().ToString()));
+        // With auto-wire disabled at assembly level, Inner should NOT be auto-wired
+        Assert.DoesNotContain("__autoWire_Inner", generatedCode);
+    }
+
+    [Fact]
+    public void AutoWire_MultipleNestedProperties_AllAutoWired()
+    {
+        var source = @"
+using ForgeMap;
+
+namespace TestNamespace
+{
+    public class AddressEntity { public string Street { get; set; } }
+    public class AddressDto { public string Street { get; set; } }
+    public class PhoneEntity { public string Number { get; set; } }
+    public class PhoneDto { public string Number { get; set; } }
+    public class PersonEntity { public AddressEntity Address { get; set; } public PhoneEntity Phone { get; set; } }
+    public class PersonDto { public AddressDto Address { get; set; } public PhoneDto Phone { get; set; } }
+
+    [ForgeMap]
+    public partial class TestForger
+    {
+        public partial AddressDto Forge(AddressEntity source);
+        public partial PhoneDto Forge(PhoneEntity source);
+        public partial PersonDto Forge(PersonEntity source);
+    }
+}";
+        var (diagnostics, trees) = RunGenerator(source);
+        var generatedCode = string.Join("\n", trees.Select(t => t.GetText().ToString()));
+
+        // Both Address and Phone should be auto-wired
+        Assert.DoesNotContain("FM0006", diagnostics.Where(d => d.GetMessage().Contains("Address")).Select(d => d.Id).FirstOrDefault() ?? "");
+        Assert.DoesNotContain("FM0006", diagnostics.Where(d => d.GetMessage().Contains("Phone")).Select(d => d.Id).FirstOrDefault() ?? "");
+    }
+
+    [Fact]
+    public void AutoWire_NoMatchingMethod_FallsThrough()
+    {
+        var source = @"
+using ForgeMap;
+
+namespace TestNamespace
+{
+    public class InnerSource { public int Value { get; set; } }
+    public class InnerDest { public int Value { get; set; } }
+    public class OuterSource { public InnerSource Inner { get; set; } }
+    public class OuterDest { public InnerDest Inner { get; set; } }
+
+    [ForgeMap]
+    public partial class TestForger
+    {
+        // No Forge method for InnerSource -> InnerDest
+        public partial OuterDest Forge(OuterSource source);
+    }
+}";
+        var (diagnostics, trees) = RunGenerator(source);
+        var generatedCode = string.Join("\n", trees.Select(t => t.GetText().ToString()));
+        // No matching forge method exists — Inner should NOT be auto-wired
+        Assert.DoesNotContain("__autoWire_Inner", generatedCode);
+    }
+
+    [Fact]
+    public void AutoWire_ReverseForge_FM0026_WhenNoReverseMethod()
+    {
+        var source = @"
+using ForgeMap;
+
+namespace TestNamespace
+{
+    public class InnerSource { public int Value { get; set; } }
+    public class InnerDest { public int Value { get; set; } }
+    public class OuterSource { public InnerSource Inner { get; set; } }
+    public class OuterDest { public InnerDest Inner { get; set; } }
+
+    [ForgeMap]
+    public partial class TestForger
+    {
+        public partial InnerDest Forge(InnerSource source);
+        // No InnerSource Forge(InnerDest source) reverse method
+
+        [ReverseForge]
+        public partial OuterDest Forge(OuterSource source);
+    }
+}";
+        var (diagnostics, _) = RunGenerator(source);
+        // Should get FM0026 because auto-wired property Inner has no reverse forge method
+        Assert.Contains(diagnostics, d => d.Id == "FM0026" && d.GetMessage().Contains("Inner"));
+    }
+
+    [Fact]
+    public void AutoWire_ReverseForge_NoFM0026_WhenReverseMethodExists()
+    {
+        var source = @"
+using ForgeMap;
+
+namespace TestNamespace
+{
+    public class InnerSource { public int Value { get; set; } }
+    public class InnerDest { public int Value { get; set; } }
+    public class OuterSource { public InnerSource Inner { get; set; } }
+    public class OuterDest { public InnerDest Inner { get; set; } }
+
+    [ForgeMap]
+    public partial class TestForger
+    {
+        public partial InnerDest Forge(InnerSource source);
+        public partial InnerSource Forge(InnerDest source);
+
+        [ReverseForge]
+        public partial OuterDest Forge(OuterSource source);
+    }
+}";
+        var (diagnostics, _) = RunGenerator(source);
+        // Should NOT get FM0026 because reverse forge method exists
+        Assert.Empty(diagnostics.Where(d => d.Id == "FM0026"));
+    }
+
+    [Fact]
+    public void AutoWire_ForgePropertyDotPath_AutoWiresLeafType()
+    {
+        var source = @"
+using ForgeMap;
+
+namespace TestNamespace
+{
+    public class InnerSource { public int Value { get; set; } }
+    public class InnerDest { public int Value { get; set; } }
+    public class MiddleSource { public InnerSource Nested { get; set; } }
+    public class OuterSource { public MiddleSource Middle { get; set; } }
+    public class OuterDest
+    {
+        [ForgeProperty(""Middle.Nested"")]
+        public InnerDest DeepNested { get; set; }
+    }
+
+    [ForgeMap]
+    public partial class TestForger
+    {
+        public partial InnerDest Forge(InnerSource source);
+        public partial OuterDest Forge(OuterSource source);
+    }
+}";
+        var (diagnostics, trees) = RunGenerator(source);
+        var generatedCode = string.Join("\n", trees.Select(t => t.GetText().ToString()));
+
+        // Should auto-wire the dot-path leaf type InnerSource -> InnerDest
+        Assert.DoesNotContain("FM0006", diagnostics.Where(d => d.GetMessage().Contains("DeepNested")).Select(d => d.Id).FirstOrDefault() ?? "");
+    }
+
+    private static (IReadOnlyList<Diagnostic> Diagnostics, IReadOnlyList<SyntaxTree> GeneratedTrees) RunGenerator(string source)
+    {
+        return SourceGeneratorTests.RunGenerator(source);
+    }
+}
+
+#endregion

@@ -27,6 +27,9 @@ internal sealed class ForgerConfig
     /// <summary>0 = NullForgiving (default), 1 = SkipNull, 2 = CoalesceToDefault, 3 = ThrowException</summary>
     public int NullPropertyHandling { get; set; }
 
+    /// <summary>Whether to auto-discover matching forge methods for nested complex properties. Default true.</summary>
+    public bool AutoWireNestedMappings { get; set; } = true;
+
     public StringComparison PropertyNameComparison =>
         PropertyMatching == 1 ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
 }
@@ -130,6 +133,7 @@ internal sealed class ForgeCodeEmitter
             PropertyMatching = _assemblyDefaults.PropertyMatching,
             GenerateCollectionMappings = _assemblyDefaults.GenerateCollectionMappings,
             NullPropertyHandling = _assemblyDefaults.NullPropertyHandling,
+            AutoWireNestedMappings = _assemblyDefaults.AutoWireNestedMappings,
             SuppressDiagnostics = new HashSet<string>(_assemblyDefaults.SuppressDiagnostics, StringComparer.OrdinalIgnoreCase),
         };
 
@@ -156,6 +160,9 @@ internal sealed class ForgeCodeEmitter
                                 config.SuppressDiagnostics.Add(s);
                         }
                     }
+                    break;
+                case "AutoWireNestedMappings":
+                    config.AutoWireNestedMappings = (bool)named.Value.Value!;
                     break;
             }
         }
@@ -658,6 +665,54 @@ internal sealed class ForgeCodeEmitter
                     DiagnosticDescriptors.ForgeWithLacksReverseForge,
                     forwardMethod.Locations.FirstOrDefault(),
                     forgingMethodName);
+            }
+        }
+
+        // FM0026: Check auto-wired properties for missing reverse forge methods
+        if (_config.AutoWireNestedMappings)
+        {
+            var forwardDestProps = GetMappableProperties(forwardDestType);
+            var forwardSourceProps = GetMappableProperties(forwardSourceType);
+
+            foreach (var destProp in forwardDestProps)
+            {
+                // Skip properties already handled by explicit attributes
+                if (forwardIgnored.Contains(destProp.Name)) continue;
+                if (forwardResolverMappings.ContainsKey(destProp.Name)) continue;
+                if (forwardForgeWithMappings.ContainsKey(destProp.Name)) continue;
+
+                // Find the matching source property by name (convention) or [ForgeProperty]
+                ITypeSymbol? forwardSourcePropType = null;
+                if (forwardPropertyMappings.TryGetValue(destProp.Name, out var mappedSourcePath))
+                {
+                    forwardSourcePropType = ResolvePathLeafType(mappedSourcePath, forwardSourceType);
+                }
+                else
+                {
+                    var matchingProp = forwardSourceProps.FirstOrDefault(sp =>
+                        string.Equals(sp.Name, destProp.Name, _config.PropertyNameComparison));
+                    if (matchingProp != null)
+                        forwardSourcePropType = matchingProp.Type;
+                }
+
+                if (forwardSourcePropType == null) continue;
+
+                // Check if forward direction would auto-wire this property
+                if (IsScalarType(forwardSourcePropType) || IsScalarType(destProp.Type)) continue;
+                if (CanAssign(forwardSourcePropType, destProp.Type)) continue;
+
+                var forwardCandidates = FindAutoWireForgeMethodCandidates(forger.Symbol, forwardSourcePropType, destProp.Type);
+                if (forwardCandidates.Count != 1) continue; // Only check properties that are actually auto-wired forward
+
+                // Now check if reverse forge method exists (destProp.Type → forwardSourcePropType)
+                var reverseCandidates = FindAutoWireForgeMethodCandidates(forger.Symbol, destProp.Type, forwardSourcePropType);
+                if (reverseCandidates.Count == 0)
+                {
+                    ReportDiagnosticIfNotSuppressed(context,
+                        DiagnosticDescriptors.AutoWiredPropertyLacksReverseForge,
+                        forwardMethod.Locations.FirstOrDefault(),
+                        destProp.Name);
+                }
             }
         }
 
@@ -1335,6 +1390,18 @@ internal sealed class ForgeCodeEmitter
 
             // Handle null-conditional on reference types (non-nullable ref mismatch not detected — e.g., oblivious types)
             var nullForgiving = hasNullConditional && destProp.Type.NullableAnnotation != NullableAnnotation.Annotated ? "!" : "";
+
+            // If the leaf type is not directly assignable, try auto-wiring via forge method
+            if (_config.AutoWireNestedMappings && sourceLeafType != null && !CanAssign(sourceLeafType, destProp.Type)
+                && !IsCompatibleEnumPair(sourceLeafType, destProp.Type))
+            {
+                var autoWireResult = TryAutoWireForgeMethod(
+                    destProp, sourceLeafType, sourceExpr,
+                    forger, context, method);
+                if (autoWireResult != null)
+                    return autoWireResult;
+            }
+
             return $"{sourceExpr}{nullForgiving}";
         }
 
@@ -1410,6 +1477,16 @@ internal sealed class ForgeCodeEmitter
                 return $"{flattenResult}!";
             }
             return flattenResult;
+        }
+
+        // Auto-wire: search for matching forge methods for nested complex properties
+        if (_config.AutoWireNestedMappings && sourceProp != null)
+        {
+            var autoWireResult = TryAutoWireForgeMethod(
+                destProp, sourceProp.Type, $"{sourceParam}.{sourceProp.Name}",
+                forger, context, method);
+            if (autoWireResult != null)
+                return autoWireResult;
         }
 
         return null;
@@ -2493,6 +2570,89 @@ internal sealed class ForgeCodeEmitter
                 !m.ReturnsVoid &&
                 SymbolEqualityComparer.Default.Equals(m.Parameters[0].Type, sourcePropertyType) &&
                 SymbolEqualityComparer.Default.Equals(m.ReturnType, destPropertyType));
+    }
+
+    /// <summary>
+    /// Finds all partial forge method candidates on the forger class that accept the given source type
+    /// and return the given destination type. Used for auto-wiring nested properties.
+    /// </summary>
+    private static List<IMethodSymbol> FindAutoWireForgeMethodCandidates(
+        INamedTypeSymbol forgerType, ITypeSymbol sourcePropertyType, ITypeSymbol destPropertyType)
+    {
+        return forgerType.GetMembers()
+            .OfType<IMethodSymbol>()
+            .Where(m =>
+                m.IsPartialDefinition &&
+                m.Parameters.Length == 1 &&
+                !m.ReturnsVoid &&
+                SymbolEqualityComparer.Default.Equals(m.Parameters[0].Type, sourcePropertyType) &&
+                SymbolEqualityComparer.Default.Equals(m.ReturnType, destPropertyType))
+            .ToList();
+    }
+
+    /// <summary>
+    /// Returns true if the type is a scalar (primitive, enum, string, etc.) that should not be auto-wired.
+    /// </summary>
+    private static bool IsScalarType(ITypeSymbol type)
+    {
+        if (type.TypeKind == TypeKind.Enum) return true;
+        if (type.SpecialType != SpecialType.None) return true;
+        return false;
+    }
+
+    /// <summary>
+    /// Tries to auto-wire a destination property by finding a matching forge method on the forger class.
+    /// Returns the generated expression, or null if no unique match was found.
+    /// </summary>
+    private string? TryAutoWireForgeMethod(
+        IPropertySymbol destProp,
+        ITypeSymbol sourcePropertyType,
+        string sourceExpr,
+        ForgerInfo forger,
+        SourceProductionContext context,
+        IMethodSymbol method)
+    {
+        // Don't auto-wire scalar types (primitives, enums, strings)
+        if (IsScalarType(sourcePropertyType) || IsScalarType(destProp.Type))
+            return null;
+
+        // Don't auto-wire when types are directly assignable
+        if (CanAssign(sourcePropertyType, destProp.Type))
+            return null;
+
+        var candidates = FindAutoWireForgeMethodCandidates(forger.Symbol, sourcePropertyType, destProp.Type);
+
+        if (candidates.Count == 1)
+        {
+            var matchedMethod = candidates[0];
+
+            // Report FM0011 (info, off by default) for visibility
+            ReportDiagnosticIfNotSuppressed(context,
+                DiagnosticDescriptors.PropertyAutoWired,
+                method.Locations.FirstOrDefault(),
+                destProp.Name, matchedMethod.Name);
+
+            if (sourcePropertyType.IsReferenceType)
+            {
+                var localVarName = $"__autoWire_{destProp.Name}";
+                var nullFallback = destProp.Type.IsValueType ? "default" : "null!";
+                return $"{sourceExpr} is {{ }} {localVarName} ? {matchedMethod.Name}({localVarName}) : {nullFallback}";
+            }
+            else
+            {
+                return $"{matchedMethod.Name}({sourceExpr})";
+            }
+        }
+        else if (candidates.Count > 1)
+        {
+            // FM0025: ambiguous — multiple forge methods match
+            ReportDiagnosticIfNotSuppressed(context,
+                DiagnosticDescriptors.AmbiguousAutoWire,
+                method.Locations.FirstOrDefault(),
+                destProp.Name, destProp.ContainingType.Name);
+        }
+
+        return null;
     }
 
     /// <summary>

@@ -29,4 +29,10 @@ public sealed class ForgeMapDefaultsAttribute : Attribute
     /// Default is <see cref="NullPropertyHandling.NullForgiving"/>.
     /// </summary>
     public NullPropertyHandling NullPropertyHandling { get; set; } = NullPropertyHandling.NullForgiving;
+
+    /// <summary>
+    /// Gets or sets whether auto-discovery of nested forge methods is enabled by default.
+    /// Default is true.
+    /// </summary>
+    public bool AutoWireNestedMappings { get; set; } = true;
 }

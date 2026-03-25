@@ -200,4 +200,28 @@ internal static class DiagnosticDescriptors
         category: Category,
         defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor AmbiguousAutoWire = new(
+        id: "FM0025",
+        title: "Ambiguous auto-wire: multiple forge methods match",
+        messageFormat: "Multiple forge methods match for auto-wiring property '{0}' on '{1}'. Use explicit [ForgeWith] to resolve the ambiguity.",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor AutoWiredPropertyLacksReverseForge = new(
+        id: "FM0026",
+        title: "Auto-wired property has no reverse forge method",
+        messageFormat: "Auto-wired property '{0}' has no reverse forge method; reverse mapping may be incomplete",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor PropertyAutoWired = new(
+        id: "FM0011",
+        title: "Property auto-wired via forge method",
+        messageFormat: "Property '{0}' auto-wired via forge method '{1}'",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Info,
+        isEnabledByDefault: false);
 }
