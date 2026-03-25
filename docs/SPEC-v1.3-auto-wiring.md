@@ -66,7 +66,10 @@ public partial class AppForger
 ```csharp
 public partial UDSModels.QuestionnaireChildBase Forge(QuestionnaireChildBase source)
 {
-    if (source == null) return null!;
+    // Null handling follows the configured NullHandling policy:
+    // - NullForgiving (default) → return null!;
+    // - ThrowException          → throw new ArgumentNullException(nameof(source));
+    if (source == null) return null!; // shown variant assumes NullForgiving
 
     // Polymorphic dispatch — most-derived types checked first.
     // Each branch returns immediately, so [BeforeForge]/[AfterForge] hooks
@@ -98,7 +101,7 @@ public partial UDSModels.QuestionnaireChildBase Forge(QuestionnaireChildBase sou
 | Concrete destination (unchanged) | Is-cascade + base-type mapping fallback |
 | No derived methods found | FM0022 warning, base mapping fallback (concrete) or `throw` (abstract) |
 | `[ForgeAllDerived]` + `[ConvertWith]` | FM0023 error (unchanged) |
-| `[BeforeForge]` on abstract dispatch | **Not executed** — dispatch branches `return` immediately before hooks are reached; each derived method's own hooks run instead |
+| `[BeforeForge]` on abstract dispatch | **Not executed** — this is an exception to the normal hook order (null check → `[BeforeForge]` → mapping → `[AfterForge]`). For `[ForgeAllDerived]` with abstract/interface destinations, the generator emits the dispatch cascade immediately after the null check — before `[BeforeForge]` hooks — and each branch `return`s, so hooks are never reached. Each derived method's own hooks run instead |
 | `[AfterForge]` on abstract dispatch | **Not executed** — dispatch branches `return` immediately; no destination instance exists for dispatch-only methods |
 | Null source | `return null!` (or throw per `NullHandling`) |
 
@@ -477,7 +480,7 @@ FM0011 messages distinguish between convention-mapped and auto-wired properties 
 |-----------|--------|------------|
 | Auto-wiring only within same forger class | Cross-class method discovery would require global analysis | Use explicit `[ForgeWith]` referencing a method on the same forger that delegates to the other forger |
 | No auto-wiring for `[ForgeFrom]` resolvers | Resolvers have arbitrary signatures, not discoverable | Continue using explicit `[ForgeFrom]` |
-| `[ReverseForge]` + auto-wired properties emit FM0026 if reverse method missing | Consistent with FM0015 for explicit `[ForgeWith]` | Add the reverse forge method, or add `[Ignore(nameof(Prop))]` on the reverse forge method's `[ForgeWith]` attributes |
+| `[ReverseForge]` + auto-wired properties emit FM0026 if reverse method missing | Consistent with FM0015 for explicit `[ForgeWith]` | Add the reverse forge method, or add `[Ignore(nameof(Prop))]` on the reverse forge method to opt out that property |
 | No Span/Memory collection support | Complex codegen for stack-allocated types | Use explicit collection methods |
 | Abstract dispatch requires concrete derived methods | Source generator cannot discover types at runtime | Ensure all subtypes have forge methods; FM0024 warns |
 
