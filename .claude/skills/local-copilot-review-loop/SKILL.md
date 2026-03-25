@@ -19,7 +19,7 @@ copilot -p "Review the pull request #<PR> on <OWNER>/<REPO>. Focus on <scope>. C
 
 - The `-p` flag passes a prompt directly; output is plain text to stdout
 - The CLI auto-detects the repo from `git remote -v`
-- Typical execution time: 30–90 seconds. Set a 120-second timeout on the shell command.
+- Execution time varies: simple reviews ~1–2 minutes, cross-referencing prompts can take 5+ minutes. Set a 600-second (10 min) timeout. If it exceeds that, kill and retry with a narrower prompt.
 - Be specific: name files to review, ask for cross-referencing, request structured output like `[file:line] issue`
 
 ## Workflow

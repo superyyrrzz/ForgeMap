@@ -27,7 +27,7 @@ The `-p` flag passes a prompt directly. The CLI:
 The CLI reads `git remote -v` to detect the repo. If the repo was recently renamed, the CLI may initially try the old name. It usually self-corrects via GitHub's redirect, but verify in the output if you see 404 errors.
 
 ### Timeout
-Typical execution time: 30–90 seconds. Set a 120s timeout to be safe.
+Execution time varies widely: simple reviews ~1–2 minutes, cross-referencing prompts can take 5+ minutes. Set a 600s (10 min) timeout. If it exceeds that, kill and retry with a narrower prompt.
 
 ### Output format
 The CLI output is unstructured text — not JSON. Parse findings by looking for patterns like:
