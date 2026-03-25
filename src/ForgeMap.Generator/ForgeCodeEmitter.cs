@@ -1059,7 +1059,7 @@ internal sealed class ForgeCodeEmitter
                     ReportDiagnosticIfNotSuppressed(context,
                         DiagnosticDescriptors.ForgeAllDerivedAbstractDestination,
                         method.Locations.FirstOrDefault(),
-                        destinationType.Name);
+                        destinationType.ToDisplayString());
                 }
             }
 
@@ -1069,7 +1069,7 @@ internal sealed class ForgeCodeEmitter
                 var destDisplayName = destinationType.ToDisplayString();
                 sb.AppendLine($"            throw new global::System.NotSupportedException(");
                 sb.AppendLine($"                $\"No forge mapping for source type '{{({sourceParam}).GetType().FullName}}' \" +");
-                sb.AppendLine($"                $\"to abstract destination type '{destDisplayName}'.\");");
+                sb.AppendLine($"                $\"to non-instantiable destination type '{destDisplayName}'.\");");
                 sb.AppendLine("        }");
                 return sb.ToString();
             }

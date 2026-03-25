@@ -3599,7 +3599,7 @@ public class ForgeAllDerivedTests
 
         // Should throw NotSupportedException as fallback
         Assert.Contains("throw new global::System.NotSupportedException(", generatedCode);
-        Assert.Contains("abstract destination type", generatedCode);
+        Assert.Contains("non-instantiable destination type", generatedCode);
 
         // Should NOT contain base-type object initializer (no "new BaseDto" for abstract type)
         Assert.DoesNotContain("new TestNamespace.BaseDto", generatedCode);
