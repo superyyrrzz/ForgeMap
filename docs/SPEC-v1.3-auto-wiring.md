@@ -101,8 +101,8 @@ public partial UDSModels.QuestionnaireChildBase Forge(QuestionnaireChildBase sou
 | Concrete destination (unchanged) | Is-cascade + base-type mapping fallback |
 | No derived methods found | FM0022 warning, base mapping fallback (concrete) or `throw` (abstract) |
 | `[ForgeAllDerived]` + `[ConvertWith]` | FM0023 error (unchanged) |
-| `[BeforeForge]` on abstract dispatch | **Not executed** — this is an exception to the normal hook order (null check → `[BeforeForge]` → mapping → `[AfterForge]`). For `[ForgeAllDerived]` with abstract/interface destinations, the generator emits the dispatch cascade immediately after the null check — before `[BeforeForge]` hooks — and each branch `return`s, so hooks are never reached. Each derived method's own hooks run instead |
-| `[AfterForge]` on abstract dispatch | **Not executed** — dispatch branches `return` immediately; no destination instance exists for dispatch-only methods |
+| `[BeforeForge]` on abstract dispatch | **Skipped on matching branches** — for all `[ForgeAllDerived]` methods, the generator emits the dispatch cascade immediately after the null check, before `[BeforeForge]` hooks. When a derived branch matches, it `return`s before hooks run. For abstract/interface destinations there is no base-type fallback, so the base `[BeforeForge]` is effectively never reached; each derived method's own hooks run instead. For concrete destinations, the base-type fallback path (when no branch matches) still executes `[BeforeForge]` hooks |
+| `[AfterForge]` on abstract dispatch | **Skipped on matching branches** — derived branches `return` from their own forge methods, so base-level `[AfterForge]` hooks only run on the base-type mapping fallback path (concrete destinations only). Abstract/interface destinations have no fallback, so the base `[AfterForge]` is never reached |
 | Null source | `return null!` (or throw per `NullHandling`) |
 
 ### Competitor Comparison
