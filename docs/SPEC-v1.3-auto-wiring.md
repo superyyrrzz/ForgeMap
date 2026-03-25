@@ -83,7 +83,7 @@ public partial UDSModels.QuestionnaireChildBase Forge(QuestionnaireChildBase sou
 | Code | Severity | Change | Description |
 |------|----------|--------|-------------|
 | FM0004 | Error | Modified | No longer raised when `[ForgeAllDerived]` is present on a method with abstract/interface destination |
-| FM0022 | Warning | Unchanged | Still raised if no derived methods found |
+| FM0022 | Warning | Modified | Message updated: for abstract/interface destinations, warns that dispatch-only body has no base-type fallback (previously stated "will only map the base type") |
 | **FM0024** | Warning | **New** | `[ForgeAllDerived]` on abstract/interface destination — unmatched source subtypes will throw `NotSupportedException` at runtime |
 
 ### Behavioral Contract
@@ -95,7 +95,8 @@ public partial UDSModels.QuestionnaireChildBase Forge(QuestionnaireChildBase sou
 | Concrete destination (unchanged) | Is-cascade + base-type mapping fallback |
 | No derived methods found | FM0022 warning, base mapping fallback (concrete) or `throw` (abstract) |
 | `[ForgeAllDerived]` + `[ConvertWith]` | FM0023 error (unchanged) |
-| `[BeforeForge]`/`[AfterForge]` on abstract dispatch | Skipped — hooks require an instance |
+| `[BeforeForge]` on abstract dispatch | **Executed** — receives source object only, does not require a destination instance |
+| `[AfterForge]` on abstract dispatch | **Skipped** — requires a destination instance which does not exist for dispatch-only methods |
 | Null source | `return null!` (or throw per `NullHandling`) |
 
 ### Competitor Comparison
@@ -213,13 +214,13 @@ Address: source.Address is { } __forgeWith_Address ? Forge(__forgeWith_Address) 
 
 | Code | Severity | Change | Description |
 |------|----------|--------|-------------|
-| FM0011 | Info | Enhanced | Now also reports auto-wired nested mappings (was convention-only) |
+| FM0011 | Info | Enhanced | Now also reports auto-wired nested mappings with distinct message: "Property '{0}' auto-wired via forge method '{1}'" (was "Property '{0}' mapped by convention"). Disabled by default; enable via `#pragma warning restore FM0011` or `<WarningsAsErrors>FM0011</WarningsAsErrors>` |
 | **FM0025** | Warning | **New** | Ambiguous auto-wire: multiple forge methods match for property `X`. Use `[ForgeWith]` to resolve |
 | FM0006 | Warning | Unchanged | Still raised for unmapped properties when no forge method is found |
 
 ### Breaking Change Note
 
-Properties that were previously unmapped (producing FM0006) are now auto-wired when a matching forge method exists. To restore v1.2 behavior, set `AutoWireNestedMappings = false`. The FM0011 info diagnostic reports all auto-wired properties for visibility.
+Properties that were previously unmapped (producing FM0006) are now auto-wired when a matching forge method exists. To restore v1.2 behavior, set `AutoWireNestedMappings = false`. Enable FM0011 (info, disabled by default) for full visibility into which properties are auto-wired vs. convention-mapped.
 
 ### Competitor Comparison
 
@@ -257,6 +258,17 @@ When `AutoWireNestedMappings = true` (default) and a destination property is a c
 
 Explicitly declared collection forge methods always take precedence.
 
+#### Interaction with `GenerateCollectionMappings`
+
+The existing `GenerateCollectionMappings` flag (default `true`) controls whether **explicitly declared** collection forge methods get auto-generated bodies. The new inline collection feature is separate — it generates collection iteration **inline in property assignments** rather than as standalone methods. The behavior matrix:
+
+| `AutoWireNestedMappings` | `GenerateCollectionMappings` | Behavior |
+|--------------------------|------------------------------|----------|
+| `true` | `true` (default) | Inline collection iteration for auto-wired properties; explicit collection methods also generated |
+| `true` | `false` | Inline collection iteration for auto-wired properties; explicit collection methods must be hand-implemented |
+| `false` | `true` | No inline collection iteration; explicit collection methods generated as in v1.2 |
+| `false` | `false` | No inline collection iteration; no auto-generated collection methods (v1.2 behavior) |
+
 ### Usage
 
 ```csharp
@@ -277,15 +289,7 @@ public partial class AppForger
 ```csharp
 // Dest property: List<ProductDto> Items
 // Source property: List<ProductEntity> Items
-Items = source.Items is { } __autoItems
-    ? new global::System.Collections.Generic.List<ProductDto>(
-        __autoItems.Select(item => Forge(item)).ToList())
-    : null!,
-```
-
-Or with optimized pre-sized loop:
-
-```csharp
+// Pre-sized foreach (preferred — matches existing collection method codegen)
 Items = source.Items is { } __autoItems
     ? (() => {
           var __list = new global::System.Collections.Generic.List<ProductDto>(__autoItems.Count);
@@ -296,7 +300,7 @@ Items = source.Items is { } __autoItems
     : null!,
 ```
 
-> Implementation note: The exact codegen pattern (LINQ `.Select().ToList()` vs. pre-sized `foreach`) is an implementation detail. The pre-sized `foreach` approach is preferred for performance consistency with existing explicit collection method codegen.
+> Implementation note: The pre-sized `foreach` approach is preferred over LINQ `.Select().ToList()` for performance consistency with existing explicit collection method codegen. The exact codegen pattern is an implementation detail.
 
 **Array:**
 
@@ -345,7 +349,18 @@ Inline collection mapping follows the same null patterns as existing collection 
 |--------------|--------------------|
 | `null` | Returns `null!` (reference types) or `default` (value types) |
 | Empty collection | Returns empty collection of destination type |
-| Elements are `null` | Preserved — calls `Forge(null)` which returns `null!` per `NullHandling` |
+| Elements are `null` | Passed to `Forge(null)` — result depends on forger's `NullHandling` setting (`ReturnNull` → null element preserved; `ThrowException` → throws) |
+
+### `[ReverseForge]` Interaction
+
+Auto-wired nested and collection properties participate in `[ReverseForge]` generation:
+
+| Scenario | Behavior |
+|----------|----------|
+| Auto-wired nested property + `[ReverseForge]` | Reverse auto-wiring applies if the reverse forge method exists (same discovery algorithm in reverse direction) |
+| Auto-wired collection property + `[ReverseForge]` | Reverse collection inline generated if reverse element forge method exists |
+| Reverse method not found for auto-wired property | FM0015 warning (same as explicit `[ForgeWith]` without reverse) |
+| Explicit `[ForgeWith]` on forward + auto-wire on reverse | Each direction resolved independently |
 
 ### Precedence Rules
 
@@ -420,14 +435,22 @@ public partial class AppForger { ... }
 
 ### Identifying auto-wired properties
 
-Enable the FM0011 info diagnostic to see which properties are auto-wired:
+FM0011 is an info-level diagnostic (disabled by default). Enable it to see which properties are auto-wired:
 
 ```xml
-<!-- In .csproj -->
+<!-- In .csproj — promote FM0011 to a visible warning -->
 <PropertyGroup>
-    <ForgeMap_WarningsAsErrors>FM0011</ForgeMap_WarningsAsErrors>
+    <WarningsAsErrors>FM0011</WarningsAsErrors>
 </PropertyGroup>
 ```
+
+Or per-file:
+
+```csharp
+#pragma warning restore FM0011  // Show auto-wired/convention-mapped property info
+```
+
+FM0011 messages distinguish between convention-mapped and auto-wired properties in their text.
 
 ---
 
@@ -437,6 +460,7 @@ Enable the FM0011 info diagnostic to see which properties are auto-wired:
 |-----------|--------|------------|
 | Auto-wiring only within same forger class | Cross-class method discovery would require global analysis | Use `[ForgeWith]` to reference methods on other forgers |
 | No auto-wiring for `[ForgeFrom]` resolvers | Resolvers have arbitrary signatures, not discoverable | Continue using explicit `[ForgeFrom]` |
+| `[ReverseForge]` + auto-wired properties emit FM0015 if reverse method missing | Consistent with explicit `[ForgeWith]` behavior | Add `[ReverseForge]` to the nested forge method, or use `[Ignore]` on the reverse direction |
 | No Span/Memory collection support | Complex codegen for stack-allocated types | Use explicit collection methods |
 | Abstract dispatch requires concrete derived methods | Source generator cannot discover types at runtime | Ensure all subtypes have forge methods; FM0024 warns |
 
