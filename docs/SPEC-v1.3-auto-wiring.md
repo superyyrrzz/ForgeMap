@@ -397,7 +397,7 @@ Auto-wired nested and collection properties participate in `[ReverseForge]` gene
 
 ### Diagnostics
 
-No additional diagnostics introduced by this feature — it reuses existing FM0006 when an element method isn't found, and uses new FM0025 for ambiguous element matches and new FM0026 for missing reverse forge methods on auto-wired properties (both added in v1.3).
+This feature introduces no diagnostics of its own. It reuses existing FM0006 when an element method isn't found, and leverages FM0025 (ambiguous auto-wire) and FM0026 (missing reverse forge method) — both introduced by Feature 2 above.
 
 ### Competitor Comparison
 
