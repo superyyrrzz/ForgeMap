@@ -286,21 +286,24 @@ public partial class AppForger
 
 **List with pre-sizing (source has `.Count`):**
 
+Collection properties are assigned via statements after object construction (not in object initializers) to avoid closure/delegate allocations:
+
 ```csharp
-// Dest property: List<ProductDto> Items
-// Source property: List<ProductEntity> Items
-// Pre-sized foreach (preferred — matches existing collection method codegen)
-Items = source.Items is { } __autoItems
-    ? (() => {
-          var __list = new global::System.Collections.Generic.List<ProductDto>(__autoItems.Count);
-          foreach (var __item in __autoItems)
-              __list.Add(Forge(__item));
-          return __list;
-      })()
-    : null!,
+// Generated as post-construction statements — no IIFE, no closure overhead
+if (source.Items is { } __autoItems)
+{
+    var __list = new global::System.Collections.Generic.List<ProductDto>(__autoItems.Count);
+    foreach (var __item in __autoItems)
+        __list.Add(Forge(__item));
+    __result.Items = __list;
+}
+else
+{
+    __result.Items = null!;
+}
 ```
 
-> Implementation note: The pre-sized `foreach` approach is preferred over LINQ `.Select().ToList()` for performance consistency with existing explicit collection method codegen. The exact codegen pattern is an implementation detail.
+> Implementation note: The pre-sized `foreach` approach is preferred over LINQ `.Select().ToList()` for performance consistency with existing explicit collection method codegen. The exact codegen pattern is an implementation detail — the generator may use statement-based assignment or other allocation-free patterns depending on context.
 
 **Array:**
 
@@ -318,17 +321,23 @@ Items = source.Items is { } __autoItems
     : null!,
 ```
 
-**HashSet (pre-sized `foreach` + `Add`):**
+**HashSet (`foreach` + `Add`):**
 
 ```csharp
-Labels = source.Labels is { } __autoLabels
-    ? (() => {
-          var __set = new global::System.Collections.Generic.HashSet<LabelDto>(__autoLabels.Count);
-          foreach (var item in __autoLabels)
-              __set.Add(Forge(item));
-          return __set;
-      })()
-    : null!,
+if (source.Labels is { } __autoLabels)
+{
+    // Parameterless ctor for broad TFM support (netstandard2.0, .NET Framework).
+    // The generator may use HashSet<T>(int capacity) or EnsureCapacity when those
+    // APIs are available in the current compilation's target framework.
+    var __set = new global::System.Collections.Generic.HashSet<LabelDto>();
+    foreach (var item in __autoLabels)
+        __set.Add(Forge(item));
+    __result.Labels = __set;
+}
+else
+{
+    __result.Labels = null!;
+}
 ```
 
 ### Supported Collection Conversions
