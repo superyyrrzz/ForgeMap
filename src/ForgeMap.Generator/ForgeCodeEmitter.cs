@@ -1013,9 +1013,11 @@ internal sealed class ForgeCodeEmitter
 
             if (derivedMethods.Count == 0)
             {
-                // FM0022: no derived forge methods found
+                // FM0022: no derived forge methods found — use abstract-specific message when applicable
                 ReportDiagnosticIfNotSuppressed(context,
-                    DiagnosticDescriptors.ForgeAllDerivedNoDerivedMethods,
+                    isAbstractOrInterface
+                        ? DiagnosticDescriptors.ForgeAllDerivedNoDerivedMethodsAbstract
+                        : DiagnosticDescriptors.ForgeAllDerivedNoDerivedMethods,
                     method.Locations.FirstOrDefault(),
                     method.Name);
             }

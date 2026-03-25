@@ -3703,9 +3703,10 @@ public class ForgeAllDerivedTests
         var (diagnostics, generatedTrees) = RunGenerator(source);
 
         Assert.Single(generatedTrees);
-        // FM0022 still emitted
+        // FM0022 still emitted with abstract-specific message
         var fm0022 = diagnostics.Where(d => d.Id == "FM0022").ToList();
         Assert.Single(fm0022);
+        Assert.Contains("no base-type fallback", fm0022[0].GetMessage());
         // FM0024 NOT emitted (no derived methods found, so no dispatch)
         Assert.Empty(diagnostics.Where(d => d.Id == "FM0024"));
         // FM0004 NOT emitted

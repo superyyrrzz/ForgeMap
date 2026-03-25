@@ -185,6 +185,14 @@ internal static class DiagnosticDescriptors
         defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
 
+    public static readonly DiagnosticDescriptor ForgeAllDerivedNoDerivedMethodsAbstract = new(
+        id: "FM0022",
+        title: "[ForgeAllDerived] found no derived forge methods",
+        messageFormat: "[ForgeAllDerived] on '{0}' found no derived forge methods; dispatch-only body has no base-type fallback — all inputs will throw NotSupportedException",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
+
     public static readonly DiagnosticDescriptor ForgeAllDerivedWithConvertWith = new(
         id: "FM0023",
         title: "[ForgeAllDerived] cannot be combined with [ConvertWith]",
