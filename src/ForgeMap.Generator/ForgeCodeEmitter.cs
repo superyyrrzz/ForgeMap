@@ -671,8 +671,21 @@ internal sealed class ForgeCodeEmitter
         // FM0026: Check auto-wired properties for missing reverse forge methods
         if (_config.AutoWireNestedMappings)
         {
+            // Collect ctor param names to recognize get-only ctor-backed properties
+            var ctorParamNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var forwardDestNamedType = forwardDestType as INamedTypeSymbol;
+            if (forwardDestNamedType != null)
+            {
+                foreach (var ctor in forwardDestNamedType.InstanceConstructors
+                    .Where(c => c.DeclaredAccessibility == Accessibility.Public))
+                {
+                    foreach (var p in ctor.Parameters)
+                        ctorParamNames.Add(p.Name);
+                }
+            }
+
             var forwardDestProps = GetMappableProperties(forwardDestType)
-                .Where(p => p.SetMethod != null);  // Only settable properties are eligible for auto-wiring
+                .Where(p => p.SetMethod != null || ctorParamNames.Contains(p.Name));  // Settable or ctor-backed
             var forwardSourceProps = GetMappableProperties(forwardSourceType);
 
             foreach (var destProp in forwardDestProps)
