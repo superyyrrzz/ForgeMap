@@ -214,13 +214,13 @@ Address: source.Address is { } __forgeWith_Address ? Forge(__forgeWith_Address) 
 
 | Code | Severity | Change | Description |
 |------|----------|--------|-------------|
-| FM0011 | Info | Enhanced | Now also reports auto-wired nested mappings with distinct message: "Property '{0}' auto-wired via forge method '{1}'" (was "Property '{0}' mapped by convention"). Disabled by default; enable via `#pragma warning restore FM0011` or `<WarningsAsErrors>FM0011</WarningsAsErrors>` |
+| FM0011 | Info | Enhanced | Now also reports auto-wired nested mappings with distinct message: "Property '{0}' auto-wired via forge method '{1}'" (was "The property '{0}' was mapped by name convention"). Disabled by default; enable via `.editorconfig`: `dotnet_diagnostic.FM0011.severity = suggestion` |
 | **FM0025** | Warning | **New** | Ambiguous auto-wire: multiple forge methods match for property `X`. Use `[ForgeWith]` to resolve |
 | FM0006 | Warning | Unchanged | Still raised for unmapped properties when no forge method is found |
 
 ### Breaking Change Note
 
-Properties that were previously unmapped (producing FM0006) are now auto-wired when a matching forge method exists. To restore v1.2 behavior, set `AutoWireNestedMappings = false`. Enable FM0011 (info, disabled by default) for full visibility into which properties are auto-wired vs. convention-mapped.
+Properties that were previously unmapped (producing FM0006) are now auto-wired when a matching forge method exists. To restore v1.2 behavior, set `AutoWireNestedMappings = false`. Enable FM0011 (info, disabled by default) via `.editorconfig` (`dotnet_diagnostic.FM0011.severity = suggestion`) for full visibility into which properties are auto-wired vs. convention-mapped.
 
 ### Competitor Comparison
 
@@ -447,13 +447,7 @@ FM0011 is an info-level diagnostic (disabled by default). Enable it to see which
 dotnet_diagnostic.FM0011.severity = suggestion
 ```
 
-Or per-file:
-
-```csharp
-#pragma warning restore FM0011  // Show auto-wired/convention-mapped property info
-```
-
-FM0011 messages distinguish between convention-mapped and auto-wired properties in their text.
+FM0011 messages distinguish between convention-mapped and auto-wired properties in their text. Note: `#pragma warning restore` and `<WarningsAsErrors>` do not enable disabled-by-default diagnostics — `.editorconfig` is the correct mechanism.
 
 ---
 
