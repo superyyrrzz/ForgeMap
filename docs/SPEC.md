@@ -28,6 +28,7 @@
 | **v1.0** | Core generator, property matching, collections, enums, constructor mapping, flattening, `[ReverseForge]`, hooks, DI integration, full diagnostics, NuGet publish |
 | **v1.1** | Mapping inheritance, polymorphic dispatch, inherited property resolution ([spec](SPEC-v1.1-inheritance.md)) |
 | **v1.2** | Null-safe property assignment: `NullPropertyHandling` enum with 4 strategies, three-tier config, FM0007 activation ([spec](SPEC-v1.2-null-property-handling.md)) |
+| ***v1.3*** | *Abstract destination dispatch, auto-wire nested mappings, inline collection mapping, diagnostics FM0024–FM0026 ([spec](SPEC-v1.3-auto-wiring.md))* |
 | *Future* | `[ConvertWith]`, `ITypeConverter<S,D>` |
 | *Future* | `ProjectTo<T>()` |
 
