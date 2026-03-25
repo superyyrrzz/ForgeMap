@@ -672,15 +672,22 @@ internal sealed class ForgeCodeEmitter
         if (_config.AutoWireNestedMappings)
         {
             // Collect ctor param names to recognize get-only ctor-backed properties
+            // Only relevant when there is no parameterless public ctor, because ResolveConstructor
+            // prefers parameterless ctors (object initializer pattern), making get-only props unmappable
             var ctorParamNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var forwardDestNamedType = forwardDestType as INamedTypeSymbol;
             if (forwardDestNamedType != null)
             {
-                foreach (var ctor in forwardDestNamedType.InstanceConstructors
-                    .Where(c => c.DeclaredAccessibility == Accessibility.Public))
+                var hasParameterlessCtor = forwardDestNamedType.InstanceConstructors
+                    .Any(c => c.DeclaredAccessibility == Accessibility.Public && c.Parameters.Length == 0);
+                if (!hasParameterlessCtor)
                 {
-                    foreach (var p in ctor.Parameters)
-                        ctorParamNames.Add(p.Name);
+                    foreach (var ctor in forwardDestNamedType.InstanceConstructors
+                        .Where(c => c.DeclaredAccessibility == Accessibility.Public))
+                    {
+                        foreach (var p in ctor.Parameters)
+                            ctorParamNames.Add(p.Name);
+                    }
                 }
             }
 
@@ -1811,11 +1818,12 @@ internal sealed class ForgeCodeEmitter
         var destToSourceExpr = BuildDestToSourceMap(sourceType, sourcePropertiesList, propertyMappings);
 
         // Score each constructor by how many parameters can be satisfied
-        var scoredCtors = new List<(IMethodSymbol Ctor, List<CtorParamMapping> Mappings, int Score)>();
+        var scoredCtors = new List<(IMethodSymbol Ctor, List<CtorParamMapping> Mappings, int Score, List<Action> DeferredDiagnostics)>();
 
         foreach (var ctor in constructors)
         {
             var mappings = new List<CtorParamMapping>();
+            var deferredDiagnostics = new List<Action>();
             var allMatched = true;
 
             foreach (var param in ctor.Parameters)
@@ -1867,11 +1875,13 @@ internal sealed class ForgeCodeEmitter
                     if (candidates.Count == 1)
                     {
                         var matchedMethod = candidates[0];
-                        // Report FM0027 (info, off by default)
-                        ReportDiagnosticIfNotSuppressed(context,
+                        // Defer FM0027 (info, off by default) — only report for winning ctor
+                        var capturedDestPropName = matchedDestPropName!;
+                        var capturedMethodName = matchedMethod.Name;
+                        deferredDiagnostics.Add(() => ReportDiagnosticIfNotSuppressed(context,
                             DiagnosticDescriptors.PropertyAutoWired,
                             method.Locations.FirstOrDefault(),
-                            matchedDestPropName!, matchedMethod.Name);
+                            capturedDestPropName, capturedMethodName));
                         // Generate auto-wire expression (same form as [ForgeWith] ctor params)
                         string autoWireExpr;
                         if (sourcePropType.IsReferenceType)
@@ -1890,11 +1900,12 @@ internal sealed class ForgeCodeEmitter
                     {
                         if (candidates.Count > 1)
                         {
-                            // FM0025: ambiguous
-                            ReportDiagnosticIfNotSuppressed(context,
+                            // FM0025: ambiguous — defer until ctor selection is finalized
+                            var capturedDestPropName2 = matchedDestPropName!;
+                            deferredDiagnostics.Add(() => ReportDiagnosticIfNotSuppressed(context,
                                 DiagnosticDescriptors.AmbiguousAutoWire,
                                 method.Locations.FirstOrDefault(),
-                                matchedDestPropName!, destinationType.Name);
+                                capturedDestPropName2, destinationType.Name));
                         }
                         allMatched = false;
                         break;
@@ -1909,7 +1920,7 @@ internal sealed class ForgeCodeEmitter
 
             if (allMatched)
             {
-                scoredCtors.Add((ctor, mappings, ctor.Parameters.Length));
+                scoredCtors.Add((ctor, mappings, ctor.Parameters.Length, deferredDiagnostics));
             }
         }
 
@@ -1945,6 +1956,10 @@ internal sealed class ForgeCodeEmitter
                 destinationType.Name);
             return (null, null);
         }
+
+        // Emit deferred diagnostics only for the winning constructor
+        foreach (var deferredDiag in bestMatches[0].DeferredDiagnostics)
+            deferredDiag();
 
         return (bestMatches[0].Ctor, bestMatches[0].Mappings);
     }
