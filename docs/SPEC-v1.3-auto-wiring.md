@@ -284,12 +284,12 @@ public partial class AppForger
 
 ### Generated Code Examples
 
-**List with pre-sizing (source has `.Count`):**
+Multi-statement collection mappings (List, HashSet) are assigned via post-construction statements to avoid IIFE closure overhead. Single-expression mappings (Array, IEnumerable) can remain inline in object initializers since they don't require closures.
 
-Collection properties are assigned via statements after object construction (not in object initializers) to avoid closure/delegate allocations:
+**List with pre-sizing (source has `.Count`) — post-construction statements:**
 
 ```csharp
-// Generated as post-construction statements — no IIFE, no closure overhead
+// Multi-statement → emitted after object construction to avoid IIFE closure overhead
 if (source.Items is { } __autoItems)
 {
     var __list = new global::System.Collections.Generic.List<ProductDto>(__autoItems.Count);
@@ -303,25 +303,27 @@ else
 }
 ```
 
-> Implementation note: The pre-sized `foreach` approach is preferred over LINQ `.Select().ToList()` for performance consistency with existing explicit collection method codegen. The exact codegen pattern is an implementation detail — the generator may use statement-based assignment or other allocation-free patterns depending on context.
+> Implementation note: The pre-sized `foreach` approach is preferred over LINQ `.Select().ToList()` for performance consistency with existing explicit collection method codegen. The exact codegen pattern is an implementation detail.
 
-**Array:**
+**Array — inline expression (no closure needed):**
 
 ```csharp
+// Single expression → safe in object initializer
 Tags = source.Tags is { } __autoTags
     ? global::System.Array.ConvertAll(__autoTags, item => Forge(item))
     : null!,
 ```
 
-**IEnumerable (lazy):**
+**IEnumerable (lazy) — inline expression (no closure needed):**
 
 ```csharp
+// Single expression → safe in object initializer
 Items = source.Items is { } __autoItems
     ? __autoItems.Select(item => Forge(item))
     : null!,
 ```
 
-**HashSet (`foreach` + `Add`):**
+**HashSet (`foreach` + `Add`) — post-construction statements:**
 
 ```csharp
 if (source.Labels is { } __autoLabels)
