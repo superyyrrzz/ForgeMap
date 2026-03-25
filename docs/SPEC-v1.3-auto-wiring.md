@@ -391,7 +391,7 @@ Auto-wired nested and collection properties participate in `[ReverseForge]` gene
 ### Precedence Rules
 
 1. **Explicit collection method** declared on forger → used as-is (no inline generation)
-2. **`[ForgeWith]`** on the property referencing a collection method → used as-is
+2. **`[ForgeWith]`** on the forge method targeting the collection property → used as-is
 3. **Auto-wired inline** → generated when `AutoWireNestedMappings = true` and element method found
 4. **No match** → FM0006 (unmapped property)
 
