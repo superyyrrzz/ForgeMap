@@ -67,9 +67,9 @@ public partial class AppForger
 public partial UDSModels.QuestionnaireChildBase Forge(QuestionnaireChildBase source)
 {
     // Null handling follows the configured NullHandling policy:
-    // - NullForgiving (default) → return null!;
-    // - ThrowException          → throw new ArgumentNullException(nameof(source));
-    if (source == null) return null!; // shown variant assumes NullForgiving
+    // - ReturnNull (default)   → return null!;
+    // - ThrowException         → throw new ArgumentNullException(nameof(source));
+    if (source == null) return null!; // shown variant assumes ReturnNull
 
     // Polymorphic dispatch — most-derived types checked first.
     // Each branch returns immediately, so [BeforeForge]/[AfterForge] hooks
