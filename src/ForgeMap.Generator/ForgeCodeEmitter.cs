@@ -2947,9 +2947,9 @@ internal sealed class ForgeCodeEmitter
                 return (CollectionInlineKind.SingleExpression,
                     $"global::System.Array.ConvertAll({sourceLocalName}, __collItem => {methodName}(__collItem))");
             }
-            else
+            else if (HasCheapCount(sourceCollType))
             {
-                // Non-array → U[]: indexed loop (multi-statement)
+                // Non-array with cheap .Count → U[]: indexed loop (multi-statement)
                 var lengthExpr = GetCollectionLengthExpression(sourceCollType, sourceLocalName);
                 var sb = new StringBuilder();
                 sb.AppendLine($"                var {resultVar} = new {destElemDisplay}[{lengthExpr}];");
@@ -2959,6 +2959,12 @@ internal sealed class ForgeCodeEmitter
                 sb.AppendLine($"                    {resultVar}[__collIdx_{destPropName}++] = {methodName}(__collItem);");
                 sb.Append("                }");
                 return (CollectionInlineKind.MultiStatement, sb.ToString());
+            }
+            else
+            {
+                // IEnumerable<T> or other without cheap count → U[]: Select + ToArray (single expression, avoids double enumeration)
+                return (CollectionInlineKind.SingleExpression,
+                    $"global::System.Linq.Enumerable.ToArray(global::System.Linq.Enumerable.Select({sourceLocalName}, __collItem => {methodName}(__collItem)))");
             }
         }
 

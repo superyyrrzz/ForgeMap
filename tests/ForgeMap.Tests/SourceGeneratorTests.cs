@@ -4641,8 +4641,11 @@ namespace TestNamespace
         var generatedCode = string.Join("\n", trees.Select(t => t.GetText().ToString()));
 
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        Assert.Contains("__collIdx_", generatedCode);
+        // IEnumerable<T> → U[] uses Select + ToArray (single expression) to avoid double enumeration
+        Assert.Contains("ToArray", generatedCode);
+        Assert.Contains("Select", generatedCode);
         Assert.Contains("Forge(__collItem)", generatedCode);
+        Assert.DoesNotContain("__collIdx_", generatedCode); // No indexed loop for IEnumerable
     }
 
     [Fact]
