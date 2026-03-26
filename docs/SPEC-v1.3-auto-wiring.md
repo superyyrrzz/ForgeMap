@@ -487,5 +487,5 @@ FM0011 messages distinguish between convention-mapped and auto-wired properties 
 ---
 
 *Specification Version: 1.3*
-*Status: Proposal — the features, diagnostics (including `AutoWireNestedMappings`, FM0024–FM0026), and behavioral changes described here are not yet implemented in the current codebase.*
+*Status: Implemented — all features, diagnostics, and behavioral changes described here are implemented and shipped in v1.3.0.*
 *License: MIT*

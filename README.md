@@ -72,6 +72,7 @@ See [SPEC.md](docs/SPEC.md) for the full specification.
 | **v1.0** | Core generator, property matching, collections, enums, constructor mapping, flattening, `[ReverseForge]`, hooks, DI integration, full diagnostics |
 | **v1.1** | Mapping inheritance, `[IncludeBaseForge]`, `[ForgeAllDerived]` polymorphic dispatch |
 | **v1.2** | Null-safe property assignment: `NullPropertyHandling` with 4 strategies, three-tier config |
+| **v1.3** | Auto-wiring nested & collection mappings, abstract destination dispatch for `[ForgeAllDerived]` |
 
 ## License
 
