@@ -78,7 +78,8 @@ internal sealed class ForgeCodeEmitter
         "System.Collections.Generic.IList<T>",
         "System.Collections.Generic.ICollection<T>",
         "System.Collections.Generic.IReadOnlyList<T>",
-        "System.Collections.Generic.IReadOnlyCollection<T>"
+        "System.Collections.Generic.IReadOnlyCollection<T>",
+        "System.Collections.Generic.HashSet<T>"
     };
 
     private static readonly HashSet<string> SupportedCollectionTypes = new(StringComparer.Ordinal)
@@ -88,7 +89,8 @@ internal sealed class ForgeCodeEmitter
         "System.Collections.Generic.ICollection<T>",
         "System.Collections.Generic.IEnumerable<T>",
         "System.Collections.Generic.IReadOnlyList<T>",
-        "System.Collections.Generic.IReadOnlyCollection<T>"
+        "System.Collections.Generic.IReadOnlyCollection<T>",
+        "System.Collections.Generic.HashSet<T>"
     };
 
     private readonly INamedTypeSymbol? _ignoreAttributeSymbol;
@@ -723,22 +725,46 @@ internal sealed class ForgeCodeEmitter
                 if (CanAssign(forwardSourcePropType, destProp.Type)) continue;
 
                 var forwardCandidates = FindAutoWireForgeMethodCandidates(forger.Symbol, forwardSourcePropType, destProp.Type);
-                if (forwardCandidates.Count != 1) continue; // Only check properties that are actually auto-wired forward
-
-                // Now check if reverse forge method exists (destProp.Type → forwardSourcePropType)
-                // For the reverse check, also consider non-partial methods (explicit reverse implementations)
-                var reverseCandidates = FindReverseForgeMethodCandidates(forger.Symbol, destProp.Type, forwardSourcePropType);
-                if (reverseCandidates.Count == 0)
+                if (forwardCandidates.Count == 1)
                 {
-                    // Also check if the forward auto-wire candidate has [ReverseForge],
-                    // which means a reverse method will be generated automatically
-                    var forwardCandidate = forwardCandidates[0];
-                    if (!HasReverseForgeAttribute(forwardCandidate))
+                    // Property is auto-wired forward — check for reverse forge method
+                    var reverseCandidates = FindReverseForgeMethodCandidates(forger.Symbol, destProp.Type, forwardSourcePropType);
+                    if (reverseCandidates.Count == 0)
                     {
-                        ReportDiagnosticIfNotSuppressed(context,
-                            DiagnosticDescriptors.AutoWiredPropertyLacksReverseForge,
-                            forwardMethod.Locations.FirstOrDefault(),
-                            destProp.Name);
+                        var forwardCandidate = forwardCandidates[0];
+                        if (!HasReverseForgeAttribute(forwardCandidate))
+                        {
+                            ReportDiagnosticIfNotSuppressed(context,
+                                DiagnosticDescriptors.AutoWiredPropertyLacksReverseForge,
+                                forwardMethod.Locations.FirstOrDefault(),
+                                destProp.Name);
+                        }
+                    }
+                }
+                else
+                {
+                    // Check if this would be resolved by inline collection auto-wiring
+                    var srcElemType = GetCollectionElementType(forwardSourcePropType);
+                    var destElemType = GetCollectionElementType(destProp.Type);
+                    if (srcElemType != null && destElemType != null)
+                    {
+                        var elemForwardCandidates = FindAutoWireForgeMethodCandidates(forger.Symbol, srcElemType, destElemType);
+                        if (elemForwardCandidates.Count == 1)
+                        {
+                            // Collection property is inline-auto-wired forward — check for reverse element method
+                            var elemReverseCandidates = FindReverseForgeMethodCandidates(forger.Symbol, destElemType, srcElemType);
+                            if (elemReverseCandidates.Count == 0)
+                            {
+                                var elemForwardCandidate = elemForwardCandidates[0];
+                                if (!HasReverseForgeAttribute(elemForwardCandidate))
+                                {
+                                    ReportDiagnosticIfNotSuppressed(context,
+                                        DiagnosticDescriptors.AutoWiredPropertyLacksReverseForge,
+                                        forwardMethod.Locations.FirstOrDefault(),
+                                        destProp.Name);
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -1187,6 +1213,42 @@ internal sealed class ForgeCodeEmitter
         {
             // Constructor mapping: generate new Dest(param1: expr1, param2: expr2) { Prop = value, ... }
             // Using object initializer syntax so init-only properties work too
+
+            // Emit pre-construction blocks for inline collection ctor params
+            foreach (var mapping in ctorParamMappings)
+            {
+                if (mapping.PreConstructionBlock != null)
+                    sb.AppendLine(mapping.PreConstructionBlock);
+            }
+
+            // Collect remaining property assignments for object initializer
+            var remainingDestProps = destProperties
+                .Where(p => p.SetMethod != null && !ctorCoveredDestProps.Contains(p.Name))
+                .ToList();
+
+            var initAssignments = new List<(string Name, string Expr)>();
+            var skipNullAssignmentsForCtor = new List<(string DestPropName, string SourceExpr, string LocalVarName)>();
+            var postConstructionCollectionsForCtor = new List<(string DestPropName, string Block)>();
+            var preConstructionBlocksForCtor = new List<string>();
+            foreach (var destProp in remainingDestProps)
+            {
+                if (ignoredProperties.Contains(destProp.Name))
+                    continue;
+
+                var assignment = GeneratePropertyAssignment(
+                    destProp, sourceParam, sourceType, sourceProperties,
+                    propertyMappings, resolverMappings, forgeWithMappings, ignoredProperties, forger, context, method,
+                    nullPropertyHandlingOverrides, skipNullAssignmentsForCtor,
+                    postConstructionCollectionsForCtor, preConstructionBlocksForCtor);
+
+                if (assignment != null)
+                    initAssignments.Add((destProp.Name, assignment));
+            }
+
+            // Emit pre-construction blocks for init-only collection properties
+            foreach (var block in preConstructionBlocksForCtor)
+                sb.AppendLine(block);
+
             sb.AppendLine($"            var result = new {destinationType.ToDisplayString()}(");
 
             for (int i = 0; i < ctorParamMappings.Count; i++)
@@ -1198,27 +1260,6 @@ internal sealed class ForgeCodeEmitter
                     mapping.DestPropertyName, destinationType.ToDisplayString(),
                     nullPropertyHandlingOverrides);
                 sb.AppendLine($"                {mapping.CtorParamName}: {expr}{separator}");
-            }
-
-            // Collect remaining property assignments for object initializer
-            var remainingDestProps = destProperties
-                .Where(p => p.SetMethod != null && !ctorCoveredDestProps.Contains(p.Name))
-                .ToList();
-
-            var initAssignments = new List<(string Name, string Expr)>();
-            var skipNullAssignmentsForCtor = new List<(string DestPropName, string SourceExpr, string LocalVarName)>();
-            foreach (var destProp in remainingDestProps)
-            {
-                if (ignoredProperties.Contains(destProp.Name))
-                    continue;
-
-                var assignment = GeneratePropertyAssignment(
-                    destProp, sourceParam, sourceType, sourceProperties,
-                    propertyMappings, resolverMappings, forgeWithMappings, ignoredProperties, forger, context, method,
-                    nullPropertyHandlingOverrides, skipNullAssignmentsForCtor);
-
-                if (assignment != null)
-                    initAssignments.Add((destProp.Name, assignment));
             }
 
             if (initAssignments.Count > 0)
@@ -1243,6 +1284,10 @@ internal sealed class ForgeCodeEmitter
                 sb.AppendLine($"            }}");
             }
 
+            // Post-construction collection mappings
+            foreach (var (destName, block) in postConstructionCollectionsForCtor)
+                sb.AppendLine(block);
+
             // [AfterForge] callbacks
             foreach (var hookName in afterForgeHooks)
             {
@@ -1255,19 +1300,31 @@ internal sealed class ForgeCodeEmitter
         {
             // When AfterForge hooks exist, we need a variable to pass to the hooks
             var skipNullAssignmentsAfterForge = new List<(string DestPropName, string SourceExpr, string LocalVarName)>();
-            sb.AppendLine($"            var result = new {destinationType.ToDisplayString()}");
-            sb.AppendLine("            {");
+            var postConstructionCollectionsAfterForge = new List<(string DestPropName, string Block)>();
+            var preConstructionBlocksAfterForge = new List<string>();
 
+            var afterForgeAssignments = new List<(string Name, string Expr)>();
             foreach (var destProp in destProperties.Where(p => p.SetMethod != null))
             {
                 var assignment = GeneratePropertyAssignment(
                     destProp, sourceParam, sourceType, sourceProperties,
                     propertyMappings, resolverMappings, forgeWithMappings, ignoredProperties, forger, context, method,
-                    nullPropertyHandlingOverrides, skipNullAssignmentsAfterForge);
+                    nullPropertyHandlingOverrides, skipNullAssignmentsAfterForge,
+                    postConstructionCollectionsAfterForge, preConstructionBlocksAfterForge);
 
                 if (assignment != null)
-                    sb.AppendLine($"                {destProp.Name} = {assignment},");
+                    afterForgeAssignments.Add((destProp.Name, assignment));
             }
+
+            // Emit pre-construction blocks for init-only collection properties
+            foreach (var block in preConstructionBlocksAfterForge)
+                sb.AppendLine(block);
+
+            sb.AppendLine($"            var result = new {destinationType.ToDisplayString()}");
+            sb.AppendLine("            {");
+
+            foreach (var (name, expr) in afterForgeAssignments)
+                sb.AppendLine($"                {name} = {expr},");
 
             sb.AppendLine("            };");
 
@@ -1279,6 +1336,10 @@ internal sealed class ForgeCodeEmitter
                 sb.AppendLine($"                result.{destName} = {localVar};");
                 sb.AppendLine($"            }}");
             }
+
+            // Post-construction collection mappings
+            foreach (var (destName, block) in postConstructionCollectionsAfterForge)
+                sb.AppendLine(block);
 
             // [AfterForge] callbacks
             foreach (var hookName in afterForgeHooks)
@@ -1292,6 +1353,8 @@ internal sealed class ForgeCodeEmitter
         {
             // Object initializer pattern
             var skipNullAssignmentsPlain = new List<(string DestPropName, string SourceExpr, string LocalVarName)>();
+            var postConstructionCollectionsPlain = new List<(string DestPropName, string Block)>();
+            var preConstructionBlocksPlain = new List<string>();
             var plainAssignments = new List<(string Name, string Expr)>();
 
             foreach (var destProp in destProperties.Where(p => p.SetMethod != null))
@@ -1299,15 +1362,23 @@ internal sealed class ForgeCodeEmitter
                 var assignment = GeneratePropertyAssignment(
                     destProp, sourceParam, sourceType, sourceProperties,
                     propertyMappings, resolverMappings, forgeWithMappings, ignoredProperties, forger, context, method,
-                    nullPropertyHandlingOverrides, skipNullAssignmentsPlain);
+                    nullPropertyHandlingOverrides, skipNullAssignmentsPlain,
+                    postConstructionCollectionsPlain, preConstructionBlocksPlain);
 
                 if (assignment != null)
                     plainAssignments.Add((destProp.Name, assignment));
             }
 
-            if (skipNullAssignmentsPlain.Count > 0)
+            var needsResultVar = skipNullAssignmentsPlain.Count > 0 ||
+                postConstructionCollectionsPlain.Count > 0 ||
+                preConstructionBlocksPlain.Count > 0;
+
+            if (needsResultVar)
             {
-                // SkipNull properties exist — need a variable so we can emit if-guards after the initializer
+                // Emit pre-construction blocks for init-only collection properties
+                foreach (var block in preConstructionBlocksPlain)
+                    sb.AppendLine(block);
+
                 sb.AppendLine($"            var result = new {destinationType.ToDisplayString()}");
                 sb.AppendLine("            {");
                 foreach (var (name, expr) in plainAssignments)
@@ -1321,6 +1392,10 @@ internal sealed class ForgeCodeEmitter
                     sb.AppendLine($"                result.{destName} = {localVar};");
                     sb.AppendLine($"            }}");
                 }
+
+                // Post-construction collection mappings
+                foreach (var (destName, block) in postConstructionCollectionsPlain)
+                    sb.AppendLine(block);
 
                 sb.AppendLine("            return result;");
             }
@@ -1342,6 +1417,7 @@ internal sealed class ForgeCodeEmitter
     /// <summary>
     /// Generates a property assignment expression string, or null if the property should be skipped.
     /// When NullPropertyHandling.SkipNull applies, returns null and adds the property to <paramref name="skipNullAssignments"/>.
+    /// When a multi-statement collection auto-wire applies, returns null and adds to <paramref name="postConstructionCollections"/>.
     /// </summary>
     private string? GeneratePropertyAssignment(
         IPropertySymbol destProp,
@@ -1356,7 +1432,9 @@ internal sealed class ForgeCodeEmitter
         SourceProductionContext context,
         IMethodSymbol method,
         Dictionary<string, int> nullPropertyHandlingOverrides,
-        List<(string DestPropName, string SourceExpr, string LocalVarName)>? skipNullAssignments = null)
+        List<(string DestPropName, string SourceExpr, string LocalVarName)>? skipNullAssignments = null,
+        List<(string DestPropName, string Block)>? postConstructionCollections = null,
+        List<string>? preConstructionBlocks = null)
     {
         // Skip ignored properties
         if (ignoredProperties.Contains(destProp.Name))
@@ -1425,6 +1503,15 @@ internal sealed class ForgeCodeEmitter
             {
                 if (_config.AutoWireNestedMappings)
                 {
+                    // Try inline collection auto-wire first
+                    var collResult = TryAutoWireCollectionInline(
+                        destProp, sourceLeafType, sourceExpr,
+                        forger, context, method,
+                        nullPropertyHandlingOverrides,
+                        postConstructionCollections, preConstructionBlocks);
+                    if (collResult != null)
+                        return collResult;
+
                     var autoWireResult = TryAutoWireForgeMethod(
                         destProp, sourceLeafType, sourceExpr,
                         forger, context, method);
@@ -1515,6 +1602,15 @@ internal sealed class ForgeCodeEmitter
         // Auto-wire: search for matching forge methods for nested complex properties
         if (_config.AutoWireNestedMappings && sourceProp != null)
         {
+            // Try inline collection auto-wire first
+            var collResult = TryAutoWireCollectionInline(
+                destProp, sourceProp.Type, $"{sourceParam}.{sourceProp.Name}",
+                forger, context, method,
+                nullPropertyHandlingOverrides,
+                postConstructionCollections, preConstructionBlocks);
+            if (collResult != null)
+                return collResult;
+
             var autoWireResult = TryAutoWireForgeMethod(
                 destProp, sourceProp.Type, $"{sourceParam}.{sourceProp.Name}",
                 forger, context, method);
@@ -1870,6 +1966,72 @@ internal sealed class ForgeCodeEmitter
                     _config.AutoWireNestedMappings && forger != null &&
                     !IsScalarType(sourcePropType) && !IsScalarType(param.Type))
                 {
+                    // Try inline collection auto-wire for ctor parameters first
+                    var srcElemType = GetCollectionElementType(sourcePropType);
+                    var destElemType = GetCollectionElementType(param.Type);
+                    if (srcElemType != null && destElemType != null)
+                    {
+                        var collLevelCandidates = FindAutoWireForgeMethodCandidates(forger.Symbol, sourcePropType, param.Type);
+                        if (collLevelCandidates.Count == 0)
+                        {
+                            var elemCandidates = FindAutoWireForgeMethodCandidates(forger.Symbol, srcElemType, destElemType);
+                            if (elemCandidates.Count == 1)
+                            {
+                                var elemMethod = elemCandidates[0];
+                                var capturedDestPropName = matchedDestPropName!;
+                                var capturedMethodName = elemMethod.Name;
+                                deferredDiagnostics.Add(() => ReportDiagnosticIfNotSuppressed(context,
+                                    DiagnosticDescriptors.PropertyAutoWired,
+                                    method.Locations.FirstOrDefault(),
+                                    capturedDestPropName, capturedMethodName));
+
+                                var collLocal = $"__coll_{param.Name}";
+                                var inlineResult = GenerateInlineCollectionCode(
+                                    sourcePropType, param.Type, destElemType,
+                                    collLocal, param.Name, elemMethod);
+
+                                if (inlineResult != null)
+                                {
+                                    var (ctorCollKind, ctorCollCode) = inlineResult.Value;
+                                    if (ctorCollKind == CollectionInlineKind.SingleExpression)
+                                    {
+                                        var nullFallback = param.Type.IsValueType ? "default" : "null!";
+                                        var ctorCollExpr = $"{sourceExpr} is {{ }} {collLocal} ? {ctorCollCode} : {nullFallback}";
+                                        mappings.Add(new CtorParamMapping(param.Name, matchedDestPropName!, ctorCollExpr, param.Type, param.Type));
+                                    }
+                                    else
+                                    {
+                                        // Multi-statement: build into local variable, use local in ctor expression
+                                        var resultVar = $"__collResult_{param.Name}";
+                                        var preBlock = new StringBuilder();
+                                        var destTypeDisplay = param.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+                                        preBlock.AppendLine($"            {destTypeDisplay}? __collInit_{param.Name} = null;");
+                                        preBlock.AppendLine($"            if ({sourceExpr} is {{ }} {collLocal})");
+                                        preBlock.AppendLine($"            {{");
+                                        preBlock.AppendLine(ctorCollCode);
+                                        preBlock.AppendLine($"                __collInit_{param.Name} = {resultVar};");
+                                        preBlock.Append($"            }}");
+
+                                        var mapping = new CtorParamMapping(param.Name, matchedDestPropName!, $"__collInit_{param.Name}!", param.Type, param.Type);
+                                        mapping.PreConstructionBlock = preBlock.ToString();
+                                        mappings.Add(mapping);
+                                    }
+                                    continue;
+                                }
+                            }
+                            else if (elemCandidates.Count > 1)
+                            {
+                                var capturedDestPropName2 = matchedDestPropName!;
+                                deferredDiagnostics.Add(() => ReportDiagnosticIfNotSuppressed(context,
+                                    DiagnosticDescriptors.AmbiguousAutoWire,
+                                    method.Locations.FirstOrDefault(),
+                                    capturedDestPropName2, destinationType.Name));
+                                allMatched = false;
+                                break;
+                            }
+                        }
+                    }
+
                     // Try auto-wiring for ctor parameters with non-assignable complex types
                     var candidates = FindAutoWireForgeMethodCandidates(forger.Symbol, sourcePropType, param.Type);
                     if (candidates.Count == 1)
@@ -2018,6 +2180,7 @@ internal sealed class ForgeCodeEmitter
         public string SourceExpression { get; }
         public ITypeSymbol? SourcePropertyType { get; }
         public ITypeSymbol DestPropertyType { get; }
+        public string? PreConstructionBlock { get; set; }
     }
 
     private HashSet<string> GetIgnoredProperties(IMethodSymbol method)
@@ -2756,6 +2919,383 @@ internal sealed class ForgeCodeEmitter
         return null;
     }
 
+    private enum CollectionInlineKind { SingleExpression, MultiStatement }
+
+    /// <summary>
+    /// Generates the raw inline collection iteration code for a given source→dest collection pair.
+    /// Returns the kind (single expression vs multi-statement) and the code string.
+    /// For SingleExpression: the code is a complete expression (e.g., "Array.ConvertAll(...)").
+    /// For MultiStatement: the code is a block of statements that build the result into a local variable
+    /// named __collResult_{destPropName} (without property assignment — caller handles that).
+    /// </summary>
+    private (CollectionInlineKind Kind, string Code)? GenerateInlineCollectionCode(
+        ITypeSymbol sourceCollType, ITypeSymbol destCollType,
+        ITypeSymbol destElemType,
+        string sourceLocalName, string destPropName,
+        IMethodSymbol elementForgeMethod)
+    {
+        var destElemDisplay = destElemType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+        var methodName = elementForgeMethod.Name;
+        var resultVar = $"__collResult_{destPropName}";
+
+        // Array destination
+        if (destCollType is IArrayTypeSymbol)
+        {
+            if (sourceCollType is IArrayTypeSymbol)
+            {
+                // T[] → U[]: Array.ConvertAll (single expression)
+                return (CollectionInlineKind.SingleExpression,
+                    $"global::System.Array.ConvertAll({sourceLocalName}, __collItem => {methodName}(__collItem))");
+            }
+            else
+            {
+                // Non-array → U[]: indexed loop (multi-statement)
+                var lengthExpr = GetCollectionLengthExpression(sourceCollType, sourceLocalName);
+                var sb = new StringBuilder();
+                sb.AppendLine($"                var {resultVar} = new {destElemDisplay}[{lengthExpr}];");
+                sb.AppendLine($"                var __collIdx_{destPropName} = 0;");
+                sb.AppendLine($"                foreach (var __collItem in {sourceLocalName})");
+                sb.AppendLine("                {");
+                sb.AppendLine($"                    {resultVar}[__collIdx_{destPropName}++] = {methodName}(__collItem);");
+                sb.Append("                }");
+                return (CollectionInlineKind.MultiStatement, sb.ToString());
+            }
+        }
+
+        if (destCollType is INamedTypeSymbol destNamedType)
+        {
+            var originalDef = destNamedType.OriginalDefinition.ToDisplayString();
+
+            // IEnumerable<U>: lazy Select (single expression)
+            if (originalDef == "System.Collections.Generic.IEnumerable<T>")
+            {
+                return (CollectionInlineKind.SingleExpression,
+                    $"{sourceLocalName}.Select(__collItem => {methodName}(__collItem))");
+            }
+
+            // HashSet<U>: foreach + Add
+            if (originalDef == "System.Collections.Generic.HashSet<T>")
+            {
+                var sb = new StringBuilder();
+                if (HasCheapCount(sourceCollType))
+                {
+                    var countExpr = GetCollectionLengthExpression(sourceCollType, sourceLocalName);
+                    sb.AppendLine($"                var {resultVar} = new global::System.Collections.Generic.HashSet<{destElemDisplay}>({countExpr});");
+                }
+                else
+                {
+                    sb.AppendLine($"                var {resultVar} = new global::System.Collections.Generic.HashSet<{destElemDisplay}>();");
+                }
+                sb.AppendLine($"                foreach (var __collItem in {sourceLocalName})");
+                sb.AppendLine("                {");
+                sb.AppendLine($"                    {resultVar}.Add({methodName}(__collItem));");
+                sb.Append("                }");
+                return (CollectionInlineKind.MultiStatement, sb.ToString());
+            }
+
+            // List<U>, IList<U>, ICollection<U>, IReadOnlyList<U>, IReadOnlyCollection<U>: pre-sized List + foreach
+            var sb2 = new StringBuilder();
+            if (HasCheapCount(sourceCollType))
+            {
+                var countExpr = GetCollectionLengthExpression(sourceCollType, sourceLocalName);
+                sb2.AppendLine($"                var {resultVar} = new global::System.Collections.Generic.List<{destElemDisplay}>({countExpr});");
+            }
+            else
+            {
+                sb2.AppendLine($"                var {resultVar} = new global::System.Collections.Generic.List<{destElemDisplay}>();");
+            }
+            sb2.AppendLine($"                foreach (var __collItem in {sourceLocalName})");
+            sb2.AppendLine("                {");
+            sb2.AppendLine($"                    {resultVar}.Add({methodName}(__collItem));");
+            sb2.Append("                }");
+            return (CollectionInlineKind.MultiStatement, sb2.ToString());
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Tries to auto-wire a collection property by finding a matching element forge method and
+    /// generating inline collection iteration code. Used in property assignment (object initializer) context.
+    /// Returns an expression string for single-expression collections, or null when a multi-statement
+    /// block is added to <paramref name="postConstructionCollections"/> (or <paramref name="preConstructionBlocks"/> for init-only).
+    /// Returns null with no side effects if not applicable.
+    /// </summary>
+    private string? TryAutoWireCollectionInline(
+        IPropertySymbol destProp,
+        ITypeSymbol sourcePropertyType,
+        string sourceExpr,
+        ForgerInfo forger,
+        SourceProductionContext context,
+        IMethodSymbol method,
+        Dictionary<string, int> nullPropertyHandlingOverrides,
+        List<(string DestPropName, string Block)>? postConstructionCollections,
+        List<string>? preConstructionBlocks)
+    {
+        // Both source and dest must be collection types
+        var srcElemType = GetCollectionElementType(sourcePropertyType);
+        var destElemType = GetCollectionElementType(destProp.Type);
+        if (srcElemType == null || destElemType == null)
+            return null;
+
+        // If there is an explicit collection-level forge method, let the existing auto-wire handle it
+        var collectionLevelCandidates = FindAutoWireForgeMethodCandidates(forger.Symbol, sourcePropertyType, destProp.Type);
+        if (collectionLevelCandidates.Count > 0)
+            return null;
+
+        // Find element-level forge method candidates
+        var elemCandidates = FindAutoWireForgeMethodCandidates(forger.Symbol, srcElemType, destElemType);
+        if (elemCandidates.Count == 0)
+            return null;
+
+        if (elemCandidates.Count > 1)
+        {
+            // FM0025: ambiguous
+            ReportDiagnosticIfNotSuppressed(context,
+                DiagnosticDescriptors.AmbiguousAutoWire,
+                method.Locations.FirstOrDefault(),
+                destProp.Name, destProp.ContainingType.Name);
+            return null;
+        }
+
+        var elementMethod = elemCandidates[0];
+
+        // FM0027: info diagnostic for visibility
+        ReportDiagnosticIfNotSuppressed(context,
+            DiagnosticDescriptors.PropertyAutoWired,
+            method.Locations.FirstOrDefault(),
+            destProp.Name, elementMethod.Name);
+
+        var strategy = ResolveNullPropertyHandling(destProp.Name, nullPropertyHandlingOverrides);
+        var collLocal = $"__coll_{destProp.Name}";
+
+        var inlineResult = GenerateInlineCollectionCode(
+            sourcePropertyType, destProp.Type, destElemType,
+            collLocal, destProp.Name, elementMethod);
+
+        if (inlineResult == null)
+            return null;
+
+        var (kind, code) = inlineResult.Value;
+        var isInitOnly = destProp.SetMethod?.IsInitOnly == true;
+
+        if (kind == CollectionInlineKind.SingleExpression)
+        {
+            // Single expression — fits in object initializer
+            var nullFallback = GenerateCollectionNullFallback(destProp, strategy, sourceExpr);
+            if (strategy == 1 && !isInitOnly && postConstructionCollections != null)
+            {
+                // SkipNull: post-construction if-guard (no else branch)
+                var block = new StringBuilder();
+                block.AppendLine($"            if ({sourceExpr} is {{ }} {collLocal})");
+                block.AppendLine($"            {{");
+                block.AppendLine($"                result.{destProp.Name} = {code};");
+                block.Append($"            }}");
+                postConstructionCollections.Add((destProp.Name, block.ToString()));
+                return null;
+            }
+
+            return $"{sourceExpr} is {{ }} {collLocal} ? {code} : {nullFallback}";
+        }
+        else
+        {
+            // Multi-statement — needs post-construction or pre-construction block
+            var resultVar = $"__collResult_{destProp.Name}";
+
+            if (isInitOnly)
+            {
+                // Init-only: build local before constructor, assign in initializer
+                var block = new StringBuilder();
+                block.AppendLine($"            {destProp.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}? __collInit_{destProp.Name} = null;");
+                block.AppendLine($"            if ({sourceExpr} is {{ }} {collLocal})");
+                block.AppendLine($"            {{");
+                block.AppendLine(code);
+                block.AppendLine($"                __collInit_{destProp.Name} = {resultVar};");
+                block.Append($"            }}");
+                preConstructionBlocks?.Add(block.ToString());
+
+                if (strategy == 2) // CoalesceToDefault
+                {
+                    var defaultExpr = GenerateCoalesceDefault(destProp.Type);
+                    return $"__collInit_{destProp.Name} ?? {defaultExpr ?? $"new {destProp.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}()"}";
+                }
+                if (strategy == 3) // ThrowException
+                {
+                    return $"__collInit_{destProp.Name} ?? throw new global::System.ArgumentNullException(\"{sourceExpr}\", \"Cannot assign null source property '{sourceExpr}' to non-nullable destination '{destProp.ContainingType.Name}.{destProp.Name}'.\")";
+                }
+                return $"__collInit_{destProp.Name}!"; // NullForgiving (or SkipNull fallback)
+            }
+
+            if (postConstructionCollections == null)
+                return null;
+
+            // Non-init-only: emit post-construction block
+            var postBlock = new StringBuilder();
+            if (strategy == 1) // SkipNull — no else
+            {
+                postBlock.AppendLine($"            if ({sourceExpr} is {{ }} {collLocal})");
+                postBlock.AppendLine($"            {{");
+                postBlock.AppendLine(code);
+                postBlock.AppendLine($"                result.{destProp.Name} = {resultVar};");
+                postBlock.Append($"            }}");
+            }
+            else
+            {
+                postBlock.AppendLine($"            if ({sourceExpr} is {{ }} {collLocal})");
+                postBlock.AppendLine($"            {{");
+                postBlock.AppendLine(code);
+                postBlock.AppendLine($"                result.{destProp.Name} = {resultVar};");
+                postBlock.AppendLine($"            }}");
+                postBlock.AppendLine($"            else");
+                postBlock.AppendLine($"            {{");
+                if (strategy == 2) // CoalesceToDefault
+                {
+                    var defaultExpr = GenerateCoalesceDefault(destProp.Type);
+                    postBlock.AppendLine($"                result.{destProp.Name} = {defaultExpr ?? $"new {destProp.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}()"};");
+                }
+                else if (strategy == 3) // ThrowException
+                {
+                    postBlock.AppendLine($"                throw new global::System.ArgumentNullException(\"{sourceExpr}\", \"Cannot assign null source property '{sourceExpr}' to non-nullable destination '{destProp.ContainingType.Name}.{destProp.Name}'.\");");
+                }
+                else // NullForgiving (strategy == 0)
+                {
+                    postBlock.AppendLine($"                result.{destProp.Name} = null!;");
+                }
+                postBlock.Append($"            }}");
+            }
+
+            postConstructionCollections.Add((destProp.Name, postBlock.ToString()));
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Generates the null fallback expression for collection properties based on NullPropertyHandling strategy.
+    /// </summary>
+    private string GenerateCollectionNullFallback(IPropertySymbol destProp, int strategy, string sourceExpr)
+    {
+        switch (strategy)
+        {
+            case 2: // CoalesceToDefault
+                var defaultExpr = GenerateCoalesceDefault(destProp.Type);
+                return defaultExpr ?? "null!";
+            case 3: // ThrowException
+                return $"throw new global::System.ArgumentNullException(\"{sourceExpr}\", \"Cannot assign null source property '{sourceExpr}' to non-nullable destination '{destProp.ContainingType.Name}.{destProp.Name}'.\")";
+            default: // NullForgiving (0) or SkipNull fallback
+                return "null!";
+        }
+    }
+
+    /// <summary>
+    /// Tries to auto-wire a collection property inline for ForgeInto (statement) context.
+    /// Returns a complete block of statements, or null if not applicable.
+    /// </summary>
+    private string? TryAutoWireCollectionInlineStatements(
+        IPropertySymbol destProp,
+        ITypeSymbol sourcePropertyType,
+        string sourceExpr,
+        string destVarName,
+        ForgerInfo forger,
+        SourceProductionContext context,
+        IMethodSymbol method,
+        Dictionary<string, int> nullPropertyHandlingOverrides)
+    {
+        var srcElemType = GetCollectionElementType(sourcePropertyType);
+        var destElemType = GetCollectionElementType(destProp.Type);
+        if (srcElemType == null || destElemType == null)
+            return null;
+
+        var collectionLevelCandidates = FindAutoWireForgeMethodCandidates(forger.Symbol, sourcePropertyType, destProp.Type);
+        if (collectionLevelCandidates.Count > 0)
+            return null;
+
+        var elemCandidates = FindAutoWireForgeMethodCandidates(forger.Symbol, srcElemType, destElemType);
+        if (elemCandidates.Count == 0)
+            return null;
+
+        if (elemCandidates.Count > 1)
+        {
+            ReportDiagnosticIfNotSuppressed(context,
+                DiagnosticDescriptors.AmbiguousAutoWire,
+                method.Locations.FirstOrDefault(),
+                destProp.Name, destProp.ContainingType.Name);
+            return null;
+        }
+
+        var elementMethod = elemCandidates[0];
+
+        ReportDiagnosticIfNotSuppressed(context,
+            DiagnosticDescriptors.PropertyAutoWired,
+            method.Locations.FirstOrDefault(),
+            destProp.Name, elementMethod.Name);
+
+        var strategy = ResolveNullPropertyHandling(destProp.Name, nullPropertyHandlingOverrides);
+        var collLocal = $"__coll_{destProp.Name}";
+
+        var inlineResult = GenerateInlineCollectionCode(
+            sourcePropertyType, destProp.Type, destElemType,
+            collLocal, destProp.Name, elementMethod);
+
+        if (inlineResult == null)
+            return null;
+
+        var (kind, code) = inlineResult.Value;
+        var resultVar = $"__collResult_{destProp.Name}";
+
+        if (kind == CollectionInlineKind.SingleExpression)
+        {
+            var nullFallback = GenerateCollectionNullFallback(destProp, strategy, sourceExpr);
+            if (strategy == 1) // SkipNull
+            {
+                return $"            if ({sourceExpr} is {{ }} {collLocal})\n" +
+                       $"            {{\n" +
+                       $"                {destVarName}.{destProp.Name} = {code};\n" +
+                       $"            }}";
+            }
+
+            return $"            {destVarName}.{destProp.Name} = {sourceExpr} is {{ }} {collLocal} ? {code} : {nullFallback};";
+        }
+        else
+        {
+            // Multi-statement
+            var sb = new StringBuilder();
+            if (strategy == 1) // SkipNull
+            {
+                sb.AppendLine($"            if ({sourceExpr} is {{ }} {collLocal})");
+                sb.AppendLine($"            {{");
+                sb.AppendLine(code);
+                sb.AppendLine($"                {destVarName}.{destProp.Name} = {resultVar};");
+                sb.Append($"            }}");
+            }
+            else
+            {
+                sb.AppendLine($"            if ({sourceExpr} is {{ }} {collLocal})");
+                sb.AppendLine($"            {{");
+                sb.AppendLine(code);
+                sb.AppendLine($"                {destVarName}.{destProp.Name} = {resultVar};");
+                sb.AppendLine($"            }}");
+                sb.AppendLine($"            else");
+                sb.AppendLine($"            {{");
+                if (strategy == 2)
+                {
+                    var defaultExpr = GenerateCoalesceDefault(destProp.Type);
+                    sb.AppendLine($"                {destVarName}.{destProp.Name} = {defaultExpr ?? $"new {destProp.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}()"};");
+                }
+                else if (strategy == 3)
+                {
+                    sb.AppendLine($"                throw new global::System.ArgumentNullException(\"{sourceExpr}\", \"Cannot assign null source property '{sourceExpr}' to non-nullable destination '{destProp.ContainingType.Name}.{destProp.Name}'.\");");
+                }
+                else
+                {
+                    sb.AppendLine($"                {destVarName}.{destProp.Name} = null!;");
+                }
+                sb.Append($"            }}");
+            }
+
+            return sb.ToString();
+        }
+    }
+
     /// <summary>
     /// Finds a resolver method in the forger class.
     /// Prefers exact type matches over assignable matches for deterministic overload selection.
@@ -3109,11 +3649,22 @@ internal sealed class ForgeCodeEmitter
                         // Try auto-wire for non-assignable leaf types
                         if (_config.AutoWireNestedMappings)
                         {
-                            var autoWireResult = TryAutoWireForgeMethod(
+                            // Try inline collection auto-wire first
+                            var collBlock = TryAutoWireCollectionInlineStatements(
                                 destProp, sourceLeafType, sourceExpr,
-                                forger, context, method);
-                            if (autoWireResult != null)
-                                sb.AppendLine($"            {destParam}.{destProp.Name} = {autoWireResult};");
+                                destParam, forger, context, method, nullPropertyHandlingOverrides);
+                            if (collBlock != null)
+                            {
+                                sb.AppendLine(collBlock);
+                            }
+                            else
+                            {
+                                var autoWireResult = TryAutoWireForgeMethod(
+                                    destProp, sourceLeafType, sourceExpr,
+                                    forger, context, method);
+                                if (autoWireResult != null)
+                                    sb.AppendLine($"            {destParam}.{destProp.Name} = {autoWireResult};");
+                            }
                         }
                         // If auto-wire didn't resolve, skip — property stays unmapped
                     }
@@ -3171,11 +3722,22 @@ internal sealed class ForgeCodeEmitter
                     sb.AppendLine($"            {destParam}.{destProp.Name} = {enumCastExpr};");
                 else if (_config.AutoWireNestedMappings)
                 {
-                    var autoWireResult = TryAutoWireForgeMethod(
+                    // Try inline collection auto-wire first
+                    var collBlock = TryAutoWireCollectionInlineStatements(
                         destProp, sourceProp.Type, $"{sourceParam}.{sourceProp.Name}",
-                        forger, context, method);
-                    if (autoWireResult != null)
-                        sb.AppendLine($"            {destParam}.{destProp.Name} = {autoWireResult};");
+                        destParam, forger, context, method, nullPropertyHandlingOverrides);
+                    if (collBlock != null)
+                    {
+                        sb.AppendLine(collBlock);
+                    }
+                    else
+                    {
+                        var autoWireResult = TryAutoWireForgeMethod(
+                            destProp, sourceProp.Type, $"{sourceParam}.{sourceProp.Name}",
+                            forger, context, method);
+                        if (autoWireResult != null)
+                            sb.AppendLine($"            {destParam}.{destProp.Name} = {autoWireResult};");
+                    }
                 }
             }
         }
