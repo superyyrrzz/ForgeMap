@@ -2727,7 +2727,7 @@ internal sealed class ForgeCodeEmitter
         {
             var matchedMethod = candidates[0];
 
-            // Report FM0011 (info, off by default) for visibility
+            // Report FM0027 (info, off by default) for visibility
             ReportDiagnosticIfNotSuppressed(context,
                 DiagnosticDescriptors.PropertyAutoWired,
                 method.Locations.FirstOrDefault(),

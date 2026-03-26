@@ -1473,7 +1473,7 @@ public class HookGeneratorTests
         Assert.True(enrichIndex >= 0, "AfterForge call should be in generated code");
         Assert.True(returnIndex >= 0, "Return statement should be in generated code");
 
-        // Verify execution order: null check ΓåÆ BeforeForge ΓåÆ mapping ΓåÆ AfterForge ΓåÆ return
+        // Verify execution order: null check → BeforeForge → mapping → AfterForge → return
         Assert.True(nullCheckIndex < validateIndex, "Null check before BeforeForge");
         Assert.True(validateIndex < idAssignIndex, "BeforeForge before mapping");
         Assert.True(idAssignIndex < enrichIndex, "Mapping before AfterForge");
@@ -1595,7 +1595,7 @@ public class HookGeneratorTests
         Assert.Contains("Validate(source)", generatedCode);
         Assert.Contains("Enrich(source, destination)", generatedCode);
 
-        // Verify order: null checks ΓåÆ BeforeForge ΓåÆ mapping ΓåÆ AfterForge
+        // Verify order: null checks → BeforeForge → mapping → AfterForge
         var nullCheckIndex = generatedCode.IndexOf("source == null", StringComparison.Ordinal);
         var validateIndex = generatedCode.IndexOf("Validate(source)", StringComparison.Ordinal);
         var idAssignIndex = generatedCode.IndexOf("destination.Id = source.Id", StringComparison.Ordinal);
@@ -1689,7 +1689,7 @@ public class HookGeneratorTests
 
 #endregion
 
-#region v1.1 Generator Tests ΓÇö Inherited Property Resolution
+#region v1.1 Generator Tests — Inherited Property Resolution
 
 public class InheritedPropertyResolutionTests
 {
@@ -1832,7 +1832,7 @@ public class InheritedPropertyResolutionTests
 
         var generatedCode = generatedTrees[0].GetText().ToString();
         Assert.Contains("Id = source.Id,", generatedCode);
-        // Label must appear ΓÇö if generator used base object type, it would be skipped
+        // Label must appear — if generator used base object type, it would be skipped
         // due to type mismatch (object vs string)
         Assert.Contains("Label = source.Label,", generatedCode);
         Assert.Contains("Extra = source.Extra,", generatedCode);
@@ -1989,7 +1989,7 @@ public class InheritedPropertyResolutionTests
 
 #endregion
 
-#region v1.1 Generator Tests ΓÇö IncludeBaseForge
+#region v1.1 Generator Tests — IncludeBaseForge
 
 public class IncludeBaseForgeTests
 {
@@ -2275,7 +2275,7 @@ public class IncludeBaseForgeTests
                     [Ignore(nameof(BaseDto.Status))]
                     public partial BaseDto Forge(BaseEntity source);
 
-                    // Status is NOT ignored here ΓÇö the explicit [ForgeProperty] overrides the inherited [Ignore]
+                    // Status is NOT ignored here — the explicit [ForgeProperty] overrides the inherited [Ignore]
                     [IncludeBaseForge(typeof(BaseEntity), typeof(BaseDto))]
                     [ForgeProperty(nameof(DerivedEntity.StatusCode), nameof(DerivedDto.Status))]
                     public partial DerivedDto Forge(DerivedEntity source);
@@ -2409,7 +2409,7 @@ public class IncludeBaseForgeTests
                 [ForgeMap]
                 public partial class TestForger
                 {
-                    // No base forge method for BaseEntity ΓåÆ BaseDto exists!
+                    // No base forge method for BaseEntity → BaseDto exists!
                     [IncludeBaseForge(typeof(BaseEntity), typeof(BaseDto))]
                     public partial DerivedDto Forge(DerivedEntity source);
                 }
@@ -2459,7 +2459,7 @@ public class IncludeBaseForgeTests
                 {
                     public partial BaseDto Forge(BaseEntity source);
 
-                    // UnrelatedEntity does not derive from BaseEntity ΓåÆ FM0020
+                    // UnrelatedEntity does not derive from BaseEntity → FM0020
                     [IncludeBaseForge(typeof(BaseEntity), typeof(BaseDto))]
                     public partial UnrelatedDto Forge(UnrelatedEntity source);
                 }
@@ -2743,7 +2743,7 @@ public class CompatibleEnumGeneratorTests
 
         var generatedCode = generatedTrees[0].GetText().ToString();
         Assert.Contains("Id = source.Id,", generatedCode);
-        // Different values: should NOT emit cast ΓÇö Status property should be skipped
+        // Different values: should NOT emit cast — Status property should be skipped
         Assert.DoesNotContain("(Dest.Status)(int)source.Status", generatedCode);
         Assert.DoesNotContain("Status = source.Status,", generatedCode);
     }
@@ -3276,7 +3276,7 @@ public class CompatibleEnumGeneratorTests
         // Lifted enum from null-conditional should use .HasValue/.Value or !.Value pattern
         Assert.Contains("(Dest.Priority)(int)", generatedCode);
         // Must NOT directly cast the lifted null-conditional expression without
-        // parenthesizing it first ΓÇö source.Customer?.Priority is Priority? at runtime,
+        // parenthesizing it first — source.Customer?.Priority is Priority? at runtime,
         // so casting it directly (without .Value/.HasValue) is incorrect.
         Assert.DoesNotContain("(int)source.Customer?.Priority", generatedCode);
         // The expression must be wrapped in parens to break the ?. chain
@@ -3464,10 +3464,10 @@ public class ForgeAllDerivedTests
                     [ForgeAllDerived]
                     public partial BaseDto Forge(BaseEntity source);
 
-                    // Different method name ΓÇö should NOT be discovered as a derived forge method
+                    // Different method name — should NOT be discovered as a derived forge method
                     public partial DerivedDto MapDerived(DerivedEntity source);
 
-                    // Same name ΓÇö should be discovered
+                    // Same name — should be discovered
                     public partial DerivedDto Forge(DerivedEntity source);
                 }
             }
@@ -3518,7 +3518,7 @@ public class ForgeAllDerivedTests
 
         var generatedCode = generatedTrees[0].GetText().ToString();
 
-        // Both at depth 1 ΓÇö should be alphabetical: AlphaEntity before ZebraEntity
+        // Both at depth 1 — should be alphabetical: AlphaEntity before ZebraEntity
         var alphaIndex = generatedCode.IndexOf("source is TestNamespace.AlphaEntity", StringComparison.Ordinal);
         var zebraIndex = generatedCode.IndexOf("source is TestNamespace.ZebraEntity", StringComparison.Ordinal);
         Assert.True(alphaIndex >= 0, "Alpha is-check should be generated");
@@ -3819,7 +3819,7 @@ public class ForgeAllDerivedTests
 
         // Should have dispatch
         Assert.Contains("source is TestNamespace.DerivedEntity", generatedCode);
-        // Should have base-type mapping fallback (concrete ΓÇö NOT abstract)
+        // Should have base-type mapping fallback (concrete — NOT abstract)
         Assert.Contains("Id = source.Id,", generatedCode);
         // Should NOT have NotSupportedException throw
         Assert.DoesNotContain("NotSupportedException", generatedCode);
@@ -3859,7 +3859,7 @@ namespace TestNamespace
         public partial OuterDest Forge(OuterSource source);
     }
 }";
-        var (diagnostics, trees) = RunGenerator(source);
+        var (_, trees) = RunGenerator(source);
         var generatedCode = string.Join("\n", trees.Select(t => t.GetText().ToString()));
 
         // The outer Forge should auto-wire Inner via the inner Forge method using __autoWire_ pattern
@@ -3887,9 +3887,9 @@ namespace TestNamespace
         public partial OuterDest Forge(OuterSource source);
     }
 }";
-        var (diagnostics, trees) = RunGenerator(source);
+        var (_, trees) = RunGenerator(source);
         var generatedCode = string.Join("\n", trees.Select(t => t.GetText().ToString()));
-        // With auto-wire disabled, Inner should NOT be auto-wired ΓÇö no Forge call for Inner
+        // With auto-wire disabled, Inner should NOT be auto-wired — no Forge call for Inner
         // The property is simply omitted from the initializer (generator doesn't emit FM0006)
         Assert.DoesNotContain("__autoWire_Inner", generatedCode);
         // But the inner Forge method should still generate for InnerSource -> InnerDest
@@ -3925,7 +3925,7 @@ namespace TestNamespace
         // Should use explicit ForgeWith (CustomInnerForge) via __forgeWith_ pattern, not __autoWire_
         Assert.Contains("CustomInnerForge(__forgeWith_Inner)", generatedCode);
         Assert.DoesNotContain("__autoWire_Inner", generatedCode);
-        // No FM0025 ambiguity ΓÇö explicit wins
+        // No FM0025 ambiguity — explicit wins
         Assert.Empty(diagnostics.Where(d => d.Id == "FM0025"));
     }
 
@@ -4002,7 +4002,7 @@ namespace TestNamespace
         public partial Dest Forge(Source source);
     }
 }";
-        var (diagnostics, trees) = RunGenerator(source);
+        var (_, trees) = RunGenerator(source);
         var generatedCode = string.Join("\n", trees.Select(t => t.GetText().ToString()));
 
         // Should directly assign since types are the same
@@ -4031,7 +4031,7 @@ namespace TestNamespace
         public partial OuterDest Forge(OuterSource source);
     }
 }";
-        var (diagnostics, trees) = RunGenerator(source);
+        var (_, trees) = RunGenerator(source);
         var generatedCode = string.Join("\n", trees.Select(t => t.GetText().ToString()));
         // With auto-wire disabled at assembly level, Inner should NOT be auto-wired
         Assert.DoesNotContain("__autoWire_Inner", generatedCode);
@@ -4060,7 +4060,7 @@ namespace TestNamespace
         public partial PersonDto Forge(PersonEntity source);
     }
 }";
-        var (diagnostics, trees) = RunGenerator(source);
+        var (_, trees) = RunGenerator(source);
         var generatedCode = string.Join("\n", trees.Select(t => t.GetText().ToString()));
 
         // Both Address and Phone should be auto-wired via __autoWire_ pattern
@@ -4090,9 +4090,9 @@ namespace TestNamespace
         public partial OuterDest Forge(OuterSource source);
     }
 }";
-        var (diagnostics, trees) = RunGenerator(source);
+        var (_, trees) = RunGenerator(source);
         var generatedCode = string.Join("\n", trees.Select(t => t.GetText().ToString()));
-        // No matching forge method exists ΓÇö Inner should NOT be auto-wired
+        // No matching forge method exists — Inner should NOT be auto-wired
         Assert.DoesNotContain("__autoWire_Inner", generatedCode);
     }
 
@@ -4207,7 +4207,7 @@ namespace TestNamespace
         public partial OuterDest Forge(OuterSource source);
     }
 }";
-        var (diagnostics, trees) = RunGenerator(source);
+        var (_, trees) = RunGenerator(source);
         var generatedCode = string.Join("\n", trees.Select(t => t.GetText().ToString()));
 
         // Should auto-wire the dot-path leaf type InnerSource -> InnerDest via __autoWire_ pattern
@@ -4269,7 +4269,7 @@ namespace TestNamespace
         public partial void Forge(OuterSource source, [UseExistingValue] OuterDest dest);
     }
 }";
-        var (diagnostics, trees) = RunGenerator(source);
+        var (_, trees) = RunGenerator(source);
         var generatedCode = string.Join("\n", trees.Select(t => t.GetText().ToString()));
 
         // ForgeInto should auto-wire Inner via the forge method
@@ -4305,7 +4305,7 @@ namespace TestNamespace
         public partial OuterDest Forge(OuterSource source);
     }
 }";
-        var (diagnostics, trees) = RunGenerator(source);
+        var (_, trees) = RunGenerator(source);
         var generatedCode = string.Join("\n", trees.Select(t => t.GetText().ToString()));
 
         // No auto-wire pattern should appear since no matching forge method exists
