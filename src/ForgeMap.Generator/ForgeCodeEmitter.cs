@@ -741,7 +741,7 @@ internal sealed class ForgeCodeEmitter
                         }
                     }
                 }
-                else
+                else if (forwardCandidates.Count == 0)
                 {
                     // Check if this would be resolved by inline collection auto-wiring
                     var srcElemType = GetCollectionElementType(forwardSourcePropType);
