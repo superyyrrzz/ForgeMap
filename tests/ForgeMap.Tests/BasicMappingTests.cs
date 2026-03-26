@@ -1752,3 +1752,102 @@ public class BeforeAndAfterForgeTests
 #endregion
 
 #endregion
+
+#region Auto-Wire Models
+
+public class AutoWirePhoneEntity
+{
+    public string Number { get; set; } = string.Empty;
+    public string AreaCode { get; set; } = string.Empty;
+}
+
+public class AutoWirePhoneDto
+{
+    public string Number { get; set; } = string.Empty;
+    public string AreaCode { get; set; } = string.Empty;
+}
+
+public class AutoWirePersonEntity
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public AddressEntity? Address { get; set; }
+    public AutoWirePhoneEntity? Phone { get; set; }
+}
+
+public class AutoWirePersonDto
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public AddressDto? Address { get; set; }
+    public AutoWirePhoneDto? Phone { get; set; }
+}
+
+#endregion
+
+#region Auto-Wire Forger
+
+[ForgeMap]
+public partial class AutoWireForger
+{
+    // These forge methods should be auto-discovered for nested properties
+    public partial AddressDto Forge(AddressEntity source);
+    public partial AutoWirePhoneDto Forge(AutoWirePhoneEntity source);
+
+    // No explicit [ForgeWith] — auto-wiring should handle Address and Phone
+    public partial AutoWirePersonDto Forge(AutoWirePersonEntity source);
+}
+
+#endregion
+
+#region Auto-Wire Runtime Tests
+
+public class AutoWireRuntimeTests
+{
+    private readonly AutoWireForger _forger = new();
+
+    [Fact]
+    public void AutoWire_NestedObject_MappedCorrectly()
+    {
+        var source = new AutoWirePersonEntity
+        {
+            Id = 1,
+            Name = "Alice",
+            Address = new AddressEntity { Street = "123 Main St", City = "Springfield", ZipCode = "62701" },
+            Phone = new AutoWirePhoneEntity { Number = "555-1234", AreaCode = "312" }
+        };
+
+        var result = _forger.Forge(source);
+
+        result.Id.Should().Be(1);
+        result.Name.Should().Be("Alice");
+        result.Address.Should().NotBeNull();
+        result.Address!.Street.Should().Be("123 Main St");
+        result.Address.City.Should().Be("Springfield");
+        result.Address.ZipCode.Should().Be("62701");
+        result.Phone.Should().NotBeNull();
+        result.Phone!.Number.Should().Be("555-1234");
+        result.Phone.AreaCode.Should().Be("312");
+    }
+
+    [Fact]
+    public void AutoWire_NullNestedProperty_ReturnsNull()
+    {
+        var source = new AutoWirePersonEntity
+        {
+            Id = 2,
+            Name = "Bob",
+            Address = null,
+            Phone = null
+        };
+
+        var result = _forger.Forge(source);
+
+        result.Id.Should().Be(2);
+        result.Name.Should().Be("Bob");
+        result.Address.Should().BeNull();
+        result.Phone.Should().BeNull();
+    }
+}
+
+#endregion

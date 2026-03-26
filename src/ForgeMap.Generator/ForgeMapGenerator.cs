@@ -124,6 +124,9 @@ public sealed class ForgeMapGenerator : IIncrementalGenerator
                 case "NullPropertyHandling":
                     config.NullPropertyHandling = (int)named.Value.Value!;
                     break;
+                case "AutoWireNestedMappings":
+                    config.AutoWireNestedMappings = (bool)named.Value.Value!;
+                    break;
             }
         }
 

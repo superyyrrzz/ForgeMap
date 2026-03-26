@@ -27,6 +27,9 @@ internal sealed class ForgerConfig
     /// <summary>0 = NullForgiving (default), 1 = SkipNull, 2 = CoalesceToDefault, 3 = ThrowException</summary>
     public int NullPropertyHandling { get; set; }
 
+    /// <summary>Whether to auto-discover matching forge methods for nested complex properties. Default true.</summary>
+    public bool AutoWireNestedMappings { get; set; } = true;
+
     public StringComparison PropertyNameComparison =>
         PropertyMatching == 1 ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
 }
@@ -130,6 +133,7 @@ internal sealed class ForgeCodeEmitter
             PropertyMatching = _assemblyDefaults.PropertyMatching,
             GenerateCollectionMappings = _assemblyDefaults.GenerateCollectionMappings,
             NullPropertyHandling = _assemblyDefaults.NullPropertyHandling,
+            AutoWireNestedMappings = _assemblyDefaults.AutoWireNestedMappings,
             SuppressDiagnostics = new HashSet<string>(_assemblyDefaults.SuppressDiagnostics, StringComparer.OrdinalIgnoreCase),
         };
 
@@ -156,6 +160,9 @@ internal sealed class ForgeCodeEmitter
                                 config.SuppressDiagnostics.Add(s);
                         }
                     }
+                    break;
+                case "AutoWireNestedMappings":
+                    config.AutoWireNestedMappings = (bool)named.Value.Value!;
                     break;
             }
         }
@@ -661,6 +668,82 @@ internal sealed class ForgeCodeEmitter
             }
         }
 
+        // FM0026: Check auto-wired properties for missing reverse forge methods
+        if (_config.AutoWireNestedMappings)
+        {
+            // Collect ctor param names to recognize get-only ctor-backed properties
+            // Only relevant when there is no parameterless public ctor, because ResolveConstructor
+            // prefers parameterless ctors (object initializer pattern), making get-only props unmappable
+            var ctorParamNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var forwardDestNamedType = forwardDestType as INamedTypeSymbol;
+            if (forwardDestNamedType != null)
+            {
+                var hasParameterlessCtor = forwardDestNamedType.InstanceConstructors
+                    .Any(c => c.DeclaredAccessibility == Accessibility.Public && c.Parameters.Length == 0);
+                if (!hasParameterlessCtor)
+                {
+                    foreach (var ctor in forwardDestNamedType.InstanceConstructors
+                        .Where(c => c.DeclaredAccessibility == Accessibility.Public))
+                    {
+                        foreach (var p in ctor.Parameters)
+                            ctorParamNames.Add(p.Name);
+                    }
+                }
+            }
+
+            var forwardDestProps = GetMappableProperties(forwardDestType)
+                .Where(p => p.SetMethod != null || ctorParamNames.Contains(p.Name));  // Settable or ctor-backed
+            var forwardSourceProps = GetMappableProperties(forwardSourceType);
+
+            foreach (var destProp in forwardDestProps)
+            {
+                // Skip properties already handled by explicit attributes
+                if (forwardIgnored.Contains(destProp.Name)) continue;
+                if (forwardResolverMappings.ContainsKey(destProp.Name)) continue;
+                if (forwardForgeWithMappings.ContainsKey(destProp.Name)) continue;
+
+                // Find the matching source property by name (convention) or [ForgeProperty]
+                ITypeSymbol? forwardSourcePropType = null;
+                if (forwardPropertyMappings.TryGetValue(destProp.Name, out var mappedSourcePath))
+                {
+                    forwardSourcePropType = ResolvePathLeafType(mappedSourcePath, forwardSourceType);
+                }
+                else
+                {
+                    var matchingProp = forwardSourceProps.FirstOrDefault(sp =>
+                        string.Equals(sp.Name, destProp.Name, _config.PropertyNameComparison));
+                    if (matchingProp != null)
+                        forwardSourcePropType = matchingProp.Type;
+                }
+
+                if (forwardSourcePropType == null) continue;
+
+                // Check if forward direction would auto-wire this property
+                if (IsScalarType(forwardSourcePropType) || IsScalarType(destProp.Type)) continue;
+                if (CanAssign(forwardSourcePropType, destProp.Type)) continue;
+
+                var forwardCandidates = FindAutoWireForgeMethodCandidates(forger.Symbol, forwardSourcePropType, destProp.Type);
+                if (forwardCandidates.Count != 1) continue; // Only check properties that are actually auto-wired forward
+
+                // Now check if reverse forge method exists (destProp.Type → forwardSourcePropType)
+                // For the reverse check, also consider non-partial methods (explicit reverse implementations)
+                var reverseCandidates = FindReverseForgeMethodCandidates(forger.Symbol, destProp.Type, forwardSourcePropType);
+                if (reverseCandidates.Count == 0)
+                {
+                    // Also check if the forward auto-wire candidate has [ReverseForge],
+                    // which means a reverse method will be generated automatically
+                    var forwardCandidate = forwardCandidates[0];
+                    if (!HasReverseForgeAttribute(forwardCandidate))
+                    {
+                        ReportDiagnosticIfNotSuppressed(context,
+                            DiagnosticDescriptors.AutoWiredPropertyLacksReverseForge,
+                            forwardMethod.Locations.FirstOrDefault(),
+                            destProp.Name);
+                    }
+                }
+            }
+        }
+
         // Now generate the reverse method body using the same GenerateForgeMethod pattern
         // but with reversed types and mappings
         var sb = new StringBuilder();
@@ -686,7 +769,7 @@ internal sealed class ForgeCodeEmitter
 
         // Determine constructor strategy for the reverse destination
         var (chosenCtor, ctorParamMappings) = ResolveConstructor(
-            reverseDestType, reverseSourceType, sourceProperties, reversePropertyMappings, context, forwardMethod);
+            reverseDestType, reverseSourceType, sourceProperties, reversePropertyMappings, context, forwardMethod, forger);
 
         // Track which destination properties are covered by constructor parameters
         var ctorCoveredDestProps = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -1090,7 +1173,7 @@ internal sealed class ForgeCodeEmitter
 
         // Determine constructor strategy
         var (chosenCtor, ctorParamMappings) = ResolveConstructor(
-            destinationType, sourceType, sourceProperties, propertyMappings, context, method);
+            destinationType, sourceType, sourceProperties, propertyMappings, context, method, forger);
 
         // Track which destination properties are covered by constructor parameters
         var ctorCoveredDestProps = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -1335,6 +1418,23 @@ internal sealed class ForgeCodeEmitter
 
             // Handle null-conditional on reference types (non-nullable ref mismatch not detected — e.g., oblivious types)
             var nullForgiving = hasNullConditional && destProp.Type.NullableAnnotation != NullableAnnotation.Annotated ? "!" : "";
+
+            // If the leaf type is not directly assignable, try auto-wiring via forge method
+            if (sourceLeafType != null && !CanAssign(sourceLeafType, destProp.Type)
+                && !IsCompatibleEnumPair(sourceLeafType, destProp.Type))
+            {
+                if (_config.AutoWireNestedMappings)
+                {
+                    var autoWireResult = TryAutoWireForgeMethod(
+                        destProp, sourceLeafType, sourceExpr,
+                        forger, context, method);
+                    if (autoWireResult != null)
+                        return autoWireResult;
+                }
+                // Types aren't assignable and auto-wire didn't resolve — fall through to unmapped (FM0006)
+                return null;
+            }
+
             return $"{sourceExpr}{nullForgiving}";
         }
 
@@ -1410,6 +1510,16 @@ internal sealed class ForgeCodeEmitter
                 return $"{flattenResult}!";
             }
             return flattenResult;
+        }
+
+        // Auto-wire: search for matching forge methods for nested complex properties
+        if (_config.AutoWireNestedMappings && sourceProp != null)
+        {
+            var autoWireResult = TryAutoWireForgeMethod(
+                destProp, sourceProp.Type, $"{sourceParam}.{sourceProp.Name}",
+                forger, context, method);
+            if (autoWireResult != null)
+                return autoWireResult;
         }
 
         return null;
@@ -1682,7 +1792,8 @@ internal sealed class ForgeCodeEmitter
         IEnumerable<IPropertySymbol> sourceProperties,
         Dictionary<string, string> propertyMappings,
         SourceProductionContext context,
-        IMethodSymbol method)
+        IMethodSymbol method,
+        ForgerInfo? forger = null)
     {
         var constructors = destinationType.InstanceConstructors
             .Where(c => c.DeclaredAccessibility == Accessibility.Public)
@@ -1707,11 +1818,12 @@ internal sealed class ForgeCodeEmitter
         var destToSourceExpr = BuildDestToSourceMap(sourceType, sourcePropertiesList, propertyMappings);
 
         // Score each constructor by how many parameters can be satisfied
-        var scoredCtors = new List<(IMethodSymbol Ctor, List<CtorParamMapping> Mappings, int Score)>();
+        var scoredCtors = new List<(IMethodSymbol Ctor, List<CtorParamMapping> Mappings, int Score, List<Action> DeferredDiagnostics)>();
 
         foreach (var ctor in constructors)
         {
             var mappings = new List<CtorParamMapping>();
+            var deferredDiagnostics = new List<Action>();
             var allMatched = true;
 
             foreach (var param in ctor.Parameters)
@@ -1754,6 +1866,51 @@ internal sealed class ForgeCodeEmitter
                 {
                     mappings.Add(new CtorParamMapping(param.Name, matchedDestPropName!, sourceExpr, sourcePropType, param.Type));
                 }
+                else if (sourceExpr != null && sourcePropType != null &&
+                    _config.AutoWireNestedMappings && forger != null &&
+                    !IsScalarType(sourcePropType) && !IsScalarType(param.Type))
+                {
+                    // Try auto-wiring for ctor parameters with non-assignable complex types
+                    var candidates = FindAutoWireForgeMethodCandidates(forger.Symbol, sourcePropType, param.Type);
+                    if (candidates.Count == 1)
+                    {
+                        var matchedMethod = candidates[0];
+                        // Defer FM0027 (info, off by default) — only report for winning ctor
+                        var capturedDestPropName = matchedDestPropName!;
+                        var capturedMethodName = matchedMethod.Name;
+                        deferredDiagnostics.Add(() => ReportDiagnosticIfNotSuppressed(context,
+                            DiagnosticDescriptors.PropertyAutoWired,
+                            method.Locations.FirstOrDefault(),
+                            capturedDestPropName, capturedMethodName));
+                        // Generate auto-wire expression (same form as [ForgeWith] ctor params)
+                        string autoWireExpr;
+                        if (sourcePropType.IsReferenceType)
+                        {
+                            var localVarName = $"__autoWire_{param.Name}";
+                            var nullFallback = param.Type.IsValueType ? "default" : "null!";
+                            autoWireExpr = $"{sourceExpr} is {{ }} {localVarName} ? {matchedMethod.Name}({localVarName}) : {nullFallback}";
+                        }
+                        else
+                        {
+                            autoWireExpr = $"{matchedMethod.Name}({sourceExpr})";
+                        }
+                        mappings.Add(new CtorParamMapping(param.Name, matchedDestPropName!, autoWireExpr, param.Type, param.Type));
+                    }
+                    else
+                    {
+                        if (candidates.Count > 1)
+                        {
+                            // FM0025: ambiguous — defer until ctor selection is finalized
+                            var capturedDestPropName2 = matchedDestPropName!;
+                            deferredDiagnostics.Add(() => ReportDiagnosticIfNotSuppressed(context,
+                                DiagnosticDescriptors.AmbiguousAutoWire,
+                                method.Locations.FirstOrDefault(),
+                                capturedDestPropName2, destinationType.Name));
+                        }
+                        allMatched = false;
+                        break;
+                    }
+                }
                 else
                 {
                     allMatched = false;
@@ -1763,7 +1920,7 @@ internal sealed class ForgeCodeEmitter
 
             if (allMatched)
             {
-                scoredCtors.Add((ctor, mappings, ctor.Parameters.Length));
+                scoredCtors.Add((ctor, mappings, ctor.Parameters.Length, deferredDiagnostics));
             }
         }
 
@@ -1799,6 +1956,10 @@ internal sealed class ForgeCodeEmitter
                 destinationType.Name);
             return (null, null);
         }
+
+        // Emit deferred diagnostics only for the winning constructor
+        foreach (var deferredDiag in bestMatches[0].DeferredDiagnostics)
+            deferredDiag();
 
         return (bestMatches[0].Ctor, bestMatches[0].Mappings);
     }
@@ -2496,6 +2657,106 @@ internal sealed class ForgeCodeEmitter
     }
 
     /// <summary>
+    /// Finds all partial forge method candidates on the forger class that accept the given source type
+    /// and return the given destination type. Used for auto-wiring nested properties.
+    /// </summary>
+    private static List<IMethodSymbol> FindAutoWireForgeMethodCandidates(
+        INamedTypeSymbol forgerType, ITypeSymbol sourcePropertyType, ITypeSymbol destPropertyType)
+    {
+        return forgerType.GetMembers()
+            .OfType<IMethodSymbol>()
+            .Where(m =>
+                m.IsPartialDefinition &&
+                m.Parameters.Length == 1 &&
+                !m.ReturnsVoid &&
+                SymbolEqualityComparer.Default.Equals(m.Parameters[0].Type, sourcePropertyType) &&
+                SymbolEqualityComparer.Default.Equals(m.ReturnType, destPropertyType))
+            .ToList();
+    }
+
+    /// <summary>
+    /// Finds forge method candidates for FM0026 reverse checking, including both partial definitions
+    /// and non-partial methods (explicit reverse implementations provided by the user).
+    /// </summary>
+    private static List<IMethodSymbol> FindReverseForgeMethodCandidates(
+        INamedTypeSymbol forgerType, ITypeSymbol sourcePropertyType, ITypeSymbol destPropertyType)
+    {
+        return forgerType.GetMembers()
+            .OfType<IMethodSymbol>()
+            .Where(m =>
+                m.Parameters.Length == 1 &&
+                !m.ReturnsVoid &&
+                SymbolEqualityComparer.Default.Equals(m.Parameters[0].Type, sourcePropertyType) &&
+                SymbolEqualityComparer.Default.Equals(m.ReturnType, destPropertyType))
+            .ToList();
+    }
+
+    /// <summary>
+    /// Returns true if the type is a scalar (primitive, enum, string, etc.) that should not be auto-wired.
+    /// </summary>
+    private static bool IsScalarType(ITypeSymbol type)
+    {
+        if (type.TypeKind == TypeKind.Enum) return true;
+        if (type.SpecialType != SpecialType.None) return true;
+        return false;
+    }
+
+    /// <summary>
+    /// Tries to auto-wire a destination property by finding a matching forge method on the forger class.
+    /// Returns the generated expression, or null if no unique match was found.
+    /// </summary>
+    private string? TryAutoWireForgeMethod(
+        IPropertySymbol destProp,
+        ITypeSymbol sourcePropertyType,
+        string sourceExpr,
+        ForgerInfo forger,
+        SourceProductionContext context,
+        IMethodSymbol method)
+    {
+        // Don't auto-wire scalar types (primitives, enums, strings)
+        if (IsScalarType(sourcePropertyType) || IsScalarType(destProp.Type))
+            return null;
+
+        // Don't auto-wire when types are directly assignable
+        if (CanAssign(sourcePropertyType, destProp.Type))
+            return null;
+
+        var candidates = FindAutoWireForgeMethodCandidates(forger.Symbol, sourcePropertyType, destProp.Type);
+
+        if (candidates.Count == 1)
+        {
+            var matchedMethod = candidates[0];
+
+            // Report FM0027 (info, off by default) for visibility
+            ReportDiagnosticIfNotSuppressed(context,
+                DiagnosticDescriptors.PropertyAutoWired,
+                method.Locations.FirstOrDefault(),
+                destProp.Name, matchedMethod.Name);
+
+            if (sourcePropertyType.IsReferenceType)
+            {
+                var localVarName = $"__autoWire_{destProp.Name}";
+                var nullFallback = destProp.Type.IsValueType ? "default" : "null!";
+                return $"{sourceExpr} is {{ }} {localVarName} ? {matchedMethod.Name}({localVarName}) : {nullFallback}";
+            }
+            else
+            {
+                return $"{matchedMethod.Name}({sourceExpr})";
+            }
+        }
+        else if (candidates.Count > 1)
+        {
+            // FM0025: ambiguous — multiple forge methods match
+            ReportDiagnosticIfNotSuppressed(context,
+                DiagnosticDescriptors.AmbiguousAutoWire,
+                method.Locations.FirstOrDefault(),
+                destProp.Name, destProp.ContainingType.Name);
+        }
+
+        return null;
+    }
+
+    /// <summary>
     /// Finds a resolver method in the forger class.
     /// Prefers exact type matches over assignable matches for deterministic overload selection.
     /// </summary>
@@ -2841,9 +3102,27 @@ internal sealed class ForgeCodeEmitter
                 }
                 else
                 {
-                    // Add null-forgiving operator if we used null-conditional and dest is non-nullable
-                    var nullForgiving = hasNullConditional && destProp.Type.NullableAnnotation != NullableAnnotation.Annotated ? "!" : "";
-                    sb.AppendLine($"            {destParam}.{destProp.Name} = {sourceExpr}{nullForgiving};");
+                    // Check if leaf type is assignable first
+                    if (sourceLeafType != null && !CanAssign(sourceLeafType, destProp.Type)
+                        && !IsCompatibleEnumPair(sourceLeafType, destProp.Type))
+                    {
+                        // Try auto-wire for non-assignable leaf types
+                        if (_config.AutoWireNestedMappings)
+                        {
+                            var autoWireResult = TryAutoWireForgeMethod(
+                                destProp, sourceLeafType, sourceExpr,
+                                forger, context, method);
+                            if (autoWireResult != null)
+                                sb.AppendLine($"            {destParam}.{destProp.Name} = {autoWireResult};");
+                        }
+                        // If auto-wire didn't resolve, skip — property stays unmapped
+                    }
+                    else
+                    {
+                        // Add null-forgiving operator if we used null-conditional and dest is non-nullable
+                        var nullForgiving = hasNullConditional && destProp.Type.NullableAnnotation != NullableAnnotation.Annotated ? "!" : "";
+                        sb.AppendLine($"            {destParam}.{destProp.Name} = {sourceExpr}{nullForgiving};");
+                    }
                 }
                 continue;
             }
@@ -2890,6 +3169,14 @@ internal sealed class ForgeCodeEmitter
                 var enumCastExpr = TryGenerateCompatibleEnumCast(sourceProp.Type, destProp.Type, $"{sourceParam}.{sourceProp.Name}");
                 if (enumCastExpr != null)
                     sb.AppendLine($"            {destParam}.{destProp.Name} = {enumCastExpr};");
+                else if (_config.AutoWireNestedMappings)
+                {
+                    var autoWireResult = TryAutoWireForgeMethod(
+                        destProp, sourceProp.Type, $"{sourceParam}.{sourceProp.Name}",
+                        forger, context, method);
+                    if (autoWireResult != null)
+                        sb.AppendLine($"            {destParam}.{destProp.Name} = {autoWireResult};");
+                }
             }
         }
 
