@@ -2973,19 +2973,11 @@ internal sealed class ForgeCodeEmitter
                     $"{sourceLocalName}.Select(__collItem => {methodName}(__collItem))");
             }
 
-            // HashSet<U>: foreach + Add
+            // HashSet<U>: foreach + Add (no capacity ctor per spec)
             if (originalDef == "System.Collections.Generic.HashSet<T>")
             {
                 var sb = new StringBuilder();
-                if (HasCheapCount(sourceCollType))
-                {
-                    var countExpr = GetCollectionLengthExpression(sourceCollType, sourceLocalName);
-                    sb.AppendLine($"                var {resultVar} = new global::System.Collections.Generic.HashSet<{destElemDisplay}>({countExpr});");
-                }
-                else
-                {
-                    sb.AppendLine($"                var {resultVar} = new global::System.Collections.Generic.HashSet<{destElemDisplay}>();");
-                }
+                sb.AppendLine($"                var {resultVar} = new global::System.Collections.Generic.HashSet<{destElemDisplay}>();");
                 sb.AppendLine($"                foreach (var __collItem in {sourceLocalName})");
                 sb.AppendLine("                {");
                 sb.AppendLine($"                    {resultVar}.Add({methodName}(__collItem));");
@@ -3116,7 +3108,7 @@ internal sealed class ForgeCodeEmitter
 
                 if (strategy == 2) // CoalesceToDefault
                 {
-                    var defaultExpr = GenerateCoalesceDefault(destProp.Type);
+                    var defaultExpr = GenerateEmptyCollectionExpression(destProp.Type) ?? GenerateCoalesceDefault(destProp.Type);
                     return $"__collInit_{destProp.Name} ?? {defaultExpr ?? $"new {destProp.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}()"}";
                 }
                 if (strategy == 3) // ThrowException
@@ -3150,7 +3142,7 @@ internal sealed class ForgeCodeEmitter
                 postBlock.AppendLine($"            {{");
                 if (strategy == 2) // CoalesceToDefault
                 {
-                    var defaultExpr = GenerateCoalesceDefault(destProp.Type);
+                    var defaultExpr = GenerateEmptyCollectionExpression(destProp.Type) ?? GenerateCoalesceDefault(destProp.Type);
                     postBlock.AppendLine($"                result.{destProp.Name} = {defaultExpr ?? $"new {destProp.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}()"};");
                 }
                 else if (strategy == 3) // ThrowException
@@ -3170,6 +3162,43 @@ internal sealed class ForgeCodeEmitter
     }
 
     /// <summary>
+    /// Generates an empty-collection expression for a given collection destination type.
+    /// Handles interfaces by mapping to concrete types (e.g., IReadOnlyList → new List).
+    /// Returns null if the type is not a recognized collection.
+    /// </summary>
+    private static string? GenerateEmptyCollectionExpression(ITypeSymbol destType)
+    {
+        if (destType is IArrayTypeSymbol arrayType)
+        {
+            var elemDisplay = arrayType.ElementType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+            return $"global::System.Array.Empty<{elemDisplay}>()";
+        }
+
+        if (destType is INamedTypeSymbol namedType && namedType.IsGenericType && namedType.TypeArguments.Length == 1)
+        {
+            var elemDisplay = namedType.TypeArguments[0].ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+            var originalDef = namedType.OriginalDefinition.ToDisplayString();
+
+            if (originalDef == "System.Collections.Generic.HashSet<T>")
+                return $"new global::System.Collections.Generic.HashSet<{elemDisplay}>()";
+
+            // IEnumerable<T> → Enumerable.Empty
+            if (originalDef == "System.Collections.Generic.IEnumerable<T>")
+                return $"global::System.Linq.Enumerable.Empty<{elemDisplay}>()";
+
+            // All other supported collection interfaces/types → new List<T>()
+            if (originalDef == "System.Collections.Generic.List<T>" ||
+                originalDef == "System.Collections.Generic.IList<T>" ||
+                originalDef == "System.Collections.Generic.ICollection<T>" ||
+                originalDef == "System.Collections.Generic.IReadOnlyList<T>" ||
+                originalDef == "System.Collections.Generic.IReadOnlyCollection<T>")
+                return $"new global::System.Collections.Generic.List<{elemDisplay}>()";
+        }
+
+        return null;
+    }
+
+    /// <summary>
     /// Generates the null fallback expression for collection properties based on NullPropertyHandling strategy.
     /// </summary>
     private string GenerateCollectionNullFallback(IPropertySymbol destProp, int strategy, string sourceExpr)
@@ -3177,7 +3206,7 @@ internal sealed class ForgeCodeEmitter
         switch (strategy)
         {
             case 2: // CoalesceToDefault
-                var defaultExpr = GenerateCoalesceDefault(destProp.Type);
+                var defaultExpr = GenerateEmptyCollectionExpression(destProp.Type) ?? GenerateCoalesceDefault(destProp.Type);
                 return defaultExpr ?? "null!";
             case 3: // ThrowException
                 return $"throw new global::System.ArgumentNullException(\"{sourceExpr}\", \"Cannot assign null source property '{sourceExpr}' to non-nullable destination '{destProp.ContainingType.Name}.{destProp.Name}'.\")";
@@ -3278,7 +3307,7 @@ internal sealed class ForgeCodeEmitter
                 sb.AppendLine($"            {{");
                 if (strategy == 2)
                 {
-                    var defaultExpr = GenerateCoalesceDefault(destProp.Type);
+                    var defaultExpr = GenerateEmptyCollectionExpression(destProp.Type) ?? GenerateCoalesceDefault(destProp.Type);
                     sb.AppendLine($"                {destVarName}.{destProp.Name} = {defaultExpr ?? $"new {destProp.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}()"};");
                 }
                 else if (strategy == 3)
@@ -3813,6 +3842,17 @@ internal sealed class ForgeCodeEmitter
             {
                 // IEnumerable<T> - lazy Select projection
                 sb.AppendLine($"            return {sourceParam}.Select(item => {method.Name}(item));");
+            }
+            else if (originalDef == "System.Collections.Generic.HashSet<T>")
+            {
+                // HashSet<T> - foreach + Add (no capacity ctor per spec)
+                var destElemDisplay = destElementType.ToDisplayString();
+                sb.AppendLine($"            var result = new global::System.Collections.Generic.HashSet<{destElemDisplay}>();");
+                sb.AppendLine($"            foreach (var item in {sourceParam})");
+                sb.AppendLine("            {");
+                sb.AppendLine($"                result.Add({method.Name}(item));");
+                sb.AppendLine("            }");
+                sb.AppendLine("            return result;");
             }
             else
             {
