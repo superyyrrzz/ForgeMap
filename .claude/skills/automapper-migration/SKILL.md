@@ -14,7 +14,7 @@ It contains exact API mappings between AutoMapper and ForgeMap. Consult it for e
 
 ## Hard rules
 
-- **Minimum ForgeMap version: 1.2.0.** Always install the latest release from NuGet (`dotnet add package ForgeMap`). The migration skill assumes all features up to v1.2 are available.
+- **Minimum ForgeMap version: 1.3.0.** Always install the latest release from NuGet (`dotnet add package ForgeMap`). The migration skill assumes all features up to v1.3 are available.
 - **NEVER write manual mapping code.** If ForgeMap can't support a required mapping, **stop and report the gap.** File an issue on `superyyrrzz/ForgeMap` with title `[Migration] <description>` and let the user decide.
 - **No git operations.** Do not run any git commands (checkout, commit, push, branch, etc.). The developer controls their own git workflow.
 
@@ -46,11 +46,11 @@ return source switch
 ## ForgeMap behaviors that differ from AutoMapper
 
 - **Case-sensitive by default** (AutoMapper is case-insensitive). Use `PropertyMatching = PropertyMatching.ByNameCaseInsensitive` if needed.
-- **Nested maps are NOT auto-discovered.** Requires explicit `[ForgeWith(nameof(D.Prop), nameof(ForgeNested))]`.
-- **Collection properties need explicit wiring.** `List<A>` → `List<B>` on a parent isn't auto-mapped. Declare a collection-level forge method via `[ForgeWith]`, and the element method must share the same method name (overload resolution).
+- **Nested maps are auto-wired by default (v1.3+).** When `AutoWireNestedMappings = true` (default), the generator searches for a forge method in the same forger class with matching source parameter and return type — no `[ForgeWith]` needed. Disable per-forger or assembly-wide with `AutoWireNestedMappings = false`.
+- **Collection properties are auto-wired inline (v1.3+).** When an element forge method exists, collections (`List`, `IList`, `ICollection`, `IReadOnlyList`, `IReadOnlyCollection`, `HashSet`, arrays, `IEnumerable`) are mapped inline automatically. Explicit collection forge methods still take precedence if declared.
 - **No `ProjectTo<T>()`** — materialize first, then map. Warn user about perf implications.
-- **`[ConvertWith]` is not functional** — the attribute exists but the generator ignores it. Use `[ForgeFrom]` resolvers instead.
-- **`[ForgeAllDerived]` auto-discovery needs same method name** — derived forge methods must be overloads with the same name in the same forger class. Differently-named methods won't be picked up.
+- **`[ConvertWith]` is not honored for conversion** — the attribute exists in the abstractions and the generator validates it (e.g. FM0023), but it does not generate conversion code. Use `[ForgeFrom]` resolvers instead.
+- **`[ForgeAllDerived]` supports abstract/interface destinations (v1.3+).** When the destination type is abstract or an interface, the generator emits a dispatch-only body (no instantiation) with a `NotSupportedException` fallback. Source-side auto-discovery still requires a class inheritance chain (interfaces not considered), and each derived method's return type must be assignable to the base destination type. Derived forge methods must be declared in the same forger class and share the same method name.
 
 ## Null-property handling
 
@@ -77,7 +77,7 @@ public partial class StrictForger { ... }
     NullPropertyHandling = NullPropertyHandling.ThrowException)]
 ```
 
-**FM0007 is active** — the generator reports a warning for every direct nullable-ref → non-nullable-ref assignment it emits (mappings via `[ForgeFrom]` resolvers or `[ForgeWith]` nested forging do not trigger FM0007). If this is noisy during migration, suppress with `SuppressDiagnostics = new[] { "FM0007" }` on the forger class, or `<NoWarn>FM0007</NoWarn>` in `.csproj`.
+**FM0007 is active** — the generator reports a warning for every direct nullable-ref → non-nullable-ref assignment it emits (mappings via `[ForgeFrom]` resolvers, `[ForgeWith]` nested forging, or auto-wired nested mappings do not trigger FM0007). If this is noisy during migration, suppress with `SuppressDiagnostics = new[] { "FM0007" }` on the forger class, or `<NoWarn>FM0007</NoWarn>` in `.csproj`.
 
 **`SkipNull` limitations** — `SkipNull` falls back to `NullForgiving` for constructor parameters (can't omit required args) and init-only properties (can't conditionally assign after initialization).
 

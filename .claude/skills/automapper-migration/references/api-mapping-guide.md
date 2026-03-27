@@ -46,7 +46,7 @@ private static decimal ConvertPrice(int priceInCents)
 
 | AutoMapper | ForgeMap | Notes |
 |---|---|---|
-| Auto-detected nested maps | `[ForgeWith(nameof(D.DestProp), nameof(NestedForgeMethod))]` | Must declare a forge method for the nested type |
+| Auto-detected nested maps | Auto-wired when matching forge method exists in the same forger class (v1.3+, `AutoWireNestedMappings = true` default) | `[ForgeWith]` still works as explicit override |
 | `.IncludeMembers(s => s.Inner)` | Not directly supported | Use `[ForgeProperty]` with dot notation instead |
 
 ### Example
@@ -57,15 +57,16 @@ CreateMap<Order, OrderDto>();
 CreateMap<Address, AddressDto>();
 // AutoMapper auto-discovers nested Address→AddressDto
 
-// ForgeMap
+// ForgeMap (v1.3+ — auto-wired, no [ForgeWith] needed)
 [ForgeMap]
 public partial class OrderForger
 {
-    [ForgeWith(nameof(OrderDto.ShippingAddress), nameof(ForgeAddress))]
     public partial OrderDto Forge(Order source);
-
-    public partial AddressDto ForgeAddress(Address source);
+    public partial AddressDto Forge(Address source);
 }
+// The generator auto-discovers that Forge(Address) satisfies OrderDto.ShippingAddress.
+// Use [ForgeWith] to disambiguate when multiple forge methods match (FM0025),
+// or as an explicit override when AutoWireNestedMappings is disabled.
 ```
 
 ## Mapping Inheritance & Polymorphic Dispatch
@@ -74,7 +75,7 @@ public partial class OrderForger
 |---|---|---|
 | `.IncludeBase<TBaseSrc, TBaseDst>()` | `[IncludeBaseForge(typeof(TBaseSrc), typeof(TBaseDst))]` | Inherits `[Ignore]`, `[ForgeProperty]`, `[ForgeFrom]`, `[ForgeWith]` from the base forge method; the base method must exist in the same forger class (FM0019) |
 | `.Include<TDerivedSrc, TDerivedDst>()` | Not needed — `[ForgeAllDerived]` auto-discovers | No explicit registration; derived forge overloads must be declared in the same forger class and share the same method name to be auto-discovered |
-| `.IncludeAllDerived()` | `[ForgeAllDerived]` | Generates polymorphic dispatch (`is` cascade), most-derived checked first; derived source types must be in a class inheritance chain (interfaces not considered), and each derived method's return type must be assignable to the base destination type |
+| `.IncludeAllDerived()` | `[ForgeAllDerived]` | Generates polymorphic dispatch (`is` cascade), most-derived checked first; works with abstract/interface destinations (v1.3+, generates dispatch-only body with `NotSupportedException` fallback); source-side auto-discovery requires class inheritance (interfaces not considered); each derived return type must be assignable to the base destination type |
 | Inherited properties from compiled assemblies | Automatic (generator fix) | No configuration needed — base-type properties are discovered automatically |
 
 ### Configuration inheritance
@@ -146,11 +147,10 @@ When `[ForgeAllDerived]` is on a base forge method, collection forge methods for
 |---|---|---|
 | Default: returns `default(TDestination)` for null source | `NullHandling.ReturnNull` (default) | Same behavior (default/null depending on destination type) |
 | Custom null handling | `NullHandling.ThrowException` | Set on `[ForgeMap]` or `[ForgeMapDefaults]` |
-| `.NullSubstitute(value)` | Not directly supported | Use `[AfterForge]` hook to substitute |
 
 ### Nullable-property handling
 
-Controls how nullable-to-non-nullable **reference type** property assignments and constructor-parameter expressions are generated. Does not apply to value types, `[ForgeFrom]` resolvers, or `[ForgeWith]` nested mappings.
+Controls how nullable-to-non-nullable **reference type** property assignments and constructor-parameter expressions are generated. Does not apply to value types, `[ForgeFrom]` resolvers, `[ForgeWith]` nested mappings, or auto-wired nested object mappings (auto-wired inline collections do respect `NullPropertyHandling` settings).
 
 | AutoMapper | ForgeMap | Notes |
 |---|---|---|
@@ -174,13 +174,14 @@ Controls how nullable-to-non-nullable **reference type** property assignments an
     NullPropertyHandling = NullPropertyHandling.ThrowException)]
 ```
 
-**FM0007 diagnostic** — ForgeMap reports a warning for nullable ref → non-nullable ref *direct* property assignments (by convention, `[ForgeProperty]`, or auto-flatten). It is not reported when the destination is mapped via `[ForgeFrom]` resolver or `[ForgeWith]` nested forging. Suppress with `SuppressDiagnostics = new[] { "FM0007" }`, `#pragma warning disable FM0007`, or `<NoWarn>FM0007</NoWarn>` in `.csproj`.
+**FM0007 diagnostic** — ForgeMap reports a warning for nullable ref → non-nullable ref *direct* property assignments (by convention, `[ForgeProperty]`, or auto-flatten). It is not reported when the destination is mapped via `[ForgeFrom]` resolver, `[ForgeWith]` nested forging, or auto-wired nested mappings. Suppress with `SuppressDiagnostics = new[] { "FM0007" }`, `#pragma warning disable FM0007`, or `<NoWarn>FM0007</NoWarn>` in `.csproj`.
 
 ## Collections
 
 | AutoMapper | ForgeMap | Notes |
 |---|---|---|
-| Auto collection mapping | Auto-generated when `GenerateCollectionMappings = true` on `[assembly: ForgeMapDefaults(...)]` (assembly-level, default `true`) | Supports `List<T>`, arrays, `IEnumerable<T>` |
+| Auto collection mapping | Auto-generated when `GenerateCollectionMappings = true` on `[assembly: ForgeMapDefaults(...)]` (assembly-level, default `true`) | Supports `List<T>`, `IList<T>`, `ICollection<T>`, `IReadOnlyList<T>`, `IReadOnlyCollection<T>`, `HashSet<T>`, arrays, `IEnumerable<T>` |
+| Auto nested collection mapping | Auto-wired inline (v1.3+, `AutoWireNestedMappings = true`) when element forge method exists | Same collection types as above — no explicit collection forge method needed |
 | `.ProjectTo<D>(config)` | Not supported (compile-time only) | ForgeMap is source-generated, not queryable |
 
 ## DI Registration
@@ -204,7 +205,7 @@ Controls how nullable-to-non-nullable **reference type** property assignments an
 
 | AutoMapper | ForgeMap | Notes |
 |---|---|---|
-| `AssertConfigurationIsValid()` | Compiler diagnostics (FM0001–FM0023) | Errors at compile time, not runtime |
+| `AssertConfigurationIsValid()` | Compiler diagnostics (FM0001–FM0027) | Compile-time diagnostics (errors, warnings, and info), not runtime |
 | Unmapped property warnings | FM0005: Unmapped source property | Configurable via `SuppressDiagnostics` |
 
 ## Case-Insensitive Matching
@@ -222,6 +223,7 @@ Controls how nullable-to-non-nullable **reference type** property assignments an
     NullHandling = NullHandling.ThrowException,
     PropertyMatching = PropertyMatching.ByNameCaseInsensitive,
     GenerateCollectionMappings = true,
+    AutoWireNestedMappings = true,             // default; set false to require explicit [ForgeWith]
     NullPropertyHandling = NullPropertyHandling.NullForgiving  // default
 )]
 ```
@@ -231,7 +233,7 @@ Controls how nullable-to-non-nullable **reference type** property assignments an
 | AutoMapper Feature | Workaround |
 |---|---|
 | `ProjectTo<T>()` (IQueryable) | Map in-memory after materializing the query |
-| `ConstructUsing()` | No direct equivalent. ForgeMap maps constructor/record parameters when the destination has an accessible constructor; for custom factory logic, adjust destination constructors/records where possible or create the destination manually (e.g., in calling code, a `[ForgeFrom]` resolver, or a `[BeforeForge]` hook). |
+| `ConstructUsing()` | No direct equivalent. ForgeMap maps constructor/record parameters when the destination has a public constructor; for custom factory logic, adjust destination constructors/records or create the destination manually in calling code before using `ForgeInto`. |
 | Conditional mapping (`.PreCondition()`) | Use `[BeforeForge]` to validate, or `[ForgeFrom]` with conditional logic |
 | Dynamic/runtime mapping | Not supported — ForgeMap is compile-time only |
 
@@ -296,22 +298,18 @@ CreateMap<Order, OrderDto>();
 CreateMap<Address, AddressDto>();  // nested single object
 CreateMap<LineItem, LineItemDto>(); // nested collection
 
-// AFTER (ForgeMap) — single nested object and collection both use [ForgeWith]
-[ForgeWith(nameof(OrderDto.ShippingAddress), nameof(ForgeAddress))]
-[ForgeWith(nameof(OrderDto.LineItems), nameof(ForgeLineItems))]
-public partial OrderDto Forge(Order source);
-
-public partial AddressDto ForgeAddress(Address source);
-
-// Collection properties (e.g., List<LineItem> → List<LineItemDto>) are
-// NOT auto-mapped on a parent object just because an element forge exists.
-// Declare a collection-level forge method and reference it via [ForgeWith].
-public partial IReadOnlyList<LineItemDto> ForgeLineItems(IReadOnlyList<LineItem> source);
-
-// The collection forge method above is auto-implemented by the generator
-// (when GenerateCollectionMappings = true) using this element forge method.
-// IMPORTANT: the element method must share the same name as the collection method.
-public partial LineItemDto ForgeLineItems(LineItem source);
+// AFTER (ForgeMap v1.3+) — auto-wired, no [ForgeWith] needed
+[ForgeMap]
+public partial class OrderForger
+{
+    public partial OrderDto Forge(Order source);
+    public partial AddressDto Forge(Address source);
+    public partial LineItemDto Forge(LineItem source);
+}
+// The generator auto-discovers that Forge(Address) maps the ShippingAddress property,
+// and generates inline List<LineItem> → List<LineItemDto> iteration using Forge(LineItem).
+// Use [ForgeWith] to disambiguate when multiple forge methods could match (FM0025),
+// or as an explicit override when AutoWireNestedMappings is disabled.
 ```
 
 ### Pattern 5: DI registration
