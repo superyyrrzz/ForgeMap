@@ -151,7 +151,7 @@ When `[ForgeAllDerived]` is on a base forge method, collection forge methods for
 
 ### Nullable-property handling
 
-Controls how nullable-to-non-nullable **reference type** property assignments and constructor-parameter expressions are generated. Does not apply to value types, `[ForgeFrom]` resolvers, `[ForgeWith]` nested mappings, or auto-wired nested mappings.
+Controls how nullable-to-non-nullable **reference type** property assignments and constructor-parameter expressions are generated. Does not apply to value types, `[ForgeFrom]` resolvers, `[ForgeWith]` nested mappings, or auto-wired nested object mappings (auto-wired inline collections do respect null-handling settings).
 
 | AutoMapper | ForgeMap | Notes |
 |---|---|---|
@@ -300,9 +300,13 @@ CreateMap<Address, AddressDto>();  // nested single object
 CreateMap<LineItem, LineItemDto>(); // nested collection
 
 // AFTER (ForgeMap v1.3+) — auto-wired, no [ForgeWith] needed
-public partial OrderDto Forge(Order source);
-public partial AddressDto Forge(Address source);
-public partial LineItemDto Forge(LineItem source);
+[ForgeMap]
+public partial class OrderForger
+{
+    public partial OrderDto Forge(Order source);
+    public partial AddressDto Forge(Address source);
+    public partial LineItemDto Forge(LineItem source);
+}
 // The generator auto-discovers that Forge(Address) maps the ShippingAddress property,
 // and generates inline List<LineItem> → List<LineItemDto> iteration using Forge(LineItem).
 // Use [ForgeWith] to disambiguate when multiple forge methods could match (FM0025),
