@@ -46,7 +46,7 @@ private static decimal ConvertPrice(int priceInCents)
 
 | AutoMapper | ForgeMap | Notes |
 |---|---|---|
-| Auto-detected nested maps | Auto-wired when matching forge method exists (v1.3+, `AutoWireNestedMappings = true` default) | `[ForgeWith]` still works as explicit override |
+| Auto-detected nested maps | Auto-wired when matching forge method exists in the same forger class (v1.3+, `AutoWireNestedMappings = true` default) | `[ForgeWith]` still works as explicit override |
 | `.IncludeMembers(s => s.Inner)` | Not directly supported | Use `[ForgeProperty]` with dot notation instead |
 
 ### Example
@@ -75,7 +75,7 @@ public partial class OrderForger
 |---|---|---|
 | `.IncludeBase<TBaseSrc, TBaseDst>()` | `[IncludeBaseForge(typeof(TBaseSrc), typeof(TBaseDst))]` | Inherits `[Ignore]`, `[ForgeProperty]`, `[ForgeFrom]`, `[ForgeWith]` from the base forge method; the base method must exist in the same forger class (FM0019) |
 | `.Include<TDerivedSrc, TDerivedDst>()` | Not needed — `[ForgeAllDerived]` auto-discovers | No explicit registration; derived forge overloads must be declared in the same forger class and share the same method name to be auto-discovered |
-| `.IncludeAllDerived()` | `[ForgeAllDerived]` | Generates polymorphic dispatch (`is` cascade), most-derived checked first; works with abstract/interface destinations (v1.3+, generates dispatch-only body with `NotSupportedException` fallback); source-side auto-discovery still requires class inheritance (interfaces not considered) |
+| `.IncludeAllDerived()` | `[ForgeAllDerived]` | Generates polymorphic dispatch (`is` cascade), most-derived checked first; works with abstract/interface destinations (v1.3+, generates dispatch-only body with `NotSupportedException` fallback); source-side auto-discovery requires class inheritance (interfaces not considered); each derived return type must be assignable to the base destination type |
 | Inherited properties from compiled assemblies | Automatic (generator fix) | No configuration needed — base-type properties are discovered automatically |
 
 ### Configuration inheritance
@@ -147,7 +147,7 @@ When `[ForgeAllDerived]` is on a base forge method, collection forge methods for
 |---|---|---|
 | Default: returns `default(TDestination)` for null source | `NullHandling.ReturnNull` (default) | Same behavior (default/null depending on destination type) |
 | Custom null handling | `NullHandling.ThrowException` | Set on `[ForgeMap]` or `[ForgeMapDefaults]` |
-| `.NullSubstitute(value)` | Not directly supported | Use `[AfterForge]` hook to substitute |
+| `.NullSubstitute(value)` | Not directly supported | Use a `[ForgeFrom]` resolver returning the substitute value |
 
 ### Nullable-property handling
 
@@ -234,7 +234,7 @@ Controls how nullable-to-non-nullable **reference type** property assignments an
 | AutoMapper Feature | Workaround |
 |---|---|
 | `ProjectTo<T>()` (IQueryable) | Map in-memory after materializing the query |
-| `ConstructUsing()` | No direct equivalent. ForgeMap maps constructor/record parameters when the destination has an accessible constructor; for custom factory logic, adjust destination constructors/records where possible or create the destination manually (e.g., in calling code, a `[ForgeFrom]` resolver, or a `[BeforeForge]` hook). |
+| `ConstructUsing()` | No direct equivalent. ForgeMap maps constructor/record parameters when the destination has an accessible constructor; for custom factory logic, adjust destination constructors/records where possible or create the destination manually (e.g., in calling code or a `[ForgeFrom]` resolver). |
 | Conditional mapping (`.PreCondition()`) | Use `[BeforeForge]` to validate, or `[ForgeFrom]` with conditional logic |
 | Dynamic/runtime mapping | Not supported — ForgeMap is compile-time only |
 
