@@ -205,7 +205,7 @@ Controls how nullable-to-non-nullable **reference type** property assignments an
 
 | AutoMapper | ForgeMap | Notes |
 |---|---|---|
-| `AssertConfigurationIsValid()` | Compiler diagnostics (FM0001–FM0027) | Errors at compile time, not runtime |
+| `AssertConfigurationIsValid()` | Compiler diagnostics (FM0001–FM0027) | Compile-time diagnostics (errors, warnings, and info), not runtime |
 | Unmapped property warnings | FM0005: Unmapped source property | Configurable via `SuppressDiagnostics` |
 
 ## Case-Insensitive Matching
