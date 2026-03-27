@@ -47,10 +47,10 @@ return source switch
 
 - **Case-sensitive by default** (AutoMapper is case-insensitive). Use `PropertyMatching = PropertyMatching.ByNameCaseInsensitive` if needed.
 - **Nested maps are auto-wired by default (v1.3+).** When `AutoWireNestedMappings = true` (default), matching forge methods are discovered automatically — no `[ForgeWith]` needed. Disable per-forger or assembly-wide with `AutoWireNestedMappings = false`.
-- **Collection properties are auto-wired inline (v1.3+).** When an element forge method exists, `List<A>` → `List<B>` (and arrays, `HashSet`, `IEnumerable`, `IReadOnlyCollection`) are mapped inline automatically. Explicit collection forge methods still take precedence if declared.
+- **Collection properties are auto-wired inline (v1.3+).** When an element forge method exists, collections (`List`, `IList`, `ICollection`, `IReadOnlyList`, `IReadOnlyCollection`, `HashSet`, arrays, `IEnumerable`) are mapped inline automatically. Explicit collection forge methods still take precedence if declared.
 - **No `ProjectTo<T>()`** — materialize first, then map. Warn user about perf implications.
 - **`[ConvertWith]` is not functional** — the attribute exists but the generator ignores it. Use `[ForgeFrom]` resolvers instead.
-- **`[ForgeAllDerived]` supports abstract/interface destinations (v1.3+).** When the destination type is abstract or an interface, the generator emits a dispatch-only body (no instantiation) with a `NotSupportedException` fallback. Derived forge methods must be declared in the same forger class and share the same method name.
+- **`[ForgeAllDerived]` supports abstract/interface destinations (v1.3+).** When the destination type is abstract or an interface, the generator emits a dispatch-only body (no instantiation) with a `NotSupportedException` fallback. Source-side auto-discovery still requires a class inheritance chain (interfaces not considered). Derived forge methods must be declared in the same forger class and share the same method name.
 
 ## Null-property handling
 

@@ -65,7 +65,8 @@ public partial class OrderForger
     public partial AddressDto Forge(Address source);
 }
 // The generator auto-discovers that Forge(Address) satisfies OrderDto.ShippingAddress.
-// Use [ForgeWith] only when multiple forge methods match (FM0025 ambiguity).
+// Use [ForgeWith] to disambiguate when multiple forge methods match (FM0025),
+// or as an explicit override when AutoWireNestedMappings is disabled.
 ```
 
 ## Mapping Inheritance & Polymorphic Dispatch
@@ -74,7 +75,7 @@ public partial class OrderForger
 |---|---|---|
 | `.IncludeBase<TBaseSrc, TBaseDst>()` | `[IncludeBaseForge(typeof(TBaseSrc), typeof(TBaseDst))]` | Inherits `[Ignore]`, `[ForgeProperty]`, `[ForgeFrom]`, `[ForgeWith]` from the base forge method; the base method must exist in the same forger class (FM0019) |
 | `.Include<TDerivedSrc, TDerivedDst>()` | Not needed — `[ForgeAllDerived]` auto-discovers | No explicit registration; derived forge overloads must be declared in the same forger class and share the same method name to be auto-discovered |
-| `.IncludeAllDerived()` | `[ForgeAllDerived]` | Generates polymorphic dispatch (`is` cascade), most-derived checked first; works with abstract/interface destinations (v1.3+, generates dispatch-only body with `NotSupportedException` fallback) |
+| `.IncludeAllDerived()` | `[ForgeAllDerived]` | Generates polymorphic dispatch (`is` cascade), most-derived checked first; works with abstract/interface destinations (v1.3+, generates dispatch-only body with `NotSupportedException` fallback); source-side auto-discovery still requires class inheritance (interfaces not considered) |
 | Inherited properties from compiled assemblies | Automatic (generator fix) | No configuration needed — base-type properties are discovered automatically |
 
 ### Configuration inheritance
@@ -180,8 +181,8 @@ Controls how nullable-to-non-nullable **reference type** property assignments an
 
 | AutoMapper | ForgeMap | Notes |
 |---|---|---|
-| Auto collection mapping | Auto-generated when `GenerateCollectionMappings = true` on `[assembly: ForgeMapDefaults(...)]` (assembly-level, default `true`) | Supports `List<T>`, arrays, `IEnumerable<T>` |
-| Auto nested collection mapping | Auto-wired inline (v1.3+, `AutoWireNestedMappings = true`) when element forge method exists | Supports `List<T>`, `IList<T>`, `T[]`, `HashSet<T>`, `IEnumerable<T>`, `IReadOnlyCollection<T>` — no explicit collection forge method needed |
+| Auto collection mapping | Auto-generated when `GenerateCollectionMappings = true` on `[assembly: ForgeMapDefaults(...)]` (assembly-level, default `true`) | Supports `List<T>`, `IList<T>`, `ICollection<T>`, `IReadOnlyList<T>`, `IReadOnlyCollection<T>`, `HashSet<T>`, arrays, `IEnumerable<T>` |
+| Auto nested collection mapping | Auto-wired inline (v1.3+, `AutoWireNestedMappings = true`) when element forge method exists | Same collection types as above — no explicit collection forge method needed |
 | `.ProjectTo<D>(config)` | Not supported (compile-time only) | ForgeMap is source-generated, not queryable |
 
 ## DI Registration
@@ -304,7 +305,8 @@ public partial AddressDto Forge(Address source);
 public partial LineItemDto Forge(LineItem source);
 // The generator auto-discovers that Forge(Address) maps the ShippingAddress property,
 // and generates inline List<LineItem> → List<LineItemDto> iteration using Forge(LineItem).
-// Use [ForgeWith] only to disambiguate when multiple forge methods could match (FM0025).
+// Use [ForgeWith] to disambiguate when multiple forge methods could match (FM0025),
+// or as an explicit override when AutoWireNestedMappings is disabled.
 ```
 
 ### Pattern 5: DI registration
