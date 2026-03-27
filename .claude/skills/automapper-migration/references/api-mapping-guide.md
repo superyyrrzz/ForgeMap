@@ -151,7 +151,7 @@ When `[ForgeAllDerived]` is on a base forge method, collection forge methods for
 
 ### Nullable-property handling
 
-Controls how nullable-to-non-nullable **reference type** property assignments and constructor-parameter expressions are generated. Does not apply to value types, `[ForgeFrom]` resolvers, or `[ForgeWith]` nested mappings.
+Controls how nullable-to-non-nullable **reference type** property assignments and constructor-parameter expressions are generated. Does not apply to value types, `[ForgeFrom]` resolvers, `[ForgeWith]` nested mappings, or auto-wired nested mappings.
 
 | AutoMapper | ForgeMap | Notes |
 |---|---|---|
@@ -175,7 +175,7 @@ Controls how nullable-to-non-nullable **reference type** property assignments an
     NullPropertyHandling = NullPropertyHandling.ThrowException)]
 ```
 
-**FM0007 diagnostic** — ForgeMap reports a warning for nullable ref → non-nullable ref *direct* property assignments (by convention, `[ForgeProperty]`, or auto-flatten). It is not reported when the destination is mapped via `[ForgeFrom]` resolver or `[ForgeWith]` nested forging. Suppress with `SuppressDiagnostics = new[] { "FM0007" }`, `#pragma warning disable FM0007`, or `<NoWarn>FM0007</NoWarn>` in `.csproj`.
+**FM0007 diagnostic** — ForgeMap reports a warning for nullable ref → non-nullable ref *direct* property assignments (by convention, `[ForgeProperty]`, or auto-flatten). It is not reported when the destination is mapped via `[ForgeFrom]` resolver, `[ForgeWith]` nested forging, or auto-wired nested mappings. Suppress with `SuppressDiagnostics = new[] { "FM0007" }`, `#pragma warning disable FM0007`, or `<NoWarn>FM0007</NoWarn>` in `.csproj`.
 
 ## Collections
 
@@ -234,7 +234,7 @@ Controls how nullable-to-non-nullable **reference type** property assignments an
 | AutoMapper Feature | Workaround |
 |---|---|
 | `ProjectTo<T>()` (IQueryable) | Map in-memory after materializing the query |
-| `ConstructUsing()` | No direct equivalent. ForgeMap maps constructor/record parameters when the destination has an accessible constructor; for custom factory logic, adjust destination constructors/records where possible or create the destination manually (e.g., in calling code or a `[ForgeFrom]` resolver). |
+| `ConstructUsing()` | No direct equivalent. ForgeMap maps constructor/record parameters when the destination has an accessible constructor; for custom factory logic, adjust destination constructors/records or create the destination manually in calling code before using `ForgeInto`. |
 | Conditional mapping (`.PreCondition()`) | Use `[BeforeForge]` to validate, or `[ForgeFrom]` with conditional logic |
 | Dynamic/runtime mapping | Not supported — ForgeMap is compile-time only |
 
