@@ -234,7 +234,7 @@ Controls how nullable-to-non-nullable **reference type** property assignments an
 | AutoMapper Feature | Workaround |
 |---|---|
 | `ProjectTo<T>()` (IQueryable) | Map in-memory after materializing the query |
-| `ConstructUsing()` | No direct equivalent. ForgeMap maps constructor/record parameters when the destination has an accessible constructor; for custom factory logic, adjust destination constructors/records or create the destination manually in calling code before using `ForgeInto`. |
+| `ConstructUsing()` | No direct equivalent. ForgeMap maps constructor/record parameters when the destination has a public constructor; for custom factory logic, adjust destination constructors/records or create the destination manually in calling code before using `ForgeInto`. |
 | Conditional mapping (`.PreCondition()`) | Use `[BeforeForge]` to validate, or `[ForgeFrom]` with conditional logic |
 | Dynamic/runtime mapping | Not supported — ForgeMap is compile-time only |
 
