@@ -147,11 +147,10 @@ When `[ForgeAllDerived]` is on a base forge method, collection forge methods for
 |---|---|---|
 | Default: returns `default(TDestination)` for null source | `NullHandling.ReturnNull` (default) | Same behavior (default/null depending on destination type) |
 | Custom null handling | `NullHandling.ThrowException` | Set on `[ForgeMap]` or `[ForgeMapDefaults]` |
-| `.NullSubstitute(value)` | Not directly supported | Use a `[ForgeFrom]` resolver returning the substitute value |
 
 ### Nullable-property handling
 
-Controls how nullable-to-non-nullable **reference type** property assignments and constructor-parameter expressions are generated. Does not apply to value types, `[ForgeFrom]` resolvers, `[ForgeWith]` nested mappings, or auto-wired nested object mappings (auto-wired inline collections do respect null-handling settings).
+Controls how nullable-to-non-nullable **reference type** property assignments and constructor-parameter expressions are generated. Does not apply to value types, `[ForgeFrom]` resolvers, `[ForgeWith]` nested mappings, or auto-wired nested object mappings (auto-wired inline collections do respect `NullPropertyHandling` settings).
 
 | AutoMapper | ForgeMap | Notes |
 |---|---|---|
