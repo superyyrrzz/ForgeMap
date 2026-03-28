@@ -6,16 +6,16 @@ namespace ForgeMap;
 public enum PropertyMatching
 {
     /// <summary>
-    /// Case-sensitive property name matching. Assignable destination properties with a
-    /// name-matched, readable source property are mapped automatically.
+    /// Case-sensitive property name matching. Readable, assignable destination properties
+    /// with a name-matched, readable source property are mapped automatically.
     /// Use <see cref="IgnoreAttribute"/> to exclude security-sensitive properties when
     /// mapping from untrusted sources.
     /// </summary>
     ByName,
 
     /// <summary>
-    /// Case-insensitive property name matching. Assignable destination properties with a
-    /// name-matched, readable source property are mapped automatically.
+    /// Case-insensitive property name matching. Readable, assignable destination properties
+    /// with a name-matched, readable source property are mapped automatically.
     /// Use <see cref="IgnoreAttribute"/> to exclude security-sensitive properties when
     /// mapping from untrusted sources.
     /// </summary>
