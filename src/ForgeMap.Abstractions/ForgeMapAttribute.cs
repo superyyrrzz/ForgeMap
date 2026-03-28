@@ -6,6 +6,17 @@ namespace ForgeMap;
 /// Marks a partial class as a ForgeMap forger.
 /// The source generator will implement all partial methods in this class.
 /// </summary>
+/// <remarks>
+/// <para>
+/// By default, public properties with matching names between source and destination types
+/// are mapped automatically when they are assignable (both source and destination members
+/// must be readable, the destination must also be writable via a setter or init accessor,
+/// or assignable through a constructor parameter, and the member types must be compatible).
+/// When mapping from untrusted sources (e.g., API request
+/// DTOs, form models), use <see cref="IgnoreAttribute"/> to exclude security-sensitive destination
+/// properties such as <c>IsAdmin</c>, <c>Role</c>, or <c>PasswordHash</c> from automatic mapping.
+/// </para>
+/// </remarks>
 [AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = false)]
 public sealed class ForgeMapAttribute : Attribute
 {
