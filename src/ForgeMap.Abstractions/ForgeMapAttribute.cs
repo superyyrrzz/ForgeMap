@@ -8,9 +8,11 @@ namespace ForgeMap;
 /// </summary>
 /// <remarks>
 /// <para>
-/// By default, all public properties with matching names between source and destination types
-/// are mapped automatically. When mapping from untrusted sources (e.g., API request DTOs,
-/// form models), use <see cref="IgnoreAttribute"/> to exclude security-sensitive destination
+/// By default, public properties with matching names between source and destination types
+/// are mapped automatically when they are assignable (the source member is readable,
+/// the destination member is writable via a setter, init accessor, or constructor parameter,
+/// and the member types are compatible). When mapping from untrusted sources (e.g., API request
+/// DTOs, form models), use <see cref="IgnoreAttribute"/> to exclude security-sensitive destination
 /// properties such as <c>IsAdmin</c>, <c>Role</c>, or <c>PasswordHash</c> from automatic mapping.
 /// </para>
 /// </remarks>
