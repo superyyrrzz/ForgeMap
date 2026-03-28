@@ -5,6 +5,11 @@ namespace ForgeMap;
 /// <summary>
 /// Ignores specified destination properties during forging.
 /// </summary>
+/// <remarks>
+/// Use this attribute to prevent over-posting or mass assignment when mapping from untrusted
+/// sources. For example, <c>[Ignore("IsAdmin", "Role")]</c> ensures those destination
+/// properties are never set by the generated mapping code.
+/// </remarks>
 [AttributeUsage(AttributeTargets.Method, AllowMultiple = true, Inherited = false)]
 public sealed class IgnoreAttribute : Attribute
 {
