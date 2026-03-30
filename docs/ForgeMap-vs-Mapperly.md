@@ -1,6 +1,6 @@
 # ForgeMap vs Mapperly — Why ForgeMap Is the Better Migration Target
 
-**Mapperly** and **ForgeMap** are both Roslyn incremental source generators that produce zero-reflection, compile-time mapping code at comparable speed (~14–15 ns for simple objects).
+**Mapperly** and **ForgeMap** are both Roslyn incremental source generators that produce zero-reflection, compile-time mapping code at comparable speed (~14–15 ns for simple objects, see [benchmark results](../benchmarks/BENCHMARK_RESULTS.md)).
 
 However, ForgeMap addresses **critical gaps** in Mapperly that enterprise codebases will hit during migration — particularly around reverse mapping, polymorphic dispatch, null safety, and configuration inheritance.
 
@@ -18,7 +18,7 @@ However, ForgeMap addresses **critical gaps** in Mapperly that enterprise codeba
 | **Abstract destination mapping** | ❌ | ❌ | ✅ Dispatch-only, no constructor needed |
 | **Null handling strategies** | `AllowNullCollections` | Binary (throw or allow) | ✅ 4 strategies, 3-tier config |
 | **Per-property null control** | ❌ | ❌ | ✅ `[ForgeProperty(..., NullPropertyHandling)]` |
-| **Base config inheritance** | `.IncludeBase<TBase>()` | ❌ (open issue [#2000](https://github.com/riok/mapperly/issues/2000)) | ✅ `[IncludeBaseForge]` |
+| **Base config inheritance** | `.IncludeBase<TSourceBase, TDestinationBase>()` | ❌ (open issue [#2000](https://github.com/riok/mapperly/issues/2000)) | ✅ `[IncludeBaseForge]` |
 | **Auto-wire nested mappings** | Runtime registry | Manual `UseMapper` | ✅ Compile-time auto-discovery |
 | **Lifecycle hooks** | `.BeforeMap()` / `.AfterMap()` | `BeforeMap` / `AfterMap` | ✅ `[BeforeForge]` / `[AfterForge]` with ordered execution |
 | **Mutation mapping** | `Map(src, dest)` | `Map(src, dest)` | ✅ Partial-method mutation pattern with `[UseExistingValue]` destination |
@@ -153,7 +153,7 @@ ForgeMap was designed with a **1:1 concept mapping** from AutoMapper, making mig
 | `.ForMember(d => d.X, o => o.MapFrom(s => s.Y))` | `[ForgeProperty(nameof(S.Y), nameof(D.X))]` | |
 | `.ForMember(d => d.X, o => o.MapFrom(s => Calc(s)))` | `[ForgeFrom(nameof(D.X), nameof(Calc))]` | |
 | `.ConvertUsing<TConverter>()` | `[ConvertWith(typeof(TConverter))]` | |
-| `.IncludeBase<TBase>()` | `[IncludeBaseForge(typeof(S), typeof(D))]` | |
+| `.IncludeBase<TSourceBase, TDestinationBase>()` | `[IncludeBaseForge(typeof(TSourceBase), typeof(TDestinationBase))]` | |
 | `.IncludeAllDerived()` | `[ForgeAllDerived]` | Auto-discovered, no manual listing |
 | `.ReverseMap()` | `[ReverseForge]` | With compile-time validation |
 | `.BeforeMap()` / `.AfterMap()` | `[BeforeForge]` / `[AfterForge]` | Ordered, validated signatures |
