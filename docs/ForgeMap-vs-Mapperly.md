@@ -165,7 +165,7 @@ Nearly every AutoMapper concept has a direct ForgeMap equivalent (`[ConvertWith]
 
 ### Automated Migration Skill
 
-ForgeMap ships with a [**Claude Code skill**](../.claude/skills/automapper-migration/SKILL.md) (`/automapper-migration`) that automates the migration from AutoMapper in 4 safe, incremental phases. Instead of a manual, error-prone find-and-replace effort, teams can run the skill to convert AutoMapper profiles to ForgeMap forgers, update call sites, and validate the result — all within their existing development workflow.
+ForgeMap ships with an [**automated migration skill**](../.claude/skills/automapper-migration/SKILL.md) (`/automapper-migration`) that automates the migration from AutoMapper in 4 safe, incremental phases. Instead of a manual, error-prone find-and-replace effort, teams can run the skill to convert AutoMapper profiles to ForgeMap forgers, update call sites, and validate the result — all within their existing development workflow.
 
 ---
 
