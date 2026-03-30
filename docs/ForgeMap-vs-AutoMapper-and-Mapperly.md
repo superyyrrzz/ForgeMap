@@ -2,7 +2,7 @@
 
 **Mapperly** and **ForgeMap** are both Roslyn incremental source generators that produce zero-reflection, compile-time mapping code at comparable speed (~14–15 ns for simple objects, see [benchmark results](../benchmarks/BENCHMARK_RESULTS.md)).
 
-However, ForgeMap addresses **critical gaps** in Mapperly that enterprise codebases will hit during migration — particularly around reverse mapping, polymorphic dispatch, null safety, and configuration inheritance.
+The table below compares all three tools across reverse mapping, polymorphic dispatch, null safety, configuration inheritance, and other dimensions relevant to enterprise migration.
 
 ---
 
@@ -29,7 +29,7 @@ However, ForgeMap addresses **critical gaps** in Mapperly that enterprise codeba
 
 ---
 
-## Where ForgeMap Differentiates
+## Feature Differences in Detail
 
 ### 1. Automatic Reverse Mapping
 
@@ -76,7 +76,7 @@ Adding a new subtype? Just add its forge method — no base method changes neede
 
 ### 3. Granular Null Handling
 
-Mapperly provides `AllowNullPropertyAssignment`, `ThrowOnPropertyMappingNullMismatch`, and `ThrowOnMappingNullMismatch` at the mapper level. ForgeMap goes further with **4 strategies** configurable at **3 levels** (assembly → forger → per-property):
+Mapperly provides `AllowNullPropertyAssignment`, `ThrowOnPropertyMappingNullMismatch`, and `ThrowOnMappingNullMismatch` at the mapper level. ForgeMap offers **4 strategies** configurable at **3 levels** (assembly → forger → per-property):
 
 | Strategy | Behavior | Example |
 |---|---|---|
@@ -144,7 +144,7 @@ Hooks run in declaration order with validated signatures (`FM0016` for invalid h
 
 ## AutoMapper Migration Path
 
-ForgeMap was designed with a **1:1 concept mapping** from AutoMapper, making migration straightforward:
+ForgeMap was designed with a **1:1 concept mapping** from AutoMapper:
 
 | AutoMapper | ForgeMap | Notes |
 |---|---|---|
@@ -179,19 +179,19 @@ ForgeMap provides **27 diagnostic rules** (FM0001–FM0027) that catch mapping e
 - **Configuration errors** — invalid resolver signatures, broken `[IncludeBaseForge]` references, ambiguous auto-wiring
 - **Polymorphic warnings** — missing derived methods, abstract dispatch risks
 
-These diagnostics surface in the IDE as you type, eliminating entire categories of runtime mapping failures.
+These diagnostics surface in the IDE as you type, catching mapping errors before runtime.
 
 ---
 
 ## Summary
 
-| Decision Factor | Recommendation |
+| Decision Factor | ForgeMap |
 |---|---|
-| Simple, flat DTO mapping | Either tool works well |
-| `Entity ↔ DTO` round-trips | **ForgeMap** — `[ReverseForge]` auto-generates the inverse |
-| Deep inheritance hierarchies | **ForgeMap** — `[ForgeAllDerived]` auto-discovers subtypes |
-| Mixed nullability across large codebases | **ForgeMap** — 4 strategies, per-property control |
-| Migrating from AutoMapper | **ForgeMap** — familiar API concepts, lowest migration friction |
-| Declarative lifecycle hooks | **ForgeMap** — `[BeforeForge]` / `[AfterForge]` vs manual wrappers |
+| Simple, flat DTO mapping | Comparable to Mapperly |
+| `Entity ↔ DTO` round-trips | `[ReverseForge]` auto-generates the inverse |
+| Deep inheritance hierarchies | `[ForgeAllDerived]` auto-discovers subtypes |
+| Mixed nullability across large codebases | 4 strategies, per-property control |
+| Migrating from AutoMapper | 1:1 concept mapping, automated migration skill |
+| Declarative lifecycle hooks | `[BeforeForge]` / `[AfterForge]` with ordered execution |
 
-ForgeMap gives you comparable or better performance than Mapperly with **auto-discovered polymorphism, declarative hooks, granular null handling, and a smoother migration path from AutoMapper**.
+ForgeMap provides comparable performance to Mapperly with additional support for auto-discovered polymorphism, declarative hooks, granular null handling, and a direct migration path from AutoMapper.
