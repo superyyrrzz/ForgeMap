@@ -2628,11 +2628,11 @@ internal sealed class ForgeCodeEmitter
 
         var beforeForgeHooks = GetBeforeForgeHooks(method)
             .Select(h => ValidateBeforeForgeHook(h, sourceType, forger, context, method))
-            .Where(n => n != null).Select(n => n!)
+            .OfType<string>()
             .ToList();
         var afterForgeHooks = GetAfterForgeHooks(method)
             .Select(h => ValidateAfterForgeHook(h, sourceType, destinationType, forger, context, method))
-            .Where(n => n != null).Select(n => n!)
+            .OfType<string>()
             .ToList();
 
         return new ResolvedMethodConfig(
