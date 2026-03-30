@@ -25,7 +25,7 @@ It contains exact API mappings between AutoMapper and ForgeMap. Consult it for e
 3. **Swap** — Replace AutoMapper impl with ForgeMap. All tests must pass.
 4. **Unwrap** — Delete abstraction. Call `_forger.Forge(source)` directly.
 
-Report progress to the user after each phase and **wait for confirmation before proceeding** to the next phase. This gives the developer a chance to review the changes, run tests, and commit at their discretion.
+Report progress to the user after each phase. **Proceed through all 4 phases automatically without stopping** — do not ask for confirmation between phases. After all phases are complete, present a summary so the developer can review the full set of changes.
 
 ## The routing shim (Phase 3) — this is the tricky part
 
