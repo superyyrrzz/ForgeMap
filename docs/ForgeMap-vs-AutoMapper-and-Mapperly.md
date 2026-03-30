@@ -40,7 +40,7 @@ Mapperly supports reverse-direction mappings, but you must write each reverse me
 ```csharp
 [ReverseForge]
 public partial OrderDto Forge(OrderEntity source);
-// ↑ Auto-generates: public partial OrderEntity Forge(OrderDto source);
+// ↑ Auto-generates: public OrderEntity Forge(OrderDto source);
 ```
 
 ForgeMap validates the reverse at compile time — `[ForgeFrom]` resolvers that can't be inverted emit `FM0012`, and nested `[ForgeWith]` without a matching reverse emit `FM0015`.
