@@ -81,9 +81,11 @@ public partial class StrictForger { ... }
 
 **`SkipNull` limitations** — `SkipNull` falls back to `NullForgiving` for constructor parameters (can't omit required args) and init-only properties (can't conditionally assign after initialization).
 
-## After migration completes
+## After migration ends
 
-Do **not** commit or create branches automatically. Instead, summarize what was done and suggest commit message(s) the developer can use. Example:
+Do **not** commit or create branches automatically. Instead, summarize what was done and suggest commit message(s) the developer can use.
+
+**If all 4 phases succeeded:**
 
 > All 4 phases complete. You can commit as a single change:
 >
@@ -94,5 +96,8 @@ Do **not** commit or create branches automatically. Instead, summarize what was 
 > 2. `test: add mapping unit tests through IMappingService`
 > 3. `refactor: swap AutoMapper impl with ForgeMap`
 > 4. `refactor: unwrap IMappingService, call ForgeMap directly`
->
-> If the migration stopped early due to an unsupported mapping or build failure, commit only the completed phases.
+
+**If migration stopped early** (unsupported mapping or build/test failure):
+
+> Phases 1–N completed successfully. Phase N+1 stopped because [reason].
+> You can commit the completed phases and address the remaining work separately.
