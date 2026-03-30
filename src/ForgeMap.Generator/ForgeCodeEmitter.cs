@@ -2158,7 +2158,7 @@ internal sealed class ForgeCodeEmitter
             else
             {
                 // Use symbol name when available for defense-in-depth
-                var simpleProp = GetMappableProperties(sourceType).FirstOrDefault(p => p.Name == sourcePath);
+                var simpleProp = sourceProperties.FirstOrDefault(p => p.Name == sourcePath);
                 var safeName = simpleProp?.Name ?? sourcePath;
                 map[destPropName] = ($"source.{safeName}", leafType);
             }
