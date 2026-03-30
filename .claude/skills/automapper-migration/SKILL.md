@@ -25,7 +25,7 @@ It contains exact API mappings between AutoMapper and ForgeMap. Consult it for e
 3. **Swap** — Replace AutoMapper impl with ForgeMap. All tests must pass.
 4. **Unwrap** — Delete abstraction. Call `_forger.Forge(source)` directly.
 
-Report progress to the user after each phase. **Between successful phases, proceed automatically without asking for confirmation.** If a hard rule triggers or the build/tests fail and the project is not green at the end of a phase, stop, report the issue, and do not continue to later phases. After all completed phases are done, present a summary so the developer can review the full set of changes.
+Report progress to the user after each phase. **Between successful phases, proceed automatically without asking for confirmation.** If ForgeMap cannot support a required mapping (the unsupported-mapping hard rule) or the build/tests fail and the project is not green at the end of a phase, stop, report the issue, and do not continue to later phases. After all completed phases are done, present a summary so the developer can review the full set of changes.
 
 ## The routing shim (Phase 3) — this is the tricky part
 
@@ -89,8 +89,10 @@ Do **not** commit or create branches automatically. Instead, summarize what was 
 >
 > `migrate: replace AutoMapper with ForgeMap`
 >
-> Or as separate commits per phase if you prefer granular history:
+> Or use `git add -p` / selective staging to create separate commits per phase if you prefer granular history:
 > 1. `refactor: wrap AutoMapper behind IMappingService`
 > 2. `test: add mapping unit tests through IMappingService`
 > 3. `refactor: swap AutoMapper impl with ForgeMap`
 > 4. `refactor: unwrap IMappingService, call ForgeMap directly`
+>
+> If the migration stopped early due to an unsupported mapping or build failure, commit only the completed phases.
