@@ -12,11 +12,11 @@ However, ForgeMap addresses **critical gaps** in Mapperly that enterprise codeba
 |---|---|---|---|
 | **Engine** | Runtime reflection | Source generator | Source generator |
 | **Performance (simple flat mapping)** | ~80 ns | ~15 ns | ~14.5 ns |
-| **License** | RPL-1.5 / commercial (13.0+) | Apache 2.0 | MIT |
+| **License** | RPL-1.5 / commercial (15.0+) | Apache 2.0 | MIT |
 | **Auto reverse mapping** | `.ReverseMap()` | ❌ Manual only | ✅ `[ReverseForge]` with compile-time validation |
 | **Polymorphic dispatch** | Runtime reflection | Manual `[MapDerivedType]` per type | ✅ Auto-discovered `[ForgeAllDerived]` |
 | **Abstract destination mapping** | Runtime `.As<T>()` | `[MapDerivedType]` dispatch | ✅ Auto-discovered dispatch via `[ForgeAllDerived]` |
-| **Null handling strategies** | `NullSubstitute`, `AllowNullCollections` | `AllowNullPropertyAssignment`, `ThrowOnPropertyMappingNullMismatch` | ✅ 4 strategies (`NullForgiving`, `SkipNull`, `CoalesceToDefault`, `ThrowException`), 3-tier config |
+| **Null handling strategies** | `NullSubstitute`, `AllowNullCollections` | `AllowNullPropertyAssignment`, `ThrowOnPropertyMappingNullMismatch`, `ThrowOnMappingNullMismatch` | ✅ 4 strategies (`NullForgiving`, `SkipNull`, `CoalesceToDefault`, `ThrowException`), 3-tier config |
 | **Per-property null control** | `NullSubstitute` per member | Per-property not configurable | ✅ `[ForgeProperty(..., NullPropertyHandling)]` with type-aware defaults |
 | **Base config inheritance** | `.IncludeBase<TSourceBase, TDestinationBase>()` | `[IncludeMappingConfiguration]` | ✅ `[IncludeBaseForge]` |
 | **Auto-wire nested mappings** | Runtime registry | Same-mapper auto-discovery; `[UseMapper]` for external mappers | ✅ Compile-time auto-discovery within forger class |
@@ -76,7 +76,7 @@ Adding a new subtype? Just add its forge method — no base method changes neede
 
 ### 3. Granular Null Handling
 
-Mapperly provides `AllowNullPropertyAssignment` and `ThrowOnPropertyMappingNullMismatch` at the mapper level. ForgeMap goes further with **4 strategies** configurable at **3 levels** (assembly → forger → per-property):
+Mapperly provides `AllowNullPropertyAssignment`, `ThrowOnPropertyMappingNullMismatch`, and `ThrowOnMappingNullMismatch` at the mapper level. ForgeMap goes further with **4 strategies** configurable at **3 levels** (assembly → forger → per-property):
 
 | Strategy | Behavior | Example |
 |---|---|---|
@@ -159,7 +159,7 @@ ForgeMap was designed with a **1:1 concept mapping** from AutoMapper, making mig
 | `.BeforeMap()` / `.AfterMap()` | `[BeforeForge]` / `[AfterForge]` | Ordered, validated signatures |
 | `mapper.Map<D>(source)` | `forger.Forge(source)` | |
 | `mapper.Map(source, existing)` | Void partial method with `[UseExistingValue]` destination | Method name is arbitrary (e.g. `ForgeInto`) |
-| `services.AddAutoMapper(assemblies)` | `services.AddForgeMaps()` | Registers as singletons by default (optional `ServiceLifetime` parameter) |
+| `services.AddAutoMapper(cfg => { }, assemblies...)` | `services.AddForgeMaps()` | Registers as singletons by default (optional `ServiceLifetime` parameter) |
 
 Nearly every AutoMapper concept has a direct ForgeMap equivalent (`[ConvertWith]` is defined but not yet code-generated). Teams migrating from AutoMapper can apply mechanical, pattern-based transformations rather than re-thinking their mapping architecture.
 
