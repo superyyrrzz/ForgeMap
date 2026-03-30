@@ -124,7 +124,7 @@ Explicit attributes on the derived method override inherited ones, with `FM0021`
 
 ### 5. No Auto-Wiring for Nested Mappings
 
-When a destination property is a complex type with a matching forge method, Mapperly requires explicit `UseMapper` registration. ForgeMap **auto-discovers** matching methods at compile time:
+When a destination property is a complex type with a matching forge method, Mapperly requires you to compose mappers across classes via `[UseMapper]`. ForgeMap **auto-discovers** matching methods within the same forger class at compile time:
 
 ```csharp
 [ForgeMap(AutoWireNestedMappings = true)] // default
@@ -158,7 +158,7 @@ ForgeMap was designed with a **1:1 concept mapping** from AutoMapper, making mig
 | `.ReverseMap()` | `[ReverseForge]` | With compile-time validation |
 | `.BeforeMap()` / `.AfterMap()` | `[BeforeForge]` / `[AfterForge]` | Ordered, validated signatures |
 | `mapper.Map<D>(source)` | `forger.Forge(source)` | |
-| `mapper.Map(source, existing)` | `forger.ForgeInto(source, existing)` | |
+| `mapper.Map(source, existing)` | Void partial method with `[UseExistingValue]` destination | Method name is arbitrary (e.g. `ForgeInto`) |
 | `services.AddAutoMapper(assemblies)` | `services.AddForgeMaps()` | Registers as singletons by default (optional `ServiceLifetime` parameter) |
 
 Nearly every AutoMapper concept has a direct ForgeMap equivalent (`[ConvertWith]` is defined but not yet code-generated). Teams migrating from AutoMapper can apply mechanical, pattern-based transformations rather than re-thinking their mapping architecture.
@@ -194,4 +194,4 @@ These diagnostics surface in the IDE as you type, eliminating entire categories 
 | Migrating from AutoMapper | **ForgeMap** — 1:1 concept mapping, lowest migration friction |
 | Minimizing mapping boilerplate | **ForgeMap** — auto-wiring, reverse mapping, config inheritance |
 
-ForgeMap gives you the same performance as Mapperly with **fewer gaps, less boilerplate, and a smoother migration from AutoMapper**.
+ForgeMap gives you comparable or better performance than Mapperly with **fewer gaps, less boilerplate, and a smoother migration from AutoMapper**.
