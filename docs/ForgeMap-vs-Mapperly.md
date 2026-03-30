@@ -1,6 +1,6 @@
 # ForgeMap vs Mapperly — Why ForgeMap Is the Better Migration Target
 
-With AutoMapper's official guidance now pointing teams toward source generators, the two leading options are **Mapperly** and **ForgeMap**. Both are Roslyn incremental source generators that produce zero-reflection, compile-time mapping code at comparable speed (~14–15 ns for simple objects).
+**Mapperly** and **ForgeMap** are both Roslyn incremental source generators that produce zero-reflection, compile-time mapping code at comparable speed (~14–15 ns for simple objects).
 
 However, ForgeMap addresses **critical gaps** in Mapperly that enterprise codebases will hit during migration — particularly around reverse mapping, polymorphic dispatch, null safety, and configuration inheritance.
 
@@ -18,10 +18,10 @@ However, ForgeMap addresses **critical gaps** in Mapperly that enterprise codeba
 | **Abstract destination mapping** | ❌ | ❌ | ✅ Dispatch-only, no constructor needed |
 | **Null handling strategies** | `AllowNullCollections` | Binary (throw or allow) | ✅ 4 strategies, 3-tier config |
 | **Per-property null control** | ❌ | ❌ | ✅ `[ForgeProperty(..., NullPropertyHandling)]` |
-| **Base config inheritance** | ❌ | ❌ (open issue [#2000](https://github.com/riok/mapperly/issues/2000)) | ✅ `[IncludeBaseForge]` |
+| **Base config inheritance** | `.IncludeBase<TBase>()` | ❌ (open issue [#2000](https://github.com/riok/mapperly/issues/2000)) | ✅ `[IncludeBaseForge]` |
 | **Auto-wire nested mappings** | Runtime registry | Manual `UseMapper` | ✅ Compile-time auto-discovery |
 | **Lifecycle hooks** | `.BeforeMap()` / `.AfterMap()` | `BeforeMap` / `AfterMap` | ✅ `[BeforeForge]` / `[AfterForge]` with ordered execution |
-| **Mutation mapping** | `Map(src, dest)` | `Map(src, dest)` | ✅ `ForgeInto(src, dest)` |
+| **Mutation mapping** | `Map(src, dest)` | `Map(src, dest)` | ✅ Partial-method mutation pattern with `[UseExistingValue]` destination |
 | **Collection auto-generation** | Runtime | Partial | ✅ Full (`T[]`, `List<T>`, `IEnumerable<T>`, `HashSet<T>`, etc.) |
 | **Inline collection mapping** | N/A | ❌ | ✅ Generates inline iteration, no explicit method needed |
 | **Diagnostics** | Runtime exceptions | ~20 diagnostics | ✅ 27 diagnostics (FM0001–FM0027) |
@@ -138,7 +138,7 @@ public partial class AppForger
 }
 ```
 
-This eliminates dozens of boilerplate attributes in large mapping configurations. The feature emits `FM0025` if multiple candidate methods create ambiguity, and `FM0027` (info) when a property is auto-wired.
+This eliminates dozens of boilerplate attributes in large mapping configurations. The feature emits `FM0025` if multiple candidate methods create ambiguity, and `FM0027` (info, disabled by default) when a property is auto-wired.
 
 ---
 
@@ -159,9 +159,13 @@ ForgeMap was designed with a **1:1 concept mapping** from AutoMapper, making mig
 | `.BeforeMap()` / `.AfterMap()` | `[BeforeForge]` / `[AfterForge]` | Ordered, validated signatures |
 | `mapper.Map<D>(source)` | `forger.Forge(source)` | |
 | `mapper.Map(source, existing)` | `forger.ForgeInto(source, existing)` | |
-| `services.AddAutoMapper(assemblies)` | `services.AddForgeMaps(assembly)` | Singleton by default |
+| `services.AddAutoMapper(assemblies)` | `services.AddForgeMaps()` | Registers as singletons by default (optional `ServiceLifetime` parameter) |
 
 Every AutoMapper concept has a direct ForgeMap equivalent. Teams migrating from AutoMapper can apply mechanical, pattern-based transformations rather than re-thinking their mapping architecture.
+
+### Automated Migration Skill
+
+ForgeMap ships with a [**Claude Code skill**](../.claude/skills/automapper-migration/SKILL.md) (`/automapper-migration`) that automates the migration from AutoMapper in 4 safe, incremental phases. Instead of a manual, error-prone find-and-replace effort, teams can run the skill to convert AutoMapper profiles to ForgeMap forgers, update call sites, and validate the result — all within their existing development workflow.
 
 ---
 
