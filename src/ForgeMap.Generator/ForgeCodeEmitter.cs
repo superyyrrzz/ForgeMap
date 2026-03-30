@@ -2157,7 +2157,10 @@ internal sealed class ForgeCodeEmitter
             }
             else
             {
-                map[destPropName] = ($"source.{sourcePath}", leafType);
+                // Use symbol name when available for defense-in-depth
+                var simpleProp = GetMappableProperties(sourceType).FirstOrDefault(p => p.Name == sourcePath);
+                var safeName = simpleProp?.Name ?? sourcePath;
+                map[destPropName] = ($"source.{safeName}", leafType);
             }
         }
 
@@ -3391,7 +3394,10 @@ internal sealed class ForgeCodeEmitter
     {
         if (!sourcePath.Contains("."))
         {
-            return ($"{sourceParam}.{sourcePath}", false);
+            // Use symbol name when available for defense-in-depth
+            var simpleProp = GetMappableProperties(sourceType).FirstOrDefault(p => p.Name == sourcePath);
+            var safeName = simpleProp?.Name ?? sourcePath;
+            return ($"{sourceParam}.{safeName}", false);
         }
 
         // Handle nested path (e.g., "Customer.Name")
@@ -3415,12 +3421,12 @@ internal sealed class ForgeCodeEmitter
             // Add null-conditional for reference types (except the last property)
             if (i < parts.Length - 1 && prop.Type.IsReferenceType)
             {
-                expression.Append($".{part}?");
+                expression.Append($".{prop.Name}?");
                 hasNullConditional = true;
             }
             else
             {
-                expression.Append($".{part}");
+                expression.Append($".{prop.Name}");
             }
 
             if (prop.Type is INamedTypeSymbol namedType)
