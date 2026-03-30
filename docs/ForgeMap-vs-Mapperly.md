@@ -11,11 +11,11 @@ However, ForgeMap addresses **critical gaps** in Mapperly that enterprise codeba
 | Capability | AutoMapper | Mapperly | ForgeMap |
 |---|---|---|---|
 | **Engine** | Runtime reflection | Source generator | Source generator |
-| **Performance** | ~80 ns | ~15 ns | ~14.5 ns |
+| **Performance (simple flat mapping)** | ~80 ns | ~15 ns | ~14.5 ns |
 | **License** | Apache 2.0 | Apache 2.0 | MIT |
 | **Reverse mapping** | `.ReverseMap()` | ❌ Not supported | ✅ `[ReverseForge]` |
 | **Polymorphic dispatch** | Runtime reflection | Manual `[MapDerivedType]` per type | ✅ Auto-discovered `[ForgeAllDerived]` |
-| **Abstract destination mapping** | ❌ | ❌ | ✅ Dispatch-only, no constructor needed |
+| **Abstract destination mapping** | ❌ | ❌ | ✅ Dispatch-only via `[ForgeAllDerived]`, no constructor needed |
 | **Null handling strategies** | `AllowNullCollections` | Binary (throw or allow) | ✅ 4 strategies, 3-tier config |
 | **Per-property null control** | ❌ | ❌ | ✅ `[ForgeProperty(..., NullPropertyHandling)]` |
 | **Base config inheritance** | `.IncludeBase<TSourceBase, TDestinationBase>()` | ❌ (open issue [#2000](https://github.com/riok/mapperly/issues/2000)) | ✅ `[IncludeBaseForge]` |
@@ -152,7 +152,7 @@ ForgeMap was designed with a **1:1 concept mapping** from AutoMapper, making mig
 | `.ForMember(d => d.X, o => o.Ignore())` | `[Ignore(nameof(D.X))]` | |
 | `.ForMember(d => d.X, o => o.MapFrom(s => s.Y))` | `[ForgeProperty(nameof(S.Y), nameof(D.X))]` | |
 | `.ForMember(d => d.X, o => o.MapFrom(s => Calc(s)))` | `[ForgeFrom(nameof(D.X), nameof(Calc))]` | |
-| `.ConvertUsing<TConverter>()` | `[ConvertWith(typeof(TConverter))]` | |
+| `.ConvertUsing<TConverter>()` | `[ConvertWith(typeof(TConverter))]` | Planned — attribute defined, not yet code-generated |
 | `.IncludeBase<TSourceBase, TDestinationBase>()` | `[IncludeBaseForge(typeof(TSourceBase), typeof(TDestinationBase))]` | |
 | `.IncludeAllDerived()` | `[ForgeAllDerived]` | Auto-discovered, no manual listing |
 | `.ReverseMap()` | `[ReverseForge]` | With compile-time validation |
@@ -161,7 +161,7 @@ ForgeMap was designed with a **1:1 concept mapping** from AutoMapper, making mig
 | `mapper.Map(source, existing)` | `forger.ForgeInto(source, existing)` | |
 | `services.AddAutoMapper(assemblies)` | `services.AddForgeMaps()` | Registers as singletons by default (optional `ServiceLifetime` parameter) |
 
-Every AutoMapper concept has a direct ForgeMap equivalent. Teams migrating from AutoMapper can apply mechanical, pattern-based transformations rather than re-thinking their mapping architecture.
+Nearly every AutoMapper concept has a direct ForgeMap equivalent (`[ConvertWith]` is defined but not yet code-generated). Teams migrating from AutoMapper can apply mechanical, pattern-based transformations rather than re-thinking their mapping architecture.
 
 ### Automated Migration Skill
 
