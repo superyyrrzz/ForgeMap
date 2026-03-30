@@ -12,30 +12,30 @@ However, ForgeMap addresses **critical gaps** in Mapperly that enterprise codeba
 |---|---|---|---|
 | **Engine** | Runtime reflection | Source generator | Source generator |
 | **Performance (simple flat mapping)** | ~80 ns | ~15 ns | ~14.5 ns |
-| **License** | Apache 2.0 | Apache 2.0 | MIT |
-| **Reverse mapping** | `.ReverseMap()` | ❌ Not supported | ✅ `[ReverseForge]` |
+| **License** | MIT (pre-13.0) / RPL-1.5 (13.0+) | Apache 2.0 | MIT |
+| **Auto reverse mapping** | `.ReverseMap()` | ❌ Manual only | ✅ `[ReverseForge]` with compile-time validation |
 | **Polymorphic dispatch** | Runtime reflection | Manual `[MapDerivedType]` per type | ✅ Auto-discovered `[ForgeAllDerived]` |
-| **Abstract destination mapping** | ❌ | ❌ | ✅ Dispatch-only via `[ForgeAllDerived]`, no constructor needed |
-| **Null handling strategies** | `AllowNullCollections` | Binary (throw or allow) | ✅ 4 strategies, 3-tier config |
-| **Per-property null control** | ❌ | ❌ | ✅ `[ForgeProperty(..., NullPropertyHandling)]` |
-| **Base config inheritance** | `.IncludeBase<TSourceBase, TDestinationBase>()` | ❌ (open issue [#2000](https://github.com/riok/mapperly/issues/2000)) | ✅ `[IncludeBaseForge]` |
-| **Auto-wire nested mappings** | Runtime registry | Manual `UseMapper` | ✅ Compile-time auto-discovery |
-| **Lifecycle hooks** | `.BeforeMap()` / `.AfterMap()` | `BeforeMap` / `AfterMap` | ✅ `[BeforeForge]` / `[AfterForge]` with ordered execution |
+| **Abstract destination mapping** | ❌ | `[MapDerivedType]` dispatch | ✅ Auto-discovered dispatch via `[ForgeAllDerived]` |
+| **Null handling strategies** | `NullSubstitute`, `AllowNullCollections` | `AllowNullPropertyAssignment`, `ThrowOnPropertyMappingNullMismatch` | ✅ 4 strategies (`NullForgiving`, `SkipNull`, `CoalesceToDefault`, `ThrowException`), 3-tier config |
+| **Per-property null control** | `NullSubstitute` per member | Per-property not configurable | ✅ `[ForgeProperty(..., NullPropertyHandling)]` with type-aware defaults |
+| **Base config inheritance** | `.IncludeBase<TSourceBase, TDestinationBase>()` | `[IncludeMappingConfiguration]` | ✅ `[IncludeBaseForge]` |
+| **Auto-wire nested mappings** | Runtime registry | Same-mapper auto-discovery; `[UseMapper]` for external mappers | ✅ Compile-time auto-discovery within forger class |
+| **Lifecycle hooks** | `.BeforeMap()` / `.AfterMap()` | Manual wrapper methods | ✅ `[BeforeForge]` / `[AfterForge]` with ordered execution |
 | **Mutation mapping** | `Map(src, dest)` | `Map(src, dest)` | ✅ Partial-method mutation pattern with `[UseExistingValue]` destination |
-| **Collection auto-generation** | Runtime | Partial | ✅ Full (`T[]`, `List<T>`, `IEnumerable<T>`, `HashSet<T>`, etc.) |
-| **Inline collection mapping** | N/A | ❌ | ✅ Generates inline iteration, no explicit method needed |
-| **Diagnostics** | Runtime exceptions | ~20 diagnostics | ✅ 27 diagnostics (FM0001–FM0027) |
+| **Collection auto-generation** | Runtime | Auto-generated | ✅ Full (`T[]`, `List<T>`, `IEnumerable<T>`, `HashSet<T>`, etc.) |
+| **Inline collection mapping** | N/A | ❌ | ✅ Generates inline iteration for collection properties, no explicit method needed |
+| **Diagnostics** | Runtime exceptions | ~95 diagnostics (RMG001–RMG095) | 27 diagnostics (FM0001–FM0027) |
 | **Debuggable generated code** | ❌ | ✅ | ✅ |
 
 ---
 
-## Where Mapperly Falls Short
+## Where ForgeMap Differentiates
 
-### 1. No Reverse Mapping
+### 1. Automatic Reverse Mapping
 
-Mapperly has **no built-in way to generate the inverse mapping**. If you map `Entity → DTO`, you must write a second mapper method by hand for `DTO → Entity`. In CRUD-heavy enterprise applications with hundreds of entity/DTO pairs, this doubles the mapping surface you need to maintain.
+Mapperly supports reverse-direction mappings, but you must write each reverse method manually. In CRUD-heavy enterprise applications with hundreds of entity/DTO pairs, this doubles the mapping surface you need to maintain.
 
-**ForgeMap** solves this with a single attribute:
+**ForgeMap** auto-generates the reverse with a single attribute:
 
 ```csharp
 [ReverseForge]
@@ -45,9 +45,9 @@ public partial OrderDto Forge(OrderEntity source);
 
 ForgeMap validates the reverse at compile time — `[ForgeFrom]` resolvers that can't be inverted emit `FM0012`, and nested `[ForgeWith]` without a matching reverse emit `FM0015`.
 
-### 2. Manual Polymorphic Dispatch
+### 2. Auto-Discovered Polymorphic Dispatch
 
-Mapperly requires you to **explicitly enumerate every derived type** on the base mapping method:
+Both Mapperly and ForgeMap support polymorphic mapping via dispatch. Mapperly requires you to **explicitly enumerate every derived type** with `[MapDerivedType]`:
 
 ```csharp
 // Mapperly — must list every subtype manually
@@ -72,13 +72,11 @@ public partial DerivedCDto Forge(DerivedCEntity source);
 // ↑ Dispatch cascade generated automatically, most-derived first
 ```
 
-Adding a new subtype? Just add its forge method — no base method changes needed. ForgeMap even supports **abstract destination types** (dispatch-only with `NotSupportedException` fallback), which Mapperly cannot handle.
+Adding a new subtype? Just add its forge method — no base method changes needed, and no risk of silently falling through to the base mapping.
 
-### 3. Primitive Null Handling
+### 3. Granular Null Handling
 
-Mapperly offers a binary choice: throw on null mismatch or allow it. In a real-world codebase with mixed nullability across hundreds of DTOs, you need more control.
-
-**ForgeMap** provides **4 strategies** at **3 levels of configuration**:
+Mapperly provides `AllowNullPropertyAssignment` and `ThrowOnPropertyMappingNullMismatch` at the mapper level. ForgeMap goes further with **4 strategies** configurable at **3 levels** (assembly → forger → per-property):
 
 | Strategy | Behavior | Example |
 |---|---|---|
@@ -102,11 +100,9 @@ public partial class StrictForger { ... }
 public partial UserDto Forge(UserEntity source);
 ```
 
-### 4. No Configuration Inheritance
+### 4. Configuration Inheritance
 
-One of Mapperly's [most-requested features (#2000)](https://github.com/riok/mapperly/issues/2000) is the ability to inherit base mapping configuration in derived type mappings. It remains unimplemented.
-
-**ForgeMap** ships this today:
+Mapperly added `[IncludeMappingConfiguration]` for reusing mapping configurations. ForgeMap's `[IncludeBaseForge]` provides similar functionality with attribute-level inheritance and override detection:
 
 ```csharp
 // Base mapping config — shared Ignore, ForgeProperty, ForgeFrom rules
@@ -122,23 +118,27 @@ public partial DerivedDto Forge(DerivedEntity source);
 
 Explicit attributes on the derived method override inherited ones, with `FM0021` info diagnostic for visibility.
 
-### 5. No Auto-Wiring for Nested Mappings
+### 5. First-Class Lifecycle Hooks
 
-When a destination property is a complex type with a matching forge method, Mapperly requires you to compose mappers across classes via `[UseMapper]`. ForgeMap **auto-discovers** matching methods within the same forger class at compile time:
+Mapperly supports custom pre/post-mapping logic via manual wrapper methods (user-implemented methods that call the generated mapping). ForgeMap provides **declarative attribute-driven hooks** with ordered execution and validated signatures:
 
 ```csharp
-[ForgeMap(AutoWireNestedMappings = true)] // default
-public partial class AppForger
+[BeforeForge(nameof(ValidateSource))]
+[AfterForge(nameof(EnrichOrder))]
+public partial OrderDto Forge(OrderEntity source);
+
+private static void ValidateSource(OrderEntity source)
 {
-    public partial OrderDto Forge(OrderEntity source);
-    public partial CustomerDto Forge(CustomerEntity source);
-    public partial AddressDto Forge(AddressEntity source);
-    // ↑ OrderDto.Customer and CustomerDto.Address are auto-wired
-    //   No [ForgeWith] attributes needed
+    ArgumentNullException.ThrowIfNull(source.Id);
+}
+
+private static void EnrichOrder(OrderEntity source, OrderDto destination)
+{
+    destination.DisplayName = $"Order #{source.Id}";
 }
 ```
 
-This eliminates dozens of boilerplate attributes in large mapping configurations. The feature emits `FM0025` if multiple candidate methods create ambiguity, and `FM0027` (info, disabled by default) when a property is auto-wired.
+Hooks run in declaration order with validated signatures (`FM0016` for invalid hooks, `FM0018` for unsupported contexts). In Mapperly, the equivalent requires writing a wrapper method that calls the generated mapping manually.
 
 ---
 
@@ -188,10 +188,10 @@ These diagnostics surface in the IDE as you type, eliminating entire categories 
 | Decision Factor | Recommendation |
 |---|---|
 | Simple, flat DTO mapping | Either tool works well |
-| `Entity ↔ DTO` round-trips | **ForgeMap** — `[ReverseForge]` eliminates duplicate code |
-| Deep inheritance hierarchies | **ForgeMap** — `[ForgeAllDerived]` + `[IncludeBaseForge]` |
+| `Entity ↔ DTO` round-trips | **ForgeMap** — `[ReverseForge]` auto-generates the inverse |
+| Deep inheritance hierarchies | **ForgeMap** — `[ForgeAllDerived]` auto-discovers subtypes |
 | Mixed nullability across large codebases | **ForgeMap** — 4 strategies, per-property control |
-| Migrating from AutoMapper | **ForgeMap** — 1:1 concept mapping, lowest migration friction |
-| Minimizing mapping boilerplate | **ForgeMap** — auto-wiring, reverse mapping, config inheritance |
+| Migrating from AutoMapper | **ForgeMap** — familiar API concepts, lowest migration friction |
+| Declarative lifecycle hooks | **ForgeMap** — `[BeforeForge]` / `[AfterForge]` vs manual wrappers |
 
-ForgeMap gives you comparable or better performance than Mapperly with **fewer gaps, less boilerplate, and a smoother migration from AutoMapper**.
+ForgeMap gives you comparable or better performance than Mapperly with **auto-discovered polymorphism, declarative hooks, granular null handling, and a smoother migration path from AutoMapper**.
