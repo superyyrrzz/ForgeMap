@@ -17,7 +17,7 @@ The table below compares all three tools across reverse mapping, polymorphic dis
 | **Polymorphic dispatch** | Runtime reflection | Manual `[MapDerivedType]` per type | ✅ Auto-discovered `[ForgeAllDerived]` |
 | **Abstract destination mapping** | Runtime `.As<T>()` | `[MapDerivedType]` dispatch | ✅ Auto-discovered dispatch via `[ForgeAllDerived]` |
 | **Null handling strategies** | `NullSubstitute`, `AllowNullCollections` | `AllowNullPropertyAssignment`, `ThrowOnPropertyMappingNullMismatch`, `ThrowOnMappingNullMismatch` | ✅ 4 strategies (`NullForgiving`, `SkipNull`, `CoalesceToDefault`, `ThrowException`), 3-tier config |
-| **Per-property null control** | `NullSubstitute` per member | Per-property not configurable | ✅ `[ForgeProperty(..., NullPropertyHandling)]` with type-aware defaults |
+| **Per-property null control** | `NullSubstitute` per member | Per-property not configurable | ✅ `[ForgeProperty(..., NullPropertyHandling = ...)]` with type-aware defaults |
 | **Base config inheritance** | `.IncludeBase<TSourceBase, TDestinationBase>()` | `[IncludeMappingConfiguration]` | ✅ `[IncludeBaseForge]` |
 | **Auto-wire nested mappings** | Runtime registry | Same-mapper auto-discovery; `[UseMapper]` for external mappers | ✅ Compile-time auto-discovery within forger class |
 | **Lifecycle hooks** | `.BeforeMap()` / `.AfterMap()` | Manual wrapper methods | ✅ `[BeforeForge]` / `[AfterForge]` with ordered execution |
@@ -72,7 +72,7 @@ public partial DerivedCDto Forge(DerivedCEntity source);
 // ↑ Dispatch cascade generated automatically, most-derived first
 ```
 
-Adding a new subtype? Just add its forge method — no base method changes needed, and no risk of silently falling through to the base mapping.
+Adding a new subtype? Add a forge method with the same name in the same forger class — no base method changes needed and no manual derived-type list to maintain.
 
 ### 3. Granular Null Handling
 
