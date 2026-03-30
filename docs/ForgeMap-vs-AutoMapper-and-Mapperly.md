@@ -1,4 +1,4 @@
-# ForgeMap vs Mapperly — Why ForgeMap Is the Better Migration Target
+# ForgeMap vs AutoMapper & Mapperly — Technical Comparison
 
 **Mapperly** and **ForgeMap** are both Roslyn incremental source generators that produce zero-reflection, compile-time mapping code at comparable speed (~14–15 ns for simple objects, see [benchmark results](../benchmarks/BENCHMARK_RESULTS.md)).
 
