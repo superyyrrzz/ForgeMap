@@ -100,4 +100,4 @@ Do **not** commit or create branches automatically. Instead, summarize what was 
 **If migration stopped early** (unsupported mapping or build/test failure):
 
 > Phases 1–N completed successfully. Phase N+1 stopped because [reason].
-> The failed phase may have left partial edits in the worktree. Use `git diff` to review, then either revert the failed-phase changes (`git checkout -- <files>`) or selectively stage only the completed phases before committing.
+> The failed phase may have left partial edits in the worktree. Use `git diff` to review all changes. Since earlier phases may have edited the same files, use `git add -p` to selectively stage only the hunks from completed phases — do not blindly revert entire files.
