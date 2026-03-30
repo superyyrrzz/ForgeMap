@@ -25,7 +25,7 @@ It contains exact API mappings between AutoMapper and ForgeMap. Consult it for e
 3. **Swap** — Replace AutoMapper impl with ForgeMap. All tests must pass.
 4. **Unwrap** — Delete abstraction. Call `_forger.Forge(source)` directly.
 
-Report progress to the user after each phase and **wait for confirmation before proceeding** to the next phase. This gives the developer a chance to review the changes, run tests, and commit at their discretion.
+Report progress to the user after each phase. **Between successful phases, proceed automatically without asking for confirmation.** If ForgeMap cannot support a required mapping (the unsupported-mapping hard rule) or the build/tests fail and the project is not green at the end of a phase, stop, report the issue, and do not continue to later phases. After all completed phases are done, present a summary so the developer can review the full set of changes.
 
 ## The routing shim (Phase 3) — this is the tricky part
 
@@ -81,16 +81,23 @@ public partial class StrictForger { ... }
 
 **`SkipNull` limitations** — `SkipNull` falls back to `NullForgiving` for constructor parameters (can't omit required args) and init-only properties (can't conditionally assign after initialization).
 
-## After migration completes
+## After migration ends
 
-Do **not** commit or create branches automatically. Instead, summarize what was done and suggest commit message(s) the developer can use. Example:
+Do **not** commit or create branches automatically. Instead, summarize what was done and suggest commit message(s) the developer can use.
+
+**If all 4 phases succeeded:**
 
 > All 4 phases complete. You can commit as a single change:
 >
 > `migrate: replace AutoMapper with ForgeMap`
 >
-> Or as separate commits per phase if you prefer granular history:
+> Or use `git add -p` / selective staging to create separate commits per phase if you prefer granular history:
 > 1. `refactor: wrap AutoMapper behind IMappingService`
 > 2. `test: add mapping unit tests through IMappingService`
 > 3. `refactor: swap AutoMapper impl with ForgeMap`
 > 4. `refactor: unwrap IMappingService, call ForgeMap directly`
+
+**If migration stopped early** (unsupported mapping or build/test failure):
+
+> Phases 1–N completed successfully. Phase N+1 stopped because [reason].
+> The failed phase may have left partial edits in the worktree. Use `git diff` to review all changes. Since earlier phases may have edited the same files, use `git add -p` to selectively stage only the hunks from completed phases — do not blindly revert entire files.
