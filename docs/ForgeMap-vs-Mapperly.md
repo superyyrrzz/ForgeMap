@@ -12,10 +12,10 @@ However, ForgeMap addresses **critical gaps** in Mapperly that enterprise codeba
 |---|---|---|---|
 | **Engine** | Runtime reflection | Source generator | Source generator |
 | **Performance (simple flat mapping)** | ~80 ns | ~15 ns | ~14.5 ns |
-| **License** | MIT (pre-13.0) / RPL-1.5 (13.0+) | Apache 2.0 | MIT |
+| **License** | RPL-1.5 / commercial (13.0+) | Apache 2.0 | MIT |
 | **Auto reverse mapping** | `.ReverseMap()` | ❌ Manual only | ✅ `[ReverseForge]` with compile-time validation |
 | **Polymorphic dispatch** | Runtime reflection | Manual `[MapDerivedType]` per type | ✅ Auto-discovered `[ForgeAllDerived]` |
-| **Abstract destination mapping** | ❌ | `[MapDerivedType]` dispatch | ✅ Auto-discovered dispatch via `[ForgeAllDerived]` |
+| **Abstract destination mapping** | Runtime `.As<T>()` | `[MapDerivedType]` dispatch | ✅ Auto-discovered dispatch via `[ForgeAllDerived]` |
 | **Null handling strategies** | `NullSubstitute`, `AllowNullCollections` | `AllowNullPropertyAssignment`, `ThrowOnPropertyMappingNullMismatch` | ✅ 4 strategies (`NullForgiving`, `SkipNull`, `CoalesceToDefault`, `ThrowException`), 3-tier config |
 | **Per-property null control** | `NullSubstitute` per member | Per-property not configurable | ✅ `[ForgeProperty(..., NullPropertyHandling)]` with type-aware defaults |
 | **Base config inheritance** | `.IncludeBase<TSourceBase, TDestinationBase>()` | `[IncludeMappingConfiguration]` | ✅ `[IncludeBaseForge]` |
@@ -23,7 +23,7 @@ However, ForgeMap addresses **critical gaps** in Mapperly that enterprise codeba
 | **Lifecycle hooks** | `.BeforeMap()` / `.AfterMap()` | Manual wrapper methods | ✅ `[BeforeForge]` / `[AfterForge]` with ordered execution |
 | **Mutation mapping** | `Map(src, dest)` | `Map(src, dest)` | ✅ Partial-method mutation pattern with `[UseExistingValue]` destination |
 | **Collection auto-generation** | Runtime | Auto-generated | ✅ Full (`T[]`, `List<T>`, `IEnumerable<T>`, `HashSet<T>`, etc.) |
-| **Inline collection mapping** | N/A | ❌ | ✅ Generates inline iteration for collection properties, no explicit method needed |
+| **Inline collection mapping** | N/A | Auto-generated | ✅ Generates inline iteration for collection properties, no explicit method needed |
 | **Diagnostics** | Runtime exceptions | ~95 diagnostics (RMG001–RMG095) | 27 diagnostics (FM0001–FM0027) |
 | **Debuggable generated code** | ❌ | ✅ | ✅ |
 
