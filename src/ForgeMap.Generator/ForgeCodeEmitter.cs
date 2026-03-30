@@ -1669,7 +1669,7 @@ internal sealed class ForgeCodeEmitter
         if (SymbolEqualityComparer.Default.Equals(resolverParamType, sourceType) ||
             CanAssign(sourceType, resolverParamType))
         {
-            return $"{resolverMethodName}({sourceParam})";
+            return $"{resolverMethod.Name}({sourceParam})";
         }
         else if (sourcePropPath != null && sourcePathLeafType != null &&
                  CanAssign(sourcePathLeafType, resolverParamType))
@@ -1678,13 +1678,13 @@ internal sealed class ForgeCodeEmitter
             var isLiftedValueType = hasNullConditional && sourcePathLeafType.IsValueType && GetNullableUnderlyingType(sourcePathLeafType) == null;
             if (IsNullableToNonNullableValueType(sourcePathLeafType, resolverParamType) || isLiftedValueType)
             {
-                return $"{resolverMethodName}(({resolverParamType.ToDisplayString()}){sourceExpr}!)";
+                return $"{resolverMethod.Name}(({resolverParamType.ToDisplayString()}){sourceExpr}!)";
             }
             else
             {
                 var isNullableExpr = hasNullConditional || sourcePathLeafType.NullableAnnotation == NullableAnnotation.Annotated;
                 var nullForgiving = isNullableExpr && resolverParamType.NullableAnnotation != NullableAnnotation.Annotated ? "!" : "";
-                return $"{resolverMethodName}({sourceExpr}{nullForgiving})";
+                return $"{resolverMethod.Name}({sourceExpr}{nullForgiving})";
             }
         }
         else
@@ -1737,11 +1737,11 @@ internal sealed class ForgeCodeEmitter
                     {
                         var localVarName = $"__forgeWith_{destProp.Name}";
                         var nullFallback = destProp.Type.IsValueType ? "default" : "null!";
-                        return $"{sourceExpr} is {{ }} {localVarName} ? {forgingMethodName}({localVarName}) : {nullFallback}";
+                        return $"{sourceExpr} is {{ }} {localVarName} ? {nestedForgeMethod.Name}({localVarName}) : {nullFallback}";
                     }
                     else
                     {
-                        return $"{forgingMethodName}({sourceExpr})";
+                        return $"{nestedForgeMethod.Name}({sourceExpr})";
                     }
                 }
             }
@@ -2627,10 +2627,12 @@ internal sealed class ForgeCodeEmitter
         ResolveInheritedConfig(method, forger, context, ignoredProperties, propertyMappings, resolverMappings, forgeWithMappings, nullPropertyHandlingOverrides);
 
         var beforeForgeHooks = GetBeforeForgeHooks(method)
-            .Where(h => ValidateBeforeForgeHook(h, sourceType, forger, context, method))
+            .Select(h => ValidateBeforeForgeHook(h, sourceType, forger, context, method))
+            .OfType<string>()
             .ToList();
         var afterForgeHooks = GetAfterForgeHooks(method)
-            .Where(h => ValidateAfterForgeHook(h, sourceType, destinationType, forger, context, method))
+            .Select(h => ValidateAfterForgeHook(h, sourceType, destinationType, forger, context, method))
+            .OfType<string>()
             .ToList();
 
         return new ResolvedMethodConfig(
@@ -2693,8 +2695,9 @@ internal sealed class ForgeCodeEmitter
 
     /// <summary>
     /// Validates a BeforeForge hook method. Must be void with a single parameter matching the source type.
+    /// Returns the validated symbol name on success, or null on failure.
     /// </summary>
-    private bool ValidateBeforeForgeHook(
+    private string? ValidateBeforeForgeHook(
         string hookMethodName,
         ITypeSymbol sourceType,
         ForgerInfo forger,
@@ -2717,28 +2720,32 @@ internal sealed class ForgeCodeEmitter
                 DiagnosticDescriptors.HookMethodInvalid,
                 method.Locations.FirstOrDefault(),
                 hookMethodName);
-            return false;
+            return null;
         }
 
         // Prefer exact type match over assignable match
         var exactMatch = candidates.FirstOrDefault(m =>
             SymbolEqualityComparer.Default.Equals(m.Parameters[0].Type, sourceType));
 
-        if (exactMatch != null || candidates.Count == 1)
-            return true;
+        if (exactMatch != null)
+            return exactMatch.Name;
+
+        if (candidates.Count == 1)
+            return candidates[0].Name;
 
         // Multiple assignable candidates with no exact match — ambiguous
         ReportDiagnosticIfNotSuppressed(context,
             DiagnosticDescriptors.HookMethodInvalid,
             method.Locations.FirstOrDefault(),
             hookMethodName);
-        return false;
+        return null;
     }
 
     /// <summary>
     /// Validates an AfterForge hook method. Must be void with two parameters: source type and destination type.
+    /// Returns the validated symbol name on success, or null on failure.
     /// </summary>
-    private bool ValidateAfterForgeHook(
+    private string? ValidateAfterForgeHook(
         string hookMethodName,
         ITypeSymbol sourceType,
         ITypeSymbol destType,
@@ -2766,7 +2773,7 @@ internal sealed class ForgeCodeEmitter
                 DiagnosticDescriptors.HookMethodInvalid,
                 method.Locations.FirstOrDefault(),
                 hookMethodName);
-            return false;
+            return null;
         }
 
         // Prefer exact type match over assignable match
@@ -2774,15 +2781,18 @@ internal sealed class ForgeCodeEmitter
             SymbolEqualityComparer.Default.Equals(m.Parameters[0].Type, sourceType) &&
             SymbolEqualityComparer.Default.Equals(m.Parameters[1].Type, destType));
 
-        if (exactMatch != null || candidates.Count == 1)
-            return true;
+        if (exactMatch != null)
+            return exactMatch.Name;
+
+        if (candidates.Count == 1)
+            return candidates[0].Name;
 
         // Multiple assignable candidates with no exact match — ambiguous
         ReportDiagnosticIfNotSuppressed(context,
             DiagnosticDescriptors.HookMethodInvalid,
             method.Locations.FirstOrDefault(),
             hookMethodName);
-        return false;
+        return null;
     }
 
     /// <summary>
@@ -3547,7 +3557,7 @@ internal sealed class ForgeCodeEmitter
                 if (SymbolEqualityComparer.Default.Equals(resolverParamType, sourceType) ||
                     CanAssign(sourceType, resolverParamType))
                 {
-                    resolverCall = $"{resolverMethodName}({sourceParam})";
+                    resolverCall = $"{resolverMethod.Name}({sourceParam})";
                 }
                 else if (sourcePropPath != null && sourcePathLeafType != null &&
                          CanAssign(sourcePathLeafType, resolverParamType))
@@ -3560,7 +3570,7 @@ internal sealed class ForgeCodeEmitter
                     var isLiftedValueType = hasNullConditional && sourcePathLeafType.IsValueType && GetNullableUnderlyingType(sourcePathLeafType) == null;
                     if (IsNullableToNonNullableValueType(sourcePathLeafType, resolverParamType) || isLiftedValueType)
                     {
-                        resolverCall = $"{resolverMethodName}(({resolverParamType.ToDisplayString()}){sourceExpr}!)";
+                        resolverCall = $"{resolverMethod.Name}(({resolverParamType.ToDisplayString()}){sourceExpr}!)";
                     }
                     else
                     {
@@ -3568,7 +3578,7 @@ internal sealed class ForgeCodeEmitter
                         // but resolver param is non-nullable
                         var isNullableExpr = hasNullConditional || sourcePathLeafType.NullableAnnotation == NullableAnnotation.Annotated;
                         var nullForgiving = isNullableExpr && resolverParamType.NullableAnnotation != NullableAnnotation.Annotated ? "!" : "";
-                        resolverCall = $"{resolverMethodName}({sourceExpr}{nullForgiving})";
+                        resolverCall = $"{resolverMethod.Name}({sourceExpr}{nullForgiving})";
                     }
                 }
                 else
@@ -3613,14 +3623,14 @@ internal sealed class ForgeCodeEmitter
                             {
                                 var localVarName = $"__forgeWith_{destProp.Name}";
                                 sb.AppendLine($"            if ({sourceExpr} is {{ }} {localVarName})");
-                                sb.AppendLine($"                {destParam}.{destProp.Name} = {forgingMethodName}({localVarName});");
+                                sb.AppendLine($"                {destParam}.{destProp.Name} = {nestedForgeMethod.Name}({localVarName});");
                                 sb.AppendLine($"            else");
                                 var nullAssign = destProp.Type.IsValueType ? "default" : "null!";
                                 sb.AppendLine($"                {destParam}.{destProp.Name} = {nullAssign};");
                             }
                             else
                             {
-                                sb.AppendLine($"            {destParam}.{destProp.Name} = {forgingMethodName}({sourceExpr});");
+                                sb.AppendLine($"            {destParam}.{destProp.Name} = {nestedForgeMethod.Name}({sourceExpr});");
                             }
                             continue;
                         }
