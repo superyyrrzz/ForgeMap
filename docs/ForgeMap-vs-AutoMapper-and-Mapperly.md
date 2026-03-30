@@ -1,6 +1,6 @@
 # ForgeMap vs AutoMapper & Mapperly — Technical Comparison
 
-**Mapperly** and **ForgeMap** are both Roslyn incremental source generators that produce zero-reflection, compile-time mapping code at comparable speed (~14–15 ns for simple objects, see [benchmark results](../benchmarks/BENCHMARK_RESULTS.md)).
+**Mapperly** and **ForgeMap** are both Roslyn incremental source generators that produce zero-reflection, compile-time mapping code at comparable speed (~14–16 ns for simple objects, see [benchmark results](../benchmarks/BENCHMARK_RESULTS.md)).
 
 The table below compares all three tools across reverse mapping, polymorphic dispatch, null safety, configuration inheritance, and other dimensions relevant to enterprise migration.
 
@@ -11,7 +11,7 @@ The table below compares all three tools across reverse mapping, polymorphic dis
 | Capability | AutoMapper | Mapperly | ForgeMap |
 |---|---|---|---|
 | **Engine** | Runtime reflection | Source generator | Source generator |
-| **Performance (simple flat mapping)** | ~80 ns | ~15 ns | ~14.5 ns |
+| **Performance (simple flat mapping)** | ~80 ns | ~16 ns | ~14.5 ns |
 | **License** | RPL-1.5 / commercial (15.0+) | Apache 2.0 | MIT |
 | **Auto reverse mapping** | `.ReverseMap()` | ❌ Manual only | ✅ `[ReverseForge]` with compile-time validation |
 | **Polymorphic dispatch** | Runtime reflection | Manual `[MapDerivedType]` per type | ✅ Auto-discovered `[ForgeAllDerived]` |
