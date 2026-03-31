@@ -396,7 +396,7 @@ internal sealed partial class ForgeCodeEmitter
                 var defaultExpr = GenerateEmptyCollectionExpression(destProp.Type) ?? GenerateCoalesceDefault(destProp.Type);
                 return defaultExpr ?? "null!";
             case 3: // ThrowException
-                return $"throw new global::System.ArgumentNullException(\"{sourceExpr}\", \"Cannot assign null source property '{sourceExpr}' to non-nullable destination '{destProp.ContainingType.Name}.{destProp.Name}'.\")";
+                return $"throw new global::System.ArgumentNullException(\"{destProp.Name}\", \"Cannot assign null source property '{sourceExpr}' to non-nullable destination '{destProp.ContainingType.Name}.{destProp.Name}'.\")";
             default: // NullForgiving (0) or SkipNull fallback
                 return "null!";
         }
