@@ -175,7 +175,7 @@ ForgeMap ships with an [**automated migration skill**](../.claude/skills/automap
 
 ## Compile-Time Safety
 
-ForgeMap provides **27 diagnostic rules** (FM0001–FM0027) that catch mapping errors at compile time:
+ForgeMap provides **38 diagnostic rules** (FM0001–FM0038) that catch mapping errors at compile time:
 
 - **Structural errors** — non-partial class/method, missing constructors, circular dependencies
 - **Mapping gaps** — unmapped source/destination properties, unmatched constructor parameters

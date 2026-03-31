@@ -78,7 +78,7 @@ public partial class AppForger
 ```csharp
 public partial void ForgeInto(OrderUpdateDto source, [UseExistingValue] Order target)
 {
-    if (source == null) throw new global::System.ArgumentNullException(nameof(source));
+    if (source == null) return; // NullHandling = ReturnNull (default) for void ForgeInto
     if (target == null) throw new global::System.ArgumentNullException(nameof(target));
 
     target.Status = source.Status;
@@ -549,7 +549,16 @@ public partial UserDto Forge(Dictionary<string, object?> source)
         __result.IsActive = __cast_IsActive;
 
     if (source.TryGetValue("Score", out var __v_Score))
-        __result.Score = global::System.Convert.ToDouble(__v_Score);
+    {
+        if (__v_Score is null)
+        {
+            // NullPropertyHandling governs behavior here (default NullForgiving: leave unchanged)
+        }
+        else
+        {
+            __result.Score = global::System.Convert.ToDouble(__v_Score);
+        }
+    }
 
     return __result;
 }
@@ -623,9 +632,9 @@ The generator applies the following conversion hierarchy for each destination pr
 | 1 | Pattern match (`is T`) | `value is int x` | Exact type match, reference conversions |
 | 2 | Nullable unwrap | `value is int x` for `int?` dest | `object?` → `Nullable<T>` |
 | 3 | `Convert.ToXxx()` | `Convert.ToDouble(value)` | Numeric widening (int→double), string→number |
-| 4 | `Enum.Parse` / cast | `(MyEnum)(int)value` or `Enum.Parse<MyEnum>((string)value!)` | String→enum, int→enum |
-| 5 | Nested `[ForgeDictionary]` | `Forge((Dictionary<string, object?>)value!)` | Nested dictionary → nested object |
-| 6 | Auto-wired forge method | `Forge((SourceType)value!)` | Complex nested types |
+| 4 | `Enum.Parse` / cast | `value is int i ? (MyEnum)i : Enum.Parse<MyEnum>((string)value!)` | String→enum, int→enum |
+| 5 | Nested `[ForgeDictionary]` | `value is global::System.Collections.Generic.IDictionary<string, object?> d ? Forge(d) : /* skip/throw */` | Nested dictionary → nested object |
+| 6 | Auto-wired forge method | `value is SourceType s ? Forge(s) : /* skip/throw */` | Complex nested types |
 | 7 | `ToString()` | `value?.ToString()` | Any → string (fallback) |
 
 The generator picks the **first applicable** strategy at compile time. If no strategy applies, the property is skipped and **FM0037** is emitted.
@@ -760,12 +769,13 @@ public partial Dictionary<string, object?> Forge(UserDto source)
 
 ### From v1.3 to v1.4
 
-**No breaking changes.** All new features are additive:
+v1.4 introduces no required source changes and no API-surface breaks, but there is an intentional **behavior change** in default mapping semantics due to auto-flattening:
 
-1. **Auto-flattening is on by default** — properties that were previously unmatched (producing FM0006) may now resolve via auto-flattening. To restore v1.3 behavior:
+1. **Auto-flattening is on by default (behavior change with opt-out)** — destination properties that were previously unmatched (producing FM0006 by default) may now be mapped via auto-flattening, which can change runtime results compared to v1.3 in previously warning-only scenarios. To restore v1.3 behavior for a given map, disable auto-flattening:
    ```csharp
    [ForgeMap(AutoFlatten = false)]
    ```
+   or set the assembly-level default via `[ForgeMapDefaults(AutoFlatten = false)]`.
 
 2. **Explicit `[ForgeProperty]` with dot-paths still works** — auto-flattening produces identical codegen. Explicit attributes take precedence and can be gradually removed
 
