@@ -489,21 +489,24 @@ public sealed class ForgeDictionaryAttribute : Attribute
     public PropertyMatching KeyMatching { get; set; } = PropertyMatching.ByName;
 
     /// <summary>
-    /// Specifies the behavior when a dictionary key is missing for a destination property.
-    /// Default is Skip (leave property at its default value).
+    /// Specifies the behavior when a dictionary key is missing for a destination property,
+    /// or when the key exists but its value is unusable (wrong type or not convertible).
+    /// Default is Skip (leave the property at its default value).
     /// </summary>
     public MissingKeyBehavior MissingKeyBehavior { get; set; } = MissingKeyBehavior.Skip;
 }
 
 /// <summary>
-/// Specifies behavior when a dictionary key is missing for a destination property.
+/// Specifies behavior when a dictionary key is missing or when the value is unusable
+/// (wrong type or not convertible to the destination property type).
 /// </summary>
 public enum MissingKeyBehavior
 {
     /// <summary>Leave the destination property at its default value.</summary>
     Skip,
 
-    /// <summary>Throw a KeyNotFoundException.</summary>
+    /// <summary>Throw when the key is missing (KeyNotFoundException) or the value
+    /// is unusable (InvalidCastException).</summary>
     Throw
 }
 ```
@@ -722,7 +725,8 @@ public Dictionary<string, object?> Forge(UserDto source)
 |----------|----------|
 | Key exists, value is correct type | Assign via pattern match |
 | Key exists, value is convertible type | Assign via `Convert.ToXxx` or cast |
-| Key exists, value is wrong type | Skip (MissingKeyBehavior.Skip) or throw (MissingKeyBehavior.Throw) |
+| Key exists, value is convertible type | Assign via `Convert.ToXxx` or cast |
+| Key exists, value is wrong type (no applicable conversion) | Skip or throw per `MissingKeyBehavior` |
 | Key missing | Skip or throw per `MissingKeyBehavior` |
 | Key exists, value is `null` | Follows `NullPropertyHandling` |
 | Source dictionary is `null` | Follows `NullHandling` (ReturnNull or ThrowException) |
