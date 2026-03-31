@@ -555,7 +555,12 @@ public partial UserDto Forge(Dictionary<string, object?> source)
     {
         if (__v_Score is null)
         {
-            // NullPropertyHandling governs behavior here (default NullForgiving: leave unchanged)
+            // NullPropertyHandling governs behavior:
+            // NullForgiving (default): __result.Score = default!;
+            // CoalesceToDefault: __result.Score = 0.0;
+            // SkipNull: skip assignment
+            // ThrowException: throw
+            __result.Score = default!;
         }
         else
         {
@@ -605,6 +610,8 @@ public partial ConfigSettings Forge(IDictionary<string, object?> source)
 
 **Strict mode (throw on missing key):**
 
+Strict mode separates missing-key, null-value, and wrong-type cases. Missing keys throw `KeyNotFoundException`. Null values follow `NullPropertyHandling`. Wrong types throw `InvalidCastException`.
+
 ```csharp
 public partial StrictDto ForgeStrict(Dictionary<string, object?> source)
 {
@@ -612,17 +619,27 @@ public partial StrictDto ForgeStrict(Dictionary<string, object?> source)
 
     var __result = new StrictDto();
 
-    if (source.TryGetValue("Name", out var __v_Name) && __v_Name is string __cast_Name)
+    if (!source.TryGetValue("Name", out var __v_Name))
+        throw new global::System.Collections.Generic.KeyNotFoundException(
+            $"Required key 'Name' not found in source dictionary.");
+    if (__v_Name is null)
+        __result.Name = null!; // NullPropertyHandling (default NullForgiving)
+    else if (__v_Name is string __cast_Name)
         __result.Name = __cast_Name;
     else
-        throw new global::System.Collections.Generic.KeyNotFoundException(
-            $"Required key 'Name' not found or not convertible to 'System.String' in source dictionary.");
+        throw new global::System.InvalidCastException(
+            $"Value for key 'Name' is not convertible to 'System.String'.");
 
-    if (source.TryGetValue("Age", out var __v_Age) && __v_Age is int __cast_Age)
+    if (!source.TryGetValue("Age", out var __v_Age))
+        throw new global::System.Collections.Generic.KeyNotFoundException(
+            $"Required key 'Age' not found in source dictionary.");
+    if (__v_Age is null)
+    { /* NullPropertyHandling: for non-nullable value type, keep default */ }
+    else if (__v_Age is int __cast_Age)
         __result.Age = __cast_Age;
     else
-        throw new global::System.Collections.Generic.KeyNotFoundException(
-            $"Required key 'Age' not found or not convertible to 'System.Int32' in source dictionary.");
+        throw new global::System.InvalidCastException(
+            $"Value for key 'Age' is not convertible to 'System.Int32'.");
 
     return __result;
 }
@@ -648,7 +665,7 @@ For numeric types specifically:
 
 | Destination Type | Generated Code |
 |------------------|----------------|
-| `int` | `value is int x` |
+| `int` | `value is int x` (fallback: `Convert.ToInt32(value)`) |
 | `long` | `value is long x` (fallback: `Convert.ToInt64(value)`) |
 | `double` | `value is double x` (fallback: `Convert.ToDouble(value)`) |
 | `decimal` | `value is decimal x` (fallback: `Convert.ToDecimal(value)`) |
