@@ -236,7 +236,7 @@ internal sealed partial class ForgeCodeEmitter
 
             // Collect remaining property assignments for object initializer
             var remainingDestProps = destProperties
-                .Where(p => p.SetMethod != null && !ctorCoveredDestProps.Contains(p.Name))
+                .Where(p => p.SetMethod != null && p.SetMethod.DeclaredAccessibility >= Accessibility.Internal && !ctorCoveredDestProps.Contains(p.Name))
                 .ToList();
 
             var initAssignments = new List<(string Name, string Expr)>();
@@ -317,7 +317,7 @@ internal sealed partial class ForgeCodeEmitter
             var preConstructionBlocksAfterForge = new List<string>();
 
             var afterForgeAssignments = new List<(string Name, string Expr)>();
-            foreach (var destProp in destProperties.Where(p => p.SetMethod != null))
+            foreach (var destProp in destProperties.Where(p => p.SetMethod != null && p.SetMethod.DeclaredAccessibility >= Accessibility.Internal))
             {
                 var assignment = GeneratePropertyAssignment(
                     destProp, sourceParam, sourceType, sourceProperties,
@@ -370,7 +370,7 @@ internal sealed partial class ForgeCodeEmitter
             var preConstructionBlocksPlain = new List<string>();
             var plainAssignments = new List<(string Name, string Expr)>();
 
-            foreach (var destProp in destProperties.Where(p => p.SetMethod != null))
+            foreach (var destProp in destProperties.Where(p => p.SetMethod != null && p.SetMethod.DeclaredAccessibility >= Accessibility.Internal))
             {
                 var assignment = GeneratePropertyAssignment(
                     destProp, sourceParam, sourceType, sourceProperties,

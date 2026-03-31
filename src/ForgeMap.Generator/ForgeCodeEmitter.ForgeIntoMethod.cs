@@ -60,7 +60,7 @@ internal sealed partial class ForgeCodeEmitter
 
         // Get mappable properties
         var sourceProperties = GetMappableProperties(sourceNamedType);
-        var destProperties = GetMappableProperties(destinationType).Where(p => p.SetMethod != null && !p.SetMethod.IsInitOnly);
+        var destProperties = GetMappableProperties(destinationType).Where(p => p.SetMethod != null && !p.SetMethod.IsInitOnly && p.SetMethod.DeclaredAccessibility >= Accessibility.Internal);
 
         foreach (var destProp in destProperties)
         {
@@ -391,17 +391,25 @@ internal sealed partial class ForgeCodeEmitter
         // Determine the destination collection kind
         if (destCollectionType is IArrayTypeSymbol)
         {
-            // T[] target — arrays need count up front; safe because array sources have .Length
-            // and list sources have .Count; IEnumerable sources use .Count() (LINQ)
             var destElemDisplay = destElementType.ToDisplayString();
-            var lengthExpr = GetCollectionLengthExpression(sourceCollectionType, sourceParam);
-            sb.AppendLine($"            var result = new {destElemDisplay}[{lengthExpr}];");
-            sb.AppendLine($"            var i = 0;");
-            sb.AppendLine($"            foreach (var item in {sourceParam})");
-            sb.AppendLine("            {");
-            sb.AppendLine($"                result[i++] = {method.Name}(item);");
-            sb.AppendLine("            }");
-            sb.AppendLine("            return result;");
+
+            // For sources with a cheap Count/Length, pre-size the array and fill it.
+            if (HasCheapCount(sourceCollectionType))
+            {
+                var lengthExpr = GetCollectionLengthExpression(sourceCollectionType, sourceParam);
+                sb.AppendLine($"            var result = new {destElemDisplay}[{lengthExpr}];");
+                sb.AppendLine($"            var i = 0;");
+                sb.AppendLine($"            foreach (var item in {sourceParam})");
+                sb.AppendLine("            {");
+                sb.AppendLine($"                result[i++] = {method.Name}(item);");
+                sb.AppendLine("            }");
+                sb.AppendLine("            return result;");
+            }
+            else
+            {
+                // For general IEnumerable<T> sources, avoid double-enumeration by using a single-pass Select+ToArray.
+                sb.AppendLine($"            return {sourceParam}.Select(item => {method.Name}(item)).ToArray();");
+            }
         }
         else if (destCollectionType is INamedTypeSymbol destNamedType)
         {
