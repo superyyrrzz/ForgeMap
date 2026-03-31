@@ -693,7 +693,7 @@ The `Convert.ToXxx` fallback handles JSON deserializers that parse `42` as `long
 When `[ReverseForge]` is present on a `[ForgeDictionary]` method, the generator creates the inverse mapping:
 
 ```csharp
-// Forward (generated from [ForgeDictionary] + [ReverseForge]):
+// Forward (user-declared signature; implementation generated from [ForgeDictionary] + [ReverseForge]):
 public partial UserDto Forge(Dictionary<string, object?> source);
 
 // Reverse (auto-generated):
@@ -724,7 +724,6 @@ public Dictionary<string, object?> Forge(UserDto source)
 | Scenario | Behavior |
 |----------|----------|
 | Key exists, value is correct type | Assign via pattern match |
-| Key exists, value is convertible type | Assign via `Convert.ToXxx` or cast |
 | Key exists, value is convertible type | Assign via `Convert.ToXxx` or cast |
 | Key exists, value is wrong type (no applicable conversion) | Skip or throw per `MissingKeyBehavior` |
 | Key missing | Skip or throw per `MissingKeyBehavior` |
