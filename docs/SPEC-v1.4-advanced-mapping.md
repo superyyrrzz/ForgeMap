@@ -569,7 +569,7 @@ public partial UserDto Forge(Dictionary<string, object?> source)
 
 **Case-insensitive key matching:**
 
-When `KeyMatching = PropertyMatching.ByNameCaseInsensitive`, the generator uses a case-insensitive lookup approach:
+When `KeyMatching = PropertyMatching.ByNameCaseInsensitive`, the generator uses ordinal-ignore-case comparisons to match ForgeMap's existing `ByNameCaseInsensitive` semantics:
 
 ```csharp
 public partial ConfigSettings Forge(IDictionary<string, object?> source)
@@ -580,20 +580,22 @@ public partial ConfigSettings Forge(IDictionary<string, object?> source)
 
     foreach (var __kvp in source)
     {
-        switch (__kvp.Key.ToUpperInvariant())
+        var __key = __kvp.Key;
+
+        if (string.Equals(__key, "HostName", global::System.StringComparison.OrdinalIgnoreCase))
         {
-            case "HOSTNAME":
-                if (__kvp.Value is string __cast_HostName)
-                    __result.HostName = __cast_HostName;
-                break;
-            case "PORT":
-                if (__kvp.Value is int __cast_Port)
-                    __result.Port = __cast_Port;
-                break;
-            case "USESSSL":
-                if (__kvp.Value is bool __cast_UsesSsl)
-                    __result.UsesSsl = __cast_UsesSsl;
-                break;
+            if (__kvp.Value is string __cast_HostName)
+                __result.HostName = __cast_HostName;
+        }
+        else if (string.Equals(__key, "Port", global::System.StringComparison.OrdinalIgnoreCase))
+        {
+            if (__kvp.Value is int __cast_Port)
+                __result.Port = __cast_Port;
+        }
+        else if (string.Equals(__key, "UsesSsl", global::System.StringComparison.OrdinalIgnoreCase))
+        {
+            if (__kvp.Value is bool __cast_UsesSsl)
+                __result.UsesSsl = __cast_UsesSsl;
         }
     }
 
