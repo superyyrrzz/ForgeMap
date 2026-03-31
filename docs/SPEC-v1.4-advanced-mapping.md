@@ -637,8 +637,8 @@ The generator applies the following conversion hierarchy for each destination pr
 | 1 | Pattern match (`is T`) | `value is int x` | Exact type match, reference conversions |
 | 2 | Nullable unwrap | `value is int x` for `int?` dest | `object?` → `Nullable<T>` |
 | 3 | `Convert.ToXxx()` | `Convert.ToDouble(value)` | Numeric widening (int→double), string→number |
-| 4 | `Enum.Parse` / cast | `value is int i ? (MyEnum)i : Enum.Parse<MyEnum>((string)value!)` | String→enum, int→enum |
-| 5 | Nested `[ForgeDictionary]` | `value is IDictionary<string, object?> or IReadOnlyDictionary<string, object?> d ? Forge(d) : /* skip/throw */` | Nested dictionary-like → nested object |
+| 4 | `Enum.Parse` / cast | `value is int i ? (MyEnum)i : value is string s ? Enum.Parse<MyEnum>(s) : /* skip/throw */` | String→enum, int→enum |
+| 5 | Nested `[ForgeDictionary]` | `value is IDictionary<string, object?> d ? Forge(d) : value is IReadOnlyDictionary<string, object?> rd ? Forge(rd) : /* skip/throw */` | Nested dictionary-like → nested object |
 | 6 | Auto-wired forge method | `value is SourceType s ? Forge(s) : /* skip/throw */` | Complex nested types |
 | 7 | `ToString()` | `value?.ToString()` | Any → string (fallback) |
 
@@ -807,7 +807,7 @@ dotnet_diagnostic.FM0033.severity = suggestion
 | Collection `Sync` only supports `List<T>` destinations with `RemoveAll` | `ICollection<T>` lacks `RemoveAll`; generating LINQ-based removal adds complexity | Use `Replace` strategy or implement sync manually |
 | Auto-flattening max depth: 4 segments | Prevents combinatorial explosion in segment matching | Use explicit `[ForgeProperty]` with dot-path for deeper nesting |
 | `[ForgeDictionary]` value types: `object?` only | `Dictionary<string, string>` or other typed dictionaries use standard property mapping | Use `Dictionary<string, object?>` or wrap in an adapter |
-| Case-insensitive dictionary lookup is O(n) with case-sensitive comparers | When `Dictionary<string, object?>` uses the default (case-sensitive) comparer, case-insensitive matching requires scanning keys | For O(1) case-insensitive lookup, construct the dictionary with `StringComparer.OrdinalIgnoreCase` |
+| Case-insensitive dictionary lookup is O(n) regardless of dictionary comparer | Generated code performs a linear scan over `source` keys and compares via `string.Equals(..., OrdinalIgnoreCase)` | For better performance, pre-normalize keys or use case-sensitive lookup |
 | `ExistingTarget` auto-wiring requires a suitable `void` method with `[UseExistingValue]` parameter | Auto-wiring selects methods by signature and attributes, not by method name | Use the conventional `ForgeInto` method name or explicit `[ForgeWith]` to control/disambiguate mapping |
 
 ---

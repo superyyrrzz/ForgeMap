@@ -238,10 +238,10 @@ Supports configurable key matching (case-sensitive/insensitive), missing key beh
 | `Entity ↔ DTO` round-trips | `[ReverseForge]` auto-generates the inverse |
 | Deep inheritance hierarchies | `[ForgeAllDerived]` auto-discovers subtypes |
 | Mixed nullability across large codebases | 4 strategies, per-property control |
-| Nested object flattening | Auto-flattening with `init`/`required` support |
-| EF Core in-place entity updates | `ExistingTarget = true` with collection sync |
-| Dynamic / dictionary data sources | `[ForgeDictionary]` with compile-time type safety |
+| Nested object flattening | Auto-flattening with `init`/`required` support *(planned v1.4)* |
+| EF Core in-place entity updates | `ExistingTarget = true` with collection sync *(planned v1.4)* |
+| Dynamic / dictionary data sources | `[ForgeDictionary]` with compile-time type safety *(planned v1.4)* |
 | Migrating from AutoMapper | 1:1 concept mapping, automated migration skill |
 | Declarative lifecycle hooks | `[BeforeForge]` / `[AfterForge]` with ordered execution |
 
-ForgeMap provides comparable performance to Mapperly with additional support for auto-discovered polymorphism, declarative hooks, granular null handling, auto-flattening with `init`/`required` support, EF Core-friendly nested updates, dictionary mapping, and a direct migration path from AutoMapper.
+ForgeMap provides comparable performance to Mapperly with additional support for auto-discovered polymorphism, declarative hooks, granular null handling, and a direct migration path from AutoMapper, including planned v1.4 features like auto-flattening with `init`/`required` support, EF Core-friendly nested updates, and dictionary mapping.
