@@ -14,8 +14,8 @@ The table below compares all three tools across reverse mapping, polymorphic dis
 | **Performance (simple flat mapping)** | ~80 ns | ~16 ns | ~14.5 ns |
 | **License** | RPL-1.5 / commercial (15.0+) | Apache 2.0 | MIT |
 | **Auto reverse mapping** | `.ReverseMap()` | ❌ Manual only | ✅ `[ReverseForge]` with compile-time validation |
-| **Auto-flattening** | ✅ Runtime convention | ✅ Compile-time PascalCase (❌ broken with `init`/`required`) | ✅ Compile-time PascalCase with `init`/`required` support |
-| **Unflattening** | `.ReverseMap()` (runtime) | Manual `MapProperty` paths | ✅ Auto via `[ReverseForge]` |
+| **Auto-flattening** | ✅ Runtime convention | ✅ Compile-time PascalCase (❌ broken with `init`/`required`) | ✅ Compile-time PascalCase with `init`/`required` support *(planned v1.4)* |
+| **Unflattening** | `.ReverseMap()` (runtime) | Manual `MapProperty` paths | ✅ Auto via `[ReverseForge]` *(planned v1.4)* |
 | **Polymorphic dispatch** | Runtime reflection | Manual `[MapDerivedType]` per type | ✅ Auto-discovered `[ForgeAllDerived]` |
 | **Abstract destination mapping** | Runtime `.As<T>()` | `[MapDerivedType]` dispatch | ✅ Auto-discovered dispatch via `[ForgeAllDerived]` |
 | **Null handling strategies** | `NullSubstitute`, `AllowNullCollections` | `AllowNullPropertyAssignment`, `ThrowOnPropertyMappingNullMismatch`, `ThrowOnMappingNullMismatch` | ✅ 4 strategies (`NullForgiving`, `SkipNull`, `CoalesceToDefault`, `ThrowException`), 3-tier config |
@@ -26,9 +26,9 @@ The table below compares all three tools across reverse mapping, polymorphic dis
 | **Mutation mapping** | `Map(src, dest)` | `Map(src, dest)` | ✅ Partial-method mutation pattern with `[UseExistingValue]` destination |
 | **Collection auto-generation** | Runtime | Auto-generated | ✅ Full (`T[]`, `List<T>`, `IEnumerable<T>`, `HashSet<T>`, etc.) |
 | **Inline collection mapping** | N/A | Auto-generated | ✅ Generates inline iteration for collection properties, no explicit method needed |
-| **Nested existing-target update** | `Map(src, dest)` updates nested (runtime) | ❌ Not supported ([#884](https://github.com/riok/mapperly/issues/884), [#1311](https://github.com/riok/mapperly/issues/1311)) | ✅ `ExistingTarget = true` with collection sync strategies |
-| **Dictionary→Object mapping** | ❌ | ❌ Not supported ([#1309](https://github.com/riok/mapperly/issues/1309)) | ✅ `[ForgeDictionary]` with type-safe conversions |
-| **Diagnostics** | Runtime exceptions | ~95 diagnostics (RMG001–RMG095) | 38 diagnostics (FM0001–FM0038) |
+| **Nested existing-target update** | `Map(src, dest)` updates nested (runtime) | ❌ Not supported ([#884](https://github.com/riok/mapperly/issues/884), [#1311](https://github.com/riok/mapperly/issues/1311)) | ✅ `ExistingTarget = true` with collection sync strategies *(planned v1.4)* |
+| **Dictionary→Object mapping** | ❌ | ❌ Not supported ([#1309](https://github.com/riok/mapperly/issues/1309)) | ✅ `[ForgeDictionary]` with type-safe conversions *(planned v1.4)* |
+| **Diagnostics** | Runtime exceptions | ~95 diagnostics (RMG001–RMG095) | 27 diagnostics (FM0001–FM0027), 11 more planned for v1.4 (FM0028–FM0038) |
 | **Debuggable generated code** | ❌ | ✅ | ✅ |
 
 ---
@@ -175,7 +175,7 @@ ForgeMap ships with an [**automated migration skill**](../.claude/skills/automap
 
 ## Compile-Time Safety
 
-ForgeMap provides **38 diagnostic rules** (FM0001–FM0038) that catch mapping errors at compile time:
+ForgeMap currently provides **27 diagnostic rules** (FM0001–FM0027) that catch mapping errors at compile time, with an additional 11 rules (FM0028–FM0038) planned for v1.4:
 
 - **Structural errors** — non-partial class/method, missing constructors, circular dependencies
 - **Mapping gaps** — unmapped source/destination properties, unmatched constructor parameters

@@ -376,9 +376,11 @@ public partial OrderDto Forge(Order source)
 | `NullPropertyHandling` | Intermediate null | Leaf null |
 |-------------------------|-------------------|-----------|
 | `NullForgiving` | Path evaluates to `null`, assigned with `!` | `null!` |
-| `SkipNull` | Skip assignment | Skip assignment |
+| `SkipNull` | Skip assignment for regular setters; for `init`/`required` members behaves as `NullForgiving` | Skip assignment for regular setters; for `init`/`required` members behaves as `NullForgiving` |
 | `CoalesceToDefault` | Coalesce to type default | Coalesce to type default |
 | `ThrowException` | Throw | Throw |
+
+**`init`/`required` members and `SkipNull`**: For destination members that are `init`-only or marked `required`, ForgeMap cannot omit the assignment in an object initializer without breaking required-member initialization or preventing assignment to `init`-only properties. When such members are mapped with `NullPropertyHandling.SkipNull`, ForgeMap emits code equivalent to `NullForgiving` (assigning `null!` in the initializer) and may additionally emit a diagnostic to highlight the configuration mismatch.
 
 ### Unflattening (Reverse Direction)
 
