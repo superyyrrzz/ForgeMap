@@ -124,7 +124,7 @@ internal sealed partial class ForgeCodeEmitter
                     $"{sourceLocalName}.Select(__collItem => {methodName}(__collItem))");
             }
 
-            // HashSet<U>: foreach + Add (no capacity ctor per spec)
+            // HashSet<U>: foreach + Add
             if (originalDef == "System.Collections.Generic.HashSet<T>")
             {
                 var sb = new StringBuilder();

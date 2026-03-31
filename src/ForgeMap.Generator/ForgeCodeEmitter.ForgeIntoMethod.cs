@@ -422,7 +422,7 @@ internal sealed partial class ForgeCodeEmitter
             }
             else if (originalDef == "System.Collections.Generic.HashSet<T>")
             {
-                // HashSet<T> - foreach + Add (no capacity ctor per spec)
+                // HashSet<T> - foreach + Add
                 var destElemDisplay = destElementType.ToDisplayString();
                 sb.AppendLine($"            var result = new global::System.Collections.Generic.HashSet<{destElemDisplay}>();");
                 sb.AppendLine($"            foreach (var item in {sourceParam})");
