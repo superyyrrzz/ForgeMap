@@ -507,8 +507,12 @@ public enum MissingKeyBehavior
     /// <summary>Leave the destination property at its default value.</summary>
     Skip,
 
-    /// <summary>Throw when the key is missing (KeyNotFoundException) or the value
-    /// is unusable (InvalidCastException).</summary>
+    /// <summary>
+    /// Throw when the key is missing (KeyNotFoundException), when there is no
+    /// applicable conversion (InvalidCastException), or when a framework conversion
+    /// helper (e.g., Convert.ToXxx, Enum.Parse) throws; such exceptions
+    /// (FormatException, OverflowException, etc.) are propagated as-is.
+    /// </summary>
     Throw
 }
 ```
@@ -639,7 +643,7 @@ public partial StrictDto ForgeStrict(Dictionary<string, object?> source)
         throw new global::System.Collections.Generic.KeyNotFoundException(
             $"Required key 'Age' not found in source dictionary.");
     if (__v_Age is null)
-    { /* NullPropertyHandling: for non-nullable value type, keep default */ }
+    { /* NullPropertyHandling governs: keep default (NullForgiving/SkipNull), coalesce (CoalesceToDefault), or throw (ThrowException) */ }
     else if (__v_Age is int __cast_Age)
         __result.Age = __cast_Age;
     else
