@@ -264,7 +264,7 @@ internal sealed partial class ForgeCodeEmitter
                 }
                 if (strategy == 3) // ThrowException
                 {
-                    return $"__collInit_{destProp.Name} ?? throw new global::System.ArgumentNullException(\"{sourceExpr}\", \"Cannot assign null source property '{sourceExpr}' to non-nullable destination '{destProp.ContainingType.Name}.{destProp.Name}'.\")";
+                    return $"__collInit_{destProp.Name} ?? throw new global::System.ArgumentNullException(\"{destProp.Name}\", \"Cannot assign null source property '{sourceExpr}' to non-nullable destination '{destProp.ContainingType.Name}.{destProp.Name}'.\")";
                 }
                 return $"__collInit_{destProp.Name}!"; // NullForgiving (or SkipNull fallback)
             }
@@ -298,7 +298,7 @@ internal sealed partial class ForgeCodeEmitter
                 }
                 else if (strategy == 3) // ThrowException
                 {
-                    postBlock.AppendLine($"                throw new global::System.ArgumentNullException(\"{sourceExpr}\", \"Cannot assign null source property '{sourceExpr}' to non-nullable destination '{destProp.ContainingType.Name}.{destProp.Name}'.\");");
+                    postBlock.AppendLine($"                throw new global::System.ArgumentNullException(\"{destProp.Name}\", \"Cannot assign null source property '{sourceExpr}' to non-nullable destination '{destProp.ContainingType.Name}.{destProp.Name}'.\");");
                 }
                 else // NullForgiving (strategy == 0)
                 {
@@ -536,7 +536,7 @@ internal sealed partial class ForgeCodeEmitter
                 }
                 else if (strategy == 3)
                 {
-                    sb.AppendLine($"                throw new global::System.ArgumentNullException(\"{sourceExpr}\", \"Cannot assign null source property '{sourceExpr}' to non-nullable destination '{destProp.ContainingType.Name}.{destProp.Name}'.\");");
+                    sb.AppendLine($"                throw new global::System.ArgumentNullException(\"{destProp.Name}\", \"Cannot assign null source property '{sourceExpr}' to non-nullable destination '{destProp.ContainingType.Name}.{destProp.Name}'.\");");
                 }
                 else
                 {

@@ -326,7 +326,7 @@ internal sealed partial class ForgeCodeEmitter
             }
 
             var remainingDestProps = destProperties
-                .Where(p => p.SetMethod != null && !ctorCoveredDestProps.Contains(p.Name))
+                .Where(p => p.SetMethod != null && p.SetMethod.DeclaredAccessibility >= Accessibility.Internal && !p.SetMethod.IsInitOnly && !ctorCoveredDestProps.Contains(p.Name))
                 .ToList();
 
             var initAssignments = new List<(string Name, string Expr)>();
@@ -364,7 +364,7 @@ internal sealed partial class ForgeCodeEmitter
             sb.AppendLine($"            return new {reverseDestType.ToDisplayString()}");
             sb.AppendLine("            {");
 
-            foreach (var destProp in destProperties)
+            foreach (var destProp in destProperties.Where(p => p.SetMethod != null && p.SetMethod.DeclaredAccessibility >= Accessibility.Internal))
             {
                 var assignment = GenerateReversePropertyAssignment(
                     destProp, sourceParam, reverseSourceType, sourceProperties,
