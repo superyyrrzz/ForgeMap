@@ -45,9 +45,10 @@ public sealed class ForgePropertyAttribute : Attribute
     /// <summary>
     /// When true, the destination property's existing value is updated in place
     /// rather than replaced with a new instance. Requires the destination property
-    /// to be a non-null reference type with a getter. Used with [UseExistingValue]
-    /// mutation methods to preserve object identity (e.g., EF Core change tracking).
-    /// Default is false.
+    /// to be a readable reference-type property. Runtime null values on the destination
+    /// are handled according to the configured NullPropertyHandling (skip/coalesce/throw).
+    /// Used with [UseExistingValue] mutation methods to preserve object identity
+    /// (e.g., EF Core change tracking). Default is false.
     /// </summary>
     public bool ExistingTarget { get; set; }
 }
@@ -388,8 +389,8 @@ When `[ReverseForge]` is used on a method with auto-flattened properties, the re
 [ReverseForge]
 public partial OrderDto Forge(Order source);
 
-// Reverse generated (unflattening):
-public partial Order Forge(OrderDto source)
+// Reverse generated (unflattening) — emitted by the generator:
+public Order Forge(OrderDto source)
 {
     if (source == null) return null!;
 
@@ -633,7 +634,7 @@ The generator applies the following conversion hierarchy for each destination pr
 | 2 | Nullable unwrap | `value is int x` for `int?` dest | `object?` → `Nullable<T>` |
 | 3 | `Convert.ToXxx()` | `Convert.ToDouble(value)` | Numeric widening (int→double), string→number |
 | 4 | `Enum.Parse` / cast | `value is int i ? (MyEnum)i : Enum.Parse<MyEnum>((string)value!)` | String→enum, int→enum |
-| 5 | Nested `[ForgeDictionary]` | `value is global::System.Collections.Generic.IDictionary<string, object?> d ? Forge(d) : /* skip/throw */` | Nested dictionary → nested object |
+| 5 | Nested `[ForgeDictionary]` | `value is IDictionary<string, object?> or IReadOnlyDictionary<string, object?> d ? Forge(d) : /* skip/throw */` | Nested dictionary-like → nested object |
 | 6 | Auto-wired forge method | `value is SourceType s ? Forge(s) : /* skip/throw */` | Complex nested types |
 | 7 | `ToString()` | `value?.ToString()` | Any → string (fallback) |
 
@@ -672,7 +673,7 @@ When `[ReverseForge]` is present on a `[ForgeDictionary]` method, the generator 
 public partial UserDto Forge(Dictionary<string, object?> source);
 
 // Reverse (auto-generated):
-public partial Dictionary<string, object?> Forge(UserDto source)
+public Dictionary<string, object?> Forge(UserDto source)
 {
     if (source == null) return null!;
 
@@ -802,8 +803,8 @@ dotnet_diagnostic.FM0033.severity = suggestion
 | Collection `Sync` only supports `List<T>` destinations with `RemoveAll` | `ICollection<T>` lacks `RemoveAll`; generating LINQ-based removal adds complexity | Use `Replace` strategy or implement sync manually |
 | Auto-flattening max depth: 4 segments | Prevents combinatorial explosion in segment matching | Use explicit `[ForgeProperty]` with dot-path for deeper nesting |
 | `[ForgeDictionary]` value types: `object?` only | `Dictionary<string, string>` or other typed dictionaries use standard property mapping | Use `Dictionary<string, object?>` or wrap in an adapter |
-| Case-insensitive dictionary lookup iterates all keys | No O(1) case-insensitive `TryGetValue` on `Dictionary<string, object?>` | Provide a case-insensitive `Dictionary` via `StringComparer.OrdinalIgnoreCase` constructor |
-| `ExistingTarget` auto-wiring requires matching `ForgeInto` method name | Auto-wiring searches for void methods with `[UseExistingValue]` parameter | Declare the `ForgeInto` method or use explicit `[ForgeWith]` |
+| Case-insensitive dictionary lookup is O(n) with case-sensitive comparers | When `Dictionary<string, object?>` uses the default (case-sensitive) comparer, case-insensitive matching requires scanning keys | For O(1) case-insensitive lookup, construct the dictionary with `StringComparer.OrdinalIgnoreCase` |
+| `ExistingTarget` auto-wiring requires a suitable `void` method with `[UseExistingValue]` parameter | Auto-wiring selects methods by signature and attributes, not by method name | Use the conventional `ForgeInto` method name or explicit `[ForgeWith]` to control/disambiguate mapping |
 
 ---
 
