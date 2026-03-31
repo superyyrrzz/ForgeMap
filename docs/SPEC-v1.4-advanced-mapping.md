@@ -213,6 +213,7 @@ if (source.Items is { } __src_Items && target.Items is { } __tgt_Items)
 | `ExistingTarget = true` on non-mutation method | FM0028 error |
 | Source property is null | Skip update (leave target property unchanged) |
 | Target property is null, `NullPropertyHandling = SkipNull` | Skip update |
+| Target property is null, `NullPropertyHandling = NullForgiving` | Skip update (equivalent to `SkipNull` — cannot update a null target in place) |
 | Target property is null, `NullPropertyHandling = CoalesceToDefault` | Create new instance, assign |
 | Target property is null, `NullPropertyHandling = ThrowException` | Throw `InvalidOperationException` |
 | No matching `ForgeInto` method (auto-wire) | FM0030 warning, property skipped |
@@ -664,6 +665,8 @@ The generator applies the following conversion hierarchy for each destination pr
 | 7 | `ToString()` | `value?.ToString()` | Any → string (fallback) |
 
 The generator picks the **first applicable** strategy at compile time. If no strategy applies, the property is skipped and **FM0037** is emitted.
+
+For strategies that use framework conversion helpers (e.g., `Convert.ToXxx`, `Enum.Parse`), any exceptions thrown by those helpers (`FormatException`, `OverflowException`, `ArgumentException`, etc.) are propagated as-is; the generator does **not** catch and wrap them into a uniform `InvalidCastException`.
 
 For numeric types specifically:
 
