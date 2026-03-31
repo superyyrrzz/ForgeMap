@@ -245,6 +245,16 @@ internal sealed partial class ForgeCodeEmitter
 
         if (useExistingParam != null)
         {
+            // FM0017: ForgeInto methods must return void and the [UseExistingValue] parameter must be a reference type
+            if (!method.ReturnsVoid || useExistingParam.Type is not { IsReferenceType: true })
+            {
+                ReportDiagnosticIfNotSuppressed(context,
+                    DiagnosticDescriptors.UseExistingValueInvalid,
+                    method.Locations.FirstOrDefault(),
+                    method.Name);
+                return string.Empty;
+            }
+
             destinationType = useExistingParam.Type;
             return GenerateForgeIntoMethod(method, sourceType, destinationType as INamedTypeSymbol, forger, context);
         }

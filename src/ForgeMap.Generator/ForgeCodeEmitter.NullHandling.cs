@@ -61,7 +61,7 @@ internal sealed partial class ForgeCodeEmitter
                 return $"{sourceExpr}!";
 
             case 3: // ThrowException
-                return $"{sourceExpr} ?? throw new global::System.ArgumentNullException(\"{sourceExpr}\", \"Cannot assign null source property '{sourceExpr}' to non-nullable destination '{destTypeName}.{destPropertyName}'.\")";
+                return $"{sourceExpr} ?? throw new global::System.ArgumentNullException(\"{destPropertyName}\", \"Cannot assign null source property '{sourceExpr}' to non-nullable destination '{destTypeName}.{destPropertyName}'.\")";
 
             default:
                 return $"{sourceExpr}!";
