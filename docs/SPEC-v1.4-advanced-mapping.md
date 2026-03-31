@@ -166,10 +166,11 @@ public sealed class ForgePropertyAttribute : Attribute
 public partial void ForgeInto(OrderUpdateDto source, [UseExistingValue] Order target);
 ```
 
-#### Generated Code (Sync strategy)
+#### Generated Code (Sync strategy — requires `List<T>` destination)
 
 ```csharp
 // Collection sync: match by Id, update existing, add new, remove missing
+// Note: RemoveAll is a List<T>-specific API; Sync strategy requires List<T> destinations
 if (source.Items is { } __src_Items && target.Items is { } __tgt_Items)
 {
     var __existing = new global::System.Collections.Generic.Dictionary<int, OrderItem>();
