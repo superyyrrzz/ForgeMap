@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Copilot ACP Companion — drives GitHub Copilot CLI via the Agent Client
- * Protocol (ACP) over stdio for structured, session‑reusable code reviews.
+ * Protocol (ACP) over stdio for structured, session-based code reviews.
  *
  * Usage:  node copilot-acp-companion.mjs review [options]
  */
