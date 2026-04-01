@@ -31,7 +31,7 @@ node ".claude/skills/local-copilot-review-loop/scripts/copilot-acp-companion.mjs
 # Review changes against main branch
 node ".claude/skills/local-copilot-review-loop/scripts/copilot-acp-companion.mjs" review --base main
 
-# Review uncommitted working-tree changes
+# Review staged and unstaged changes vs HEAD (untracked files are not included)
 node ".claude/skills/local-copilot-review-loop/scripts/copilot-acp-companion.mjs" review
 
 # JSON output with focus

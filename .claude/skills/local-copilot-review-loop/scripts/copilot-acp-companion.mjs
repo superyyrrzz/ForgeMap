@@ -345,9 +345,10 @@ async function handleReview(argv) {
   const jsonOutput = Boolean(options.json);
   let timeoutMs = 600000;
   if (options.timeout !== undefined) {
-    timeoutMs = parseInt(options.timeout, 10);
-    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
-      process.stderr.write(`Invalid --timeout value: "${options.timeout}"\n`);
+    const raw = String(options.timeout);
+    timeoutMs = Number(raw);
+    if (!Number.isFinite(timeoutMs) || !Number.isInteger(timeoutMs) || timeoutMs <= 0 || raw !== String(timeoutMs)) {
+      process.stderr.write(`Invalid --timeout value: "${options.timeout}" (must be a positive integer in ms)\n`);
       process.exitCode = 1;
       return;
     }
