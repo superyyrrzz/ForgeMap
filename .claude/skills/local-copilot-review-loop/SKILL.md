@@ -13,7 +13,7 @@ Iterative loop: run ACP-based review → fix findings → re-run → repeat unti
 
 ## Running the CLI
 
-Use the ACP companion script for structured, session-reusable reviews:
+Use the ACP companion script for structured, session-based reviews:
 
 ```bash
 node ".claude/skills/local-copilot-review-loop/scripts/copilot-acp-companion.mjs" review --base <base_ref>
@@ -40,7 +40,7 @@ node ".claude/skills/local-copilot-review-loop/scripts/copilot-acp-companion.mjs
 
 - The companion script manages the ACP lifecycle internally (connect, session, prompt, cleanup)
 - Has a built-in 10-minute timeout; cancels and exits if exceeded
-- Findings are reported as `[file:line] severity: description`
+- Findings are reported as `[file:line] severity (high/medium/low): description`
 
 ## Workflow
 
@@ -56,7 +56,7 @@ node ".claude/skills/local-copilot-review-loop/scripts/copilot-acp-companion.mjs
 
 ### Stop conditions
 
-- CLI output contains no code findings (only praise or "looks good" or "No issues found.")
+- CLI output contains no code findings (only praise or "looks good" or "No issues found." or "No changes found to review.")
 - CLI returns the same findings it already returned (loop detection)
 - 5 iterations reached (safety valve — surface remaining findings to user)
 - Build/test fails after a fix (stop, surface error, let user decide)
