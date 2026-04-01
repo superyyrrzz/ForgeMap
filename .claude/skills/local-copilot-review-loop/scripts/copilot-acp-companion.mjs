@@ -341,7 +341,7 @@ async function handleReview(argv) {
   });
 
   const cwd = path.resolve(options.cwd ?? process.cwd());
-  const base = options.base ?? null;
+  const base = options.base != null && String(options.base).trim() !== "" ? String(options.base).trim() : null;
   const jsonOutput = Boolean(options.json);
   let timeoutMs = 600000;
   if (options.timeout !== undefined) {
