@@ -100,12 +100,21 @@ class AcpClient {
     let useShell = false;
     if (process.platform === "win32") {
       // Try to find the native binary shipped by @github/copilot
-      const npmRoot = spawnSync("npm", ["root", "-g"], { encoding: "utf8", shell: true }).stdout?.trim();
-      if (npmRoot) {
-        const nativeBin = path.join(npmRoot, "@github", "copilot", "node_modules",
-          "@github", "copilot-win32-x64", "copilot.exe");
-        if (fs.existsSync(nativeBin)) {
-          command = nativeBin;
+      const archPackage = {
+        x64: "copilot-win32-x64",
+        arm64: "copilot-win32-arm64",
+        ia32: "copilot-win32-ia32",
+      }[process.arch];
+      if (archPackage) {
+        const npmRoot = spawnSync("npm", ["root", "-g"], { encoding: "utf8", shell: true }).stdout?.trim();
+        if (npmRoot) {
+          const nativeBin = path.join(npmRoot, "@github", "copilot", "node_modules",
+            "@github", archPackage, "copilot.exe");
+          if (fs.existsSync(nativeBin)) {
+            command = nativeBin;
+          } else {
+            useShell = true;
+          }
         } else {
           useShell = true;
         }
@@ -372,12 +381,18 @@ async function handleReview(argv) {
   // ACP session
   const client = new AcpClient(getRepoRoot(cwd));
   let timedOut = false;
-  const timer = setTimeout(async () => {
-    timedOut = true;
-    process.stderr.write("Review timed out. Cancelling...\n");
-    await client.cancel();
-    await client.close();
-    process.exitCode = 1;
+  const timer = setTimeout(() => {
+    (async () => {
+      try {
+        timedOut = true;
+        process.stderr.write("Review timed out. Cancelling...\n");
+        await client.cancel();
+        await client.close();
+        process.exitCode = 1;
+      } catch (err) {
+        process.stderr.write(`ACP timeout error: ${err.message}\n`);
+      }
+    })();
   }, timeoutMs);
   timer.unref?.();
 
