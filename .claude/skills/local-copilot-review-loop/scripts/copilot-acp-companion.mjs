@@ -340,9 +340,9 @@ For each finding, report it as:
 
 If there are no issues, say "No issues found."
 ${focus}
-\`\`\`diff
+\`\`\`\`diff
 ${diffText}
-\`\`\``;
+\`\`\`\``;
 }
 
 // ---------------------------------------------------------------------------
@@ -364,7 +364,11 @@ async function handleReview(argv) {
     const raw = String(options.timeout);
     timeoutMs = Number(raw);
     if (!Number.isFinite(timeoutMs) || !Number.isInteger(timeoutMs) || timeoutMs <= 0 || raw !== String(timeoutMs)) {
-      process.stderr.write(`Invalid --timeout value: "${options.timeout}" (must be a positive integer in ms)\n`);
+      const msg = `Invalid --timeout value: "${options.timeout}" (must be a positive integer in ms)`;
+      process.stderr.write(msg + "\n");
+      if (jsonOutput) {
+        console.log(JSON.stringify({ review: null, stopReason: null, base: base ?? "working-tree", error: msg, exitCode: 1 }));
+      }
       process.exitCode = 1;
       return;
     }
@@ -403,6 +407,9 @@ async function handleReview(argv) {
       try {
         timedOut = true;
         process.stderr.write("Review timed out. Cancelling...\n");
+        if (jsonOutput) {
+          console.log(JSON.stringify({ review: null, stopReason: null, base: base ?? "working-tree", error: "timeout", exitCode: 1 }));
+        }
         await client.cancel();
         await client.close();
         process.exitCode = 1;
