@@ -137,7 +137,7 @@ class AcpClient {
     this.proc.stdout.setEncoding("utf8");
     this.proc.stderr.setEncoding("utf8");
     this.proc.stderr.on("data", (chunk) => { this.stderr += chunk; });
-    this.proc.stdin.on("error", (err) => this.handleExit(err));
+    this.proc.stdin.on("error", (err) => { if (!this.closed) this.handleExit(err); });
     this.proc.on("error", (err) => this.handleExit(err));
     this.proc.on("exit", (code, signal) => {
       this.handleExit(
