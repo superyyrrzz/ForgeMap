@@ -371,7 +371,17 @@ async function handleReview(argv) {
   const focus = positionals.join(" ").trim() || null;
 
   // Collect diff
-  const diff = collectDiff(cwd, base);
+  let diff;
+  try {
+    diff = collectDiff(cwd, base);
+  } catch (err) {
+    process.stderr.write(`Diff collection error: ${err.message}\n`);
+    if (jsonOutput) {
+      console.log(JSON.stringify({ review: null, stopReason: null, base: base ?? "working-tree", error: err.message, exitCode: 1 }));
+    }
+    process.exitCode = 1;
+    return;
+  }
   if (!diff) {
     const msg = "No changes found to review.";
     if (jsonOutput) {
@@ -426,7 +436,7 @@ async function handleReview(argv) {
     process.stderr.write(`ACP error: ${err.message}\n`);
     if (client.stderr) process.stderr.write(client.stderr);
     if (jsonOutput) {
-      console.log(JSON.stringify({ review: null, error: err.message, exitCode: 1 }));
+      console.log(JSON.stringify({ review: null, stopReason: null, base: base ?? "working-tree", error: err.message, exitCode: 1 }));
     }
     process.exitCode = 1;
   } finally {
