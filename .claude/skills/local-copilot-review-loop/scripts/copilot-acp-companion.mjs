@@ -137,6 +137,7 @@ class AcpClient {
     this.proc.stdout.setEncoding("utf8");
     this.proc.stderr.setEncoding("utf8");
     this.proc.stderr.on("data", (chunk) => { this.stderr += chunk; });
+    this.proc.stdin.on("error", (err) => this.handleExit(err));
     this.proc.on("error", (err) => this.handleExit(err));
     this.proc.on("exit", (code, signal) => {
       this.handleExit(
@@ -229,7 +230,12 @@ class AcpClient {
     const id = this.nextId++;
     return new Promise((resolve, reject) => {
       this.pending.set(id, { resolve, reject, method });
-      this.sendMessage({ jsonrpc: "2.0", id, method, params });
+      try {
+        this.sendMessage({ jsonrpc: "2.0", id, method, params });
+      } catch (err) {
+        this.pending.delete(id);
+        reject(err);
+      }
     });
   }
 
