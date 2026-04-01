@@ -278,6 +278,7 @@ class AcpClient {
   handleExit(error) {
     if (this.exitResolved) return;
     this.exitResolved = true;
+    this.closed = true;
     for (const entry of this.pending.values()) {
       entry.reject(error ?? new Error("ACP connection closed."));
     }
