@@ -465,7 +465,7 @@ async function main() {
       break;
     default: {
       const usage =
-        `Usage: copilot-acp-companion.mjs <review> [options]\n` +
+        `Usage: copilot-acp-companion.mjs review [options]\n` +
         `\nSubcommands:\n  review   Run a Copilot code review via ACP\n` +
         `\nOptions:\n` +
         `  --cwd <path>     Working directory (default: cwd)\n` +
