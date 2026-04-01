@@ -49,7 +49,7 @@ function parseArgs(argv, config = {}) {
       }
       if (valueOptions.has(key)) {
         const nextValue = inlineValue ?? argv[index + 1];
-        if (nextValue === undefined) throw new Error(`Missing value for --${rawKey}`);
+        if (nextValue === undefined || (inlineValue === undefined && nextValue.startsWith("-"))) throw new Error(`Missing value for --${rawKey}`);
         options[key] = nextValue;
         if (inlineValue === undefined) index += 1;
         continue;
@@ -63,7 +63,7 @@ function parseArgs(argv, config = {}) {
     if (booleanOptions.has(key)) { options[key] = true; continue; }
     if (valueOptions.has(key)) {
       const nextValue = argv[index + 1];
-      if (nextValue === undefined) throw new Error(`Missing value for -${shortKey}`);
+      if (nextValue === undefined || nextValue.startsWith("-")) throw new Error(`Missing value for -${shortKey}`);
       options[key] = nextValue;
       index += 1;
       continue;

@@ -26,6 +26,9 @@ node ".claude/skills/local-copilot-review-loop/scripts/copilot-acp-companion.mjs
 - `--timeout <ms>` — Timeout in ms (default: 600000 = 10 min)
 - Positional args after flags are treated as additional focus text
 
+**Environment variables:**
+- `COPILOT_ACP_ALLOW_ALL_TOOLS=1` — Passes `--allow-all-tools` to Copilot CLI, broadening tool-execution permissions. Only enable in trusted, controlled environments.
+
 **Examples:**
 ```bash
 # Review changes against main branch
