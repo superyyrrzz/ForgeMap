@@ -296,11 +296,9 @@ function git(args, cwd) {
 function collectDiff(cwd, base) {
   let diff;
   if (base) {
-    diff = git(["diff", `${base}...HEAD`], cwd);
+    diff = git(["diff", "--no-color", "--no-ext-diff", `${base}...HEAD`], cwd);
   } else {
-    const unstaged = git(["diff"], cwd);
-    const staged = git(["diff", "--cached"], cwd);
-    diff = unstaged + staged;
+    diff = git(["diff", "--no-color", "--no-ext-diff", "HEAD"], cwd);
   }
   if (!diff.trim()) return null;
   if (Buffer.byteLength(diff) > MAX_DIFF_BYTES) {
