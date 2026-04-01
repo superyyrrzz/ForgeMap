@@ -114,9 +114,14 @@ class AcpClient {
       }
     }
 
+    const copilotArgs = ["--acp", "--no-auto-update"];
+    if (process.env.COPILOT_ACP_ALLOW_ALL_TOOLS === "1") {
+      copilotArgs.push("--allow-all-tools");
+    }
+
     this.proc = spawn(
       command,
-      ["--acp", "--no-auto-update", "--allow-all-tools"],
+      copilotArgs,
       { cwd: this.cwd, stdio: ["pipe", "pipe", "pipe"], ...(useShell ? { shell: true } : {}) }
     );
 
@@ -278,6 +283,13 @@ function git(args, cwd) {
     encoding: "utf8",
     maxBuffer: 2 * 1024 * 1024,
   });
+  if (result.error) {
+    throw new Error(`Failed to run "git ${args.join(" ")}": ${result.error.message}`);
+  }
+  if (result.status !== 0) {
+    const stderr = (result.stderr ?? "").trim();
+    throw new Error(`"git ${args.join(" ")}" exited with status ${result.status}${stderr ? `: ${stderr}` : ""}`);
+  }
   return result.stdout ?? "";
 }
 
@@ -325,7 +337,7 @@ ${diffText}
 
 async function handleReview(argv) {
   const { options, positionals } = parseArgs(argv, {
-    valueOptions: ["cwd", "base", "model", "timeout"],
+    valueOptions: ["cwd", "base", "timeout"],
     booleanOptions: ["json"],
     aliasMap: { C: "cwd" },
   });
@@ -333,7 +345,15 @@ async function handleReview(argv) {
   const cwd = path.resolve(options.cwd ?? process.cwd());
   const base = options.base ?? null;
   const jsonOutput = Boolean(options.json);
-  const timeoutMs = parseInt(options.timeout ?? "600000", 10);
+  let timeoutMs = 600000;
+  if (options.timeout !== undefined) {
+    timeoutMs = parseInt(options.timeout, 10);
+    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+      process.stderr.write(`Invalid --timeout value: "${options.timeout}"\n`);
+      process.exitCode = 1;
+      return;
+    }
+  }
   const focus = positionals.join(" ").trim() || null;
 
   // Collect diff
@@ -341,7 +361,7 @@ async function handleReview(argv) {
   if (!diff) {
     const msg = "No changes found to review.";
     if (jsonOutput) {
-      console.log(JSON.stringify({ review: msg, exitCode: 0 }));
+      console.log(JSON.stringify({ review: msg, stopReason: null, base: base ?? "working-tree", exitCode: 0 }));
     } else {
       console.log(msg);
     }
@@ -409,7 +429,6 @@ async function main() {
         `\nOptions:\n` +
         `  --cwd <path>     Working directory (default: cwd)\n` +
         `  --base <ref>     Git base ref for diff (default: working tree)\n` +
-        `  --model <name>   Model hint (advisory)\n` +
         `  --json           Output structured JSON\n` +
         `  --timeout <ms>   Timeout in ms (default: 600000)\n`
       );
