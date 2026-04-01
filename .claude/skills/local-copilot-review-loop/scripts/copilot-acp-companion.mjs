@@ -425,6 +425,9 @@ async function handleReview(argv) {
     if (timedOut) return;
     process.stderr.write(`ACP error: ${err.message}\n`);
     if (client.stderr) process.stderr.write(client.stderr);
+    if (jsonOutput) {
+      console.log(JSON.stringify({ review: null, error: err.message, exitCode: 1 }));
+    }
     process.exitCode = 1;
   } finally {
     await client.close();
@@ -442,17 +445,22 @@ async function main() {
     case "review":
       await handleReview(argv);
       break;
-    default:
-      process.stderr.write(
+    default: {
+      const usage =
         `Usage: copilot-acp-companion.mjs <review> [options]\n` +
         `\nSubcommands:\n  review   Run a Copilot code review via ACP\n` +
         `\nOptions:\n` +
         `  --cwd <path>     Working directory (default: cwd)\n` +
         `  --base <ref>     Git base ref for diff (default: working tree)\n` +
         `  --json           Output structured JSON\n` +
-        `  --timeout <ms>   Timeout in ms (default: 600000)\n`
-      );
-      process.exitCode = subcommand ? 1 : 0;
+        `  --timeout <ms>   Timeout in ms (default: 600000)\n`;
+      if (subcommand) {
+        process.stderr.write(usage);
+        process.exitCode = 1;
+      } else {
+        process.stdout.write(usage);
+      }
+    }
   }
 }
 
