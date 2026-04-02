@@ -746,6 +746,10 @@ internal sealed partial class ForgeCodeEmitter
             }
             else
             {
+                ReportDiagnosticIfNotSuppressed(context,
+                    DiagnosticDescriptors.ExistingTargetNoMatchingForgeInto,
+                    method.Locations.FirstOrDefault(),
+                    $"{destProp.Name} (Sync cannot add new items: no forge method for element type conversion)");
                 sb.AppendLine($"                        // Cannot add: no forge method for element type conversion");
             }
 
@@ -778,6 +782,10 @@ internal sealed partial class ForgeCodeEmitter
                 }
                 else
                 {
+                    ReportDiagnosticIfNotSuppressed(context,
+                        DiagnosticDescriptors.ExistingTargetNoMatchingForgeInto,
+                        method.Locations.FirstOrDefault(),
+                        $"{destProp.Name} (Sync CoalesceToDefault cannot add items: no forge method for element type conversion)");
                     sb.AppendLine($"                    // Cannot add: no forge method for element type conversion");
                 }
                 sb.AppendLine($"                }}");
