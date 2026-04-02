@@ -309,13 +309,21 @@ class AcpClient {
             result: { optionId: chosen.optionId },
           });
         } else {
-          // No approval option available — reject to fail closed
-          const reject = options.find(o => o.kind === "reject_once") ?? options[options.length - 1];
-          this.sendMessage({
-            jsonrpc: "2.0",
-            id: msg.id,
-            result: { optionId: reject?.optionId ?? "reject_once" },
-          });
+          // No approval option available — reject using provided reject option or error
+          const reject = options.find(o => o.kind === "reject_once");
+          if (reject) {
+            this.sendMessage({
+              jsonrpc: "2.0",
+              id: msg.id,
+              result: { optionId: reject.optionId },
+            });
+          } else {
+            this.sendMessage({
+              jsonrpc: "2.0",
+              id: msg.id,
+              error: { code: -32600, message: "No acceptable permission option available" },
+            });
+          }
         }
       } else {
         // Unknown server request — respond with method not found
