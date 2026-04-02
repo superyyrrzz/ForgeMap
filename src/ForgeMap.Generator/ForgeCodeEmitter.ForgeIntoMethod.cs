@@ -673,11 +673,11 @@ internal sealed partial class ForgeCodeEmitter
             }
             else
             {
-                // No ForgeInto method: warn that matched items won't be updated
+                // No ForgeInto method: matched items will be kept but not updated
                 ReportDiagnosticIfNotSuppressed(context,
                     DiagnosticDescriptors.ExistingTargetNoMatchingForgeInto,
                     method.Locations.FirstOrDefault(),
-                    $"{destProp.Name} (element type)");
+                    $"{destProp.Name} (no element ForgeInto method; matched items will not be updated)");
             }
 
             sb.AppendLine($"                    }}");
