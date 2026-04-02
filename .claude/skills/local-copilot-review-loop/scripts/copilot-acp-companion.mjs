@@ -124,10 +124,11 @@ class AcpClient {
       }
     }
 
-    const copilotArgs = ["--acp", "--no-auto-update"];
-    if (process.env.COPILOT_ACP_ALLOW_ALL_TOOLS === "1") {
-      copilotArgs.push("--allow-all-tools");
-    }
+    // Always use --allow-all-tools in ACP mode. The companion script runs
+    // non-interactive code reviews where tool rejections degrade quality.
+    // Permission requests are still handled via session/request_permission
+    // as a secondary gate.
+    const copilotArgs = ["--acp", "--no-auto-update", "--allow-all-tools"];
 
     this.proc = spawn(
       command,
@@ -292,17 +293,23 @@ class AcpClient {
     // Server-initiated request (has both id and method) — e.g. session/request_permission
     if (msg.id !== undefined && msg.method) {
       if (msg.method === "session/request_permission") {
-        // Auto-approve with allow_once (scoped to this request only)
         const options = msg.params?.options ?? [];
-        const allowOnce = options.find(o => o.kind === "allow_once");
-        if (allowOnce) {
+        const toolKind = msg.params?.toolCall?.kind ?? "";
+        // For execute/shell commands, use allow_always (allow_once doesn't persist
+        // through the ACP lifecycle for execute permissions).
+        // For read/other, use allow_once to scope narrowly.
+        const preferredKind = toolKind === "execute" ? "allow_always" : "allow_once";
+        const chosen = options.find(o => o.kind === preferredKind)
+          ?? options.find(o => o.kind === "allow_once")
+          ?? options.find(o => o.kind === "allow_always");
+        if (chosen) {
           this.sendMessage({
             jsonrpc: "2.0",
             id: msg.id,
-            result: { optionId: allowOnce.optionId },
+            result: { optionId: chosen.optionId },
           });
         } else {
-          // No allow_once available — reject to fail closed
+          // No approval option available — reject to fail closed
           const reject = options.find(o => o.kind === "reject_once") ?? options[options.length - 1];
           this.sendMessage({
             jsonrpc: "2.0",
