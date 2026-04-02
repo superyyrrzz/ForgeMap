@@ -531,7 +531,7 @@ internal sealed partial class ForgeCodeEmitter
                 DiagnosticDescriptors.ExistingTargetNoMatchingForgeInto,
                 method.Locations.FirstOrDefault(),
                 $"{destProp.Name} (Add/Sync requires a mutable collection, not an array)");
-            return null;
+            return string.Empty;
         }
         if (destProp.Type is INamedTypeSymbol destCollType)
         {
@@ -544,7 +544,7 @@ internal sealed partial class ForgeCodeEmitter
                     DiagnosticDescriptors.ExistingTargetNoMatchingForgeInto,
                     method.Locations.FirstOrDefault(),
                     $"{destProp.Name} (Add/Sync requires a mutable collection, not '{origDef}')");
-                return null;
+                return string.Empty;
             }
         }
 
@@ -559,7 +559,7 @@ internal sealed partial class ForgeCodeEmitter
                     DiagnosticDescriptors.ExistingTargetNoMatchingForgeInto,
                     method.Locations.FirstOrDefault(),
                     $"{destProp.Name} (no forge method for element type conversion)");
-                return null;
+                return string.Empty;
             }
             if (!typesMatch && elemForgeMethod.Count > 1)
             {
@@ -567,7 +567,7 @@ internal sealed partial class ForgeCodeEmitter
                     DiagnosticDescriptors.AmbiguousAutoWire,
                     method.Locations.FirstOrDefault(),
                     destProp.Name, destProp.ContainingType.Name);
-                return null;
+                return string.Empty;
             }
 
             var sb = new StringBuilder();
@@ -629,7 +629,7 @@ internal sealed partial class ForgeCodeEmitter
                     DiagnosticDescriptors.SyncRequiresKeyProperty,
                     method.Locations.FirstOrDefault(),
                     destProp.Name);
-                return null;
+                return string.Empty;
             }
 
             var keyPropName = etConfig.KeyProperty!;
@@ -646,7 +646,7 @@ internal sealed partial class ForgeCodeEmitter
                     DiagnosticDescriptors.KeyPropertyNotFound,
                     method.Locations.FirstOrDefault(),
                     keyPropName, srcElemType.ToDisplayString());
-                return null;
+                return string.Empty;
             }
             if (destKeyProp == null)
             {
@@ -654,7 +654,7 @@ internal sealed partial class ForgeCodeEmitter
                     DiagnosticDescriptors.KeyPropertyNotFound,
                     method.Locations.FirstOrDefault(),
                     keyPropName, destElemType.ToDisplayString());
-                return null;
+                return string.Empty;
             }
 
             // Validate key property types are compatible
@@ -664,7 +664,7 @@ internal sealed partial class ForgeCodeEmitter
                     DiagnosticDescriptors.KeyPropertyNotFound,
                     method.Locations.FirstOrDefault(),
                     keyPropName, $"{srcElemType.ToDisplayString()} (key type '{srcKeyProp.Type.ToDisplayString()}' is not compatible with '{destKeyProp.Type.ToDisplayString()}')");
-                return null;
+                return string.Empty;
             }
 
             // Sync requires List<T> destination (RemoveAll is List<T>-specific)
@@ -677,7 +677,7 @@ internal sealed partial class ForgeCodeEmitter
                         DiagnosticDescriptors.ExistingTargetNoMatchingForgeInto,
                         method.Locations.FirstOrDefault(),
                         $"{destProp.Name} (CollectionUpdateStrategy.Sync requires List<T> destination)");
-                    return null;
+                    return string.Empty;
                 }
             }
 
@@ -763,9 +763,13 @@ internal sealed partial class ForgeCodeEmitter
                 {
                     sb.AppendLine($"                    {destParam}.{destProp.Name}.Add({elemForgeMethod[0].Name}(__srcItem));");
                 }
-                else
+                else if (syncTypesMatchCoalesce)
                 {
                     sb.AppendLine($"                    {destParam}.{destProp.Name}.Add(__srcItem);");
+                }
+                else
+                {
+                    sb.AppendLine($"                    // Cannot add: no forge method for element type conversion");
                 }
                 sb.AppendLine($"                }}");
                 sb.Append($"            }}");
