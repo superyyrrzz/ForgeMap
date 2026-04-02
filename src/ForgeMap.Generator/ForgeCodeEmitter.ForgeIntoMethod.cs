@@ -425,7 +425,7 @@ internal sealed partial class ForgeCodeEmitter
             return GenerateExistingTargetCollectionBlock(
                 destProp, etConfig, sourceParam, destParam, sourcePropPath,
                 sourceNamedType, destElemType, srcElemType,
-                forger, context, method);
+                nullPropertyHandlingOverrides, forger, context, method);
         }
 
         // Non-collection reference type: find matching ForgeInto method
@@ -511,6 +511,7 @@ internal sealed partial class ForgeCodeEmitter
         INamedTypeSymbol sourceNamedType,
         ITypeSymbol destElemType,
         ITypeSymbol srcElemType,
+        Dictionary<string, int> nullPropertyHandlingOverrides,
         ForgerInfo forger,
         SourceProductionContext context,
         IMethodSymbol method)
@@ -576,6 +577,27 @@ internal sealed partial class ForgeCodeEmitter
             }
             sb.AppendLine($"                }}");
             sb.Append($"            }}");
+
+            // Handle null target collection per NullPropertyHandling
+            var strategy = ResolveNullPropertyHandling(destProp.Name, nullPropertyHandlingOverrides);
+            if (strategy == 2) // CoalesceToDefault
+            {
+                sb.AppendLine();
+                sb.AppendLine($"            else if ({sourceExpr} is not null && {destParam}.{destProp.Name} is null)");
+                sb.AppendLine($"            {{");
+                var emptyExpr = GenerateEmptyCollectionExpression(destProp.Type);
+                sb.AppendLine($"                {destParam}.{destProp.Name} = {emptyExpr ?? $"new {destProp.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}()"};");
+                sb.Append($"            }}");
+            }
+            else if (strategy == 3) // ThrowException
+            {
+                sb.AppendLine();
+                sb.AppendLine($"            else if ({sourceExpr} is not null && {destParam}.{destProp.Name} is null)");
+                sb.AppendLine($"            {{");
+                sb.AppendLine($"                throw new global::System.InvalidOperationException(\"Cannot update null target collection '{destProp.Name}' in place\");");
+                sb.Append($"            }}");
+            }
+
             return sb.ToString();
         }
 
@@ -705,6 +727,26 @@ internal sealed partial class ForgeCodeEmitter
             sb.AppendLine();
             sb.AppendLine($"                {tgtLocal}.RemoveAll(__item => !__matched.Contains(__item.{keyPropName}));");
             sb.Append($"            }}");
+
+            // Handle null target collection per NullPropertyHandling
+            var syncStrategy = ResolveNullPropertyHandling(destProp.Name, nullPropertyHandlingOverrides);
+            if (syncStrategy == 2) // CoalesceToDefault
+            {
+                sb.AppendLine();
+                sb.AppendLine($"            else if ({sourceExpr} is not null && {destParam}.{destProp.Name} is null)");
+                sb.AppendLine($"            {{");
+                var emptyExpr = GenerateEmptyCollectionExpression(destProp.Type);
+                sb.AppendLine($"                {destParam}.{destProp.Name} = {emptyExpr ?? $"new {destProp.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}()"};");
+                sb.Append($"            }}");
+            }
+            else if (syncStrategy == 3) // ThrowException
+            {
+                sb.AppendLine();
+                sb.AppendLine($"            else if ({sourceExpr} is not null && {destParam}.{destProp.Name} is null)");
+                sb.AppendLine($"            {{");
+                sb.AppendLine($"                throw new global::System.InvalidOperationException(\"Cannot update null target collection '{destProp.Name}' in place\");");
+                sb.Append($"            }}");
+            }
 
             return sb.ToString();
         }
