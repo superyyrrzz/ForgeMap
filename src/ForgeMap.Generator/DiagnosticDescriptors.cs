@@ -244,7 +244,7 @@ internal static class DiagnosticDescriptors
     public static readonly DiagnosticDescriptor ExistingTargetNoMatchingForgeInto = new(
         id: "FM0030",
         title: "No matching ForgeInto method for nested existing-target",
-        messageFormat: "No matching ForgeInto method found for nested existing-target property '{0}'. The property will be skipped.",
+        messageFormat: "No matching ForgeInto method found for nested existing-target property '{0}'. The existing target value may not be fully updated.",
         category: Category,
         defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
