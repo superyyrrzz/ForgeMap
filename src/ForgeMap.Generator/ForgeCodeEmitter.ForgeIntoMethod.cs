@@ -402,8 +402,10 @@ internal sealed partial class ForgeCodeEmitter
         if (sourceLeafType == null)
             return null;
 
-        // For scalar types, ExistingTarget is ignored — always assign directly
-        if (IsScalarType(sourceLeafType) || IsScalarType(destProp.Type))
+        // For scalar or value-type properties, ExistingTarget is ignored — always assign directly.
+        // In-place updates rely on reference semantics; for value types, pattern-matching locals capture copies.
+        if (IsScalarType(sourceLeafType) || IsScalarType(destProp.Type)
+            || sourceLeafType.IsValueType || destProp.Type.IsValueType)
             return null; // Will fall through to normal assignment logic
 
         // Validate destination property has a getter
@@ -734,9 +736,16 @@ internal sealed partial class ForgeCodeEmitter
             {
                 sb.AppendLine($"                        {tgtLocal}.Add(__srcItem);");
             }
+            else if (elemForgeMethod.Count > 1)
+            {
+                ReportDiagnosticIfNotSuppressed(context,
+                    DiagnosticDescriptors.AmbiguousAutoWire,
+                    method.Locations.FirstOrDefault(),
+                    destProp.Name, destProp.ContainingType.Name);
+                sb.AppendLine($"                        // Cannot add: ambiguous forge method for element type conversion");
+            }
             else
             {
-                // Types differ, no forge method — skip add for safety. FM0030 already emitted above.
                 sb.AppendLine($"                        // Cannot add: no forge method for element type conversion");
             }
 
