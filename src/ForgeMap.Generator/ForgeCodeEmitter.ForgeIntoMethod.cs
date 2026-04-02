@@ -36,6 +36,7 @@ internal sealed partial class ForgeCodeEmitter
         var beforeForgeHooks = cfg.BeforeForgeHooks;
         var afterForgeHooks = cfg.AfterForgeHooks;
         var nullPropertyHandlingOverrides = cfg.NullPropertyHandlingOverrides;
+        var existingTargetProperties = cfg.ExistingTargetProperties;
 
         // Method signature
         var accessibility = GetAccessibilityKeyword(method.DeclaredAccessibility);
@@ -67,6 +68,21 @@ internal sealed partial class ForgeCodeEmitter
             // Skip ignored properties
             if (ignoredProperties.Contains(destProp.Name))
                 continue;
+
+            // Handle ExistingTarget properties — update nested object in place
+            if (existingTargetProperties.TryGetValue(destProp.Name, out var existingTargetCfg))
+            {
+                var etBlock = GenerateExistingTargetBlock(
+                    destProp, existingTargetCfg, sourceParam, destParam,
+                    sourceProperties, sourceNamedType, propertyMappings,
+                    nullPropertyHandlingOverrides, forger, context, method);
+                if (etBlock != null)
+                {
+                    sb.AppendLine(etBlock);
+                    continue;
+                }
+                // null means scalar or Replace collection — fall through to normal assignment
+            }
 
             // Check if this property has a resolver from [ForgeFrom]
             if (resolverMappings.TryGetValue(destProp.Name, out var resolverMethodName))
@@ -351,6 +367,316 @@ internal sealed partial class ForgeCodeEmitter
         sb.AppendLine("        }");
 
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// Generates code for a property marked with ExistingTarget = true.
+    /// Updates the nested object in place rather than replacing it.
+    /// </summary>
+    private string? GenerateExistingTargetBlock(
+        IPropertySymbol destProp,
+        ExistingTargetConfig etConfig,
+        string sourceParam,
+        string destParam,
+        IEnumerable<IPropertySymbol> sourceProperties,
+        INamedTypeSymbol sourceNamedType,
+        Dictionary<string, string> propertyMappings,
+        Dictionary<string, int> nullPropertyHandlingOverrides,
+        ForgerInfo forger,
+        SourceProductionContext context,
+        IMethodSymbol method)
+    {
+        // Resolve source property path
+        string? sourcePropPath;
+        if (!propertyMappings.TryGetValue(destProp.Name, out sourcePropPath))
+        {
+            var matchingSourceProp = sourceProperties.FirstOrDefault(sp =>
+                string.Equals(sp.Name, destProp.Name, _config.PropertyNameComparison));
+            sourcePropPath = matchingSourceProp?.Name;
+        }
+
+        if (sourcePropPath == null)
+            return null;
+
+        var sourceLeafType = ResolvePathLeafType(sourcePropPath, sourceNamedType);
+        if (sourceLeafType == null)
+            return null;
+
+        // For scalar types, ExistingTarget is ignored — always assign directly
+        if (IsScalarType(sourceLeafType) || IsScalarType(destProp.Type))
+            return null; // Will fall through to normal assignment logic
+
+        // Validate destination property has a getter
+        if (destProp.GetMethod == null)
+        {
+            ReportDiagnosticIfNotSuppressed(context,
+                DiagnosticDescriptors.ExistingTargetPropertyHasNoGetter,
+                method.Locations.FirstOrDefault(),
+                destProp.Name);
+            return null;
+        }
+
+        // Check if this is a collection property
+        var destElemType = GetCollectionElementType(destProp.Type);
+        var srcElemType = GetCollectionElementType(sourceLeafType);
+
+        if (destElemType != null && srcElemType != null)
+        {
+            return GenerateExistingTargetCollectionBlock(
+                destProp, etConfig, sourceParam, destParam, sourcePropPath,
+                sourceNamedType, destElemType, srcElemType,
+                forger, context, method);
+        }
+
+        // Non-collection reference type: find matching ForgeInto method
+        var forgeIntoMethod = FindForgeIntoMethod(forger.Symbol, sourceLeafType, destProp.Type);
+        if (forgeIntoMethod == null && _config.AutoWireNestedMappings)
+        {
+            var candidates = FindAutoWireForgeIntoMethodCandidates(forger.Symbol, sourceLeafType, destProp.Type);
+            if (candidates.Count == 1)
+                forgeIntoMethod = candidates[0];
+        }
+
+        if (forgeIntoMethod == null)
+        {
+            ReportDiagnosticIfNotSuppressed(context,
+                DiagnosticDescriptors.ExistingTargetNoMatchingForgeInto,
+                method.Locations.FirstOrDefault(),
+                destProp.Name);
+            return null;
+        }
+
+        var (sourceExpr, _) = GenerateSourceExpressionWithNullInfo(sourceParam, sourcePropPath, sourceNamedType);
+        var strategy = ResolveNullPropertyHandling(destProp.Name, nullPropertyHandlingOverrides);
+        var srcLocal = $"__src_{destProp.Name}";
+        var tgtLocal = $"__tgt_{destProp.Name}";
+
+        var sb = new StringBuilder();
+
+        // Generate null-guarded nested ForgeInto call
+        sb.AppendLine($"            if ({sourceExpr} is {{ }} {srcLocal} && {destParam}.{destProp.Name} is {{ }} {tgtLocal})");
+        sb.AppendLine($"            {{");
+        sb.AppendLine($"                {forgeIntoMethod.Name}({srcLocal}, {tgtLocal});");
+        sb.Append($"            }}");
+
+        // Handle null target property
+        if (strategy == 2) // CoalesceToDefault — create new instance and assign
+        {
+            // Try to find a standard forge method for fallback
+            var forgeMethod = FindAutoWireForgeMethodCandidates(forger.Symbol, sourceLeafType, destProp.Type);
+            sb.AppendLine();
+            sb.AppendLine($"            else if ({sourceExpr} is {{ }} {srcLocal}_new && {destParam}.{destProp.Name} is null)");
+            sb.AppendLine($"            {{");
+            if (forgeMethod.Count == 1)
+            {
+                sb.AppendLine($"                {destParam}.{destProp.Name} = {forgeMethod[0].Name}({srcLocal}_new);");
+            }
+            else
+            {
+                sb.AppendLine($"                {destParam}.{destProp.Name} = new {destProp.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}();");
+                sb.AppendLine($"                {forgeIntoMethod.Name}({srcLocal}_new, {destParam}.{destProp.Name});");
+            }
+            sb.Append($"            }}");
+        }
+        else if (strategy == 3) // ThrowException
+        {
+            sb.AppendLine();
+            sb.AppendLine($"            else if ({sourceExpr} is not null && {destParam}.{destProp.Name} is null)");
+            sb.AppendLine($"            {{");
+            sb.AppendLine($"                throw new global::System.InvalidOperationException(\"Cannot update null target property '{destProp.Name}' in place\");");
+            sb.Append($"            }}");
+        }
+        // NullForgiving (0) and SkipNull (1): just skip if target is null (the if block already handles this)
+
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Generates code for a collection property marked with ExistingTarget = true.
+    /// </summary>
+    private string? GenerateExistingTargetCollectionBlock(
+        IPropertySymbol destProp,
+        ExistingTargetConfig etConfig,
+        string sourceParam,
+        string destParam,
+        string sourcePropPath,
+        INamedTypeSymbol sourceNamedType,
+        ITypeSymbol destElemType,
+        ITypeSymbol srcElemType,
+        ForgerInfo forger,
+        SourceProductionContext context,
+        IMethodSymbol method)
+    {
+        var (sourceExpr, _) = GenerateSourceExpressionWithNullInfo(sourceParam, sourcePropPath, sourceNamedType);
+        var srcLocal = $"__src_{destProp.Name}";
+        var tgtLocal = $"__tgt_{destProp.Name}";
+
+        if (etConfig.CollectionUpdate == 0) // Replace — fall through to normal assignment
+            return null;
+
+        if (etConfig.CollectionUpdate == 1) // Add
+        {
+            // Find element forge method for type conversion
+            var elemForgeMethod = FindAutoWireForgeMethodCandidates(forger.Symbol, srcElemType, destElemType);
+            var typesMatch = SymbolEqualityComparer.Default.Equals(srcElemType, destElemType) || CanAssign(srcElemType, destElemType);
+            if (!typesMatch && elemForgeMethod.Count == 0)
+            {
+                ReportDiagnosticIfNotSuppressed(context,
+                    DiagnosticDescriptors.ExistingTargetNoMatchingForgeInto,
+                    method.Locations.FirstOrDefault(),
+                    $"{destProp.Name} (no forge method for element type conversion)");
+                return null;
+            }
+
+            var sb = new StringBuilder();
+            sb.AppendLine($"            if ({sourceExpr} is {{ }} {srcLocal} && {destParam}.{destProp.Name} is {{ }} {tgtLocal})");
+            sb.AppendLine($"            {{");
+            sb.AppendLine($"                foreach (var __srcItem in {srcLocal})");
+            sb.AppendLine($"                {{");
+            if (elemForgeMethod.Count == 1 && !typesMatch)
+            {
+                sb.AppendLine($"                    {tgtLocal}.Add({elemForgeMethod[0].Name}(__srcItem));");
+            }
+            else
+            {
+                sb.AppendLine($"                    {tgtLocal}.Add(__srcItem);");
+            }
+            sb.AppendLine($"                }}");
+            sb.Append($"            }}");
+            return sb.ToString();
+        }
+
+        if (etConfig.CollectionUpdate == 2) // Sync
+        {
+            // Validate KeyProperty
+            if (string.IsNullOrEmpty(etConfig.KeyProperty))
+            {
+                ReportDiagnosticIfNotSuppressed(context,
+                    DiagnosticDescriptors.SyncRequiresKeyProperty,
+                    method.Locations.FirstOrDefault(),
+                    destProp.Name);
+                return null;
+            }
+
+            var keyPropName = etConfig.KeyProperty!;
+
+            // Validate key property exists on both element types
+            var srcKeyProp = GetMappableProperties(srcElemType as INamedTypeSymbol ?? (srcElemType is INamedTypeSymbol snt ? snt : null!))
+                .FirstOrDefault(p => string.Equals(p.Name, keyPropName, StringComparison.Ordinal));
+            var destKeyProp = GetMappableProperties(destElemType as INamedTypeSymbol ?? (destElemType is INamedTypeSymbol dnt ? dnt : null!))
+                .FirstOrDefault(p => string.Equals(p.Name, keyPropName, StringComparison.Ordinal));
+
+            if (srcKeyProp == null)
+            {
+                ReportDiagnosticIfNotSuppressed(context,
+                    DiagnosticDescriptors.KeyPropertyNotFound,
+                    method.Locations.FirstOrDefault(),
+                    keyPropName, srcElemType.ToDisplayString());
+                return null;
+            }
+            if (destKeyProp == null)
+            {
+                ReportDiagnosticIfNotSuppressed(context,
+                    DiagnosticDescriptors.KeyPropertyNotFound,
+                    method.Locations.FirstOrDefault(),
+                    keyPropName, destElemType.ToDisplayString());
+                return null;
+            }
+
+            // Validate key property types are compatible
+            if (!CanAssign(srcKeyProp.Type, destKeyProp.Type))
+            {
+                ReportDiagnosticIfNotSuppressed(context,
+                    DiagnosticDescriptors.KeyPropertyNotFound,
+                    method.Locations.FirstOrDefault(),
+                    keyPropName, $"{srcElemType.ToDisplayString()} (key type '{srcKeyProp.Type.ToDisplayString()}' is not compatible with '{destKeyProp.Type.ToDisplayString()}')");
+                return null;
+            }
+
+            // Sync requires List<T> destination (RemoveAll is List<T>-specific)
+            if (destProp.Type is INamedTypeSymbol destCollNamedType)
+            {
+                var originalDef = destCollNamedType.OriginalDefinition.ToDisplayString();
+                if (originalDef != "System.Collections.Generic.List<T>")
+                {
+                    ReportDiagnosticIfNotSuppressed(context,
+                        DiagnosticDescriptors.ExistingTargetNoMatchingForgeInto,
+                        method.Locations.FirstOrDefault(),
+                        $"{destProp.Name} (CollectionUpdateStrategy.Sync requires List<T> destination)");
+                    return null;
+                }
+            }
+
+            var keyTypeDisplay = destKeyProp.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+
+            // Find ForgeInto method for element-level updates
+            var elemForgeIntoMethod = FindForgeIntoMethod(forger.Symbol, srcElemType, destElemType);
+            if (elemForgeIntoMethod == null && _config.AutoWireNestedMappings)
+            {
+                var candidates = FindAutoWireForgeIntoMethodCandidates(forger.Symbol, srcElemType, destElemType);
+                if (candidates.Count == 1)
+                    elemForgeIntoMethod = candidates[0];
+            }
+
+            // Find standard forge method for adding new items
+            var elemForgeMethod = FindAutoWireForgeMethodCandidates(forger.Symbol, srcElemType, destElemType);
+
+            var sb = new StringBuilder();
+            sb.AppendLine($"            if ({sourceExpr} is {{ }} {srcLocal} && {destParam}.{destProp.Name} is {{ }} {tgtLocal})");
+            sb.AppendLine($"            {{");
+            sb.AppendLine($"                var __existing = new global::System.Collections.Generic.Dictionary<{keyTypeDisplay}, {destElemType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}>();");
+            sb.AppendLine($"                foreach (var __item in {tgtLocal})");
+            sb.AppendLine($"                    __existing[__item.{keyPropName}] = __item;");
+            sb.AppendLine();
+            sb.AppendLine($"                var __matched = new global::System.Collections.Generic.HashSet<{keyTypeDisplay}>();");
+            sb.AppendLine($"                foreach (var __srcItem in {srcLocal})");
+            sb.AppendLine($"                {{");
+            sb.AppendLine($"                    if (__existing.TryGetValue(__srcItem.{keyPropName}, out var __tgtItem))");
+            sb.AppendLine($"                    {{");
+
+            if (elemForgeIntoMethod != null)
+            {
+                sb.AppendLine($"                        {elemForgeIntoMethod.Name}(__srcItem, __tgtItem);");
+            }
+            else
+            {
+                // No ForgeInto method: warn that matched items won't be updated
+                ReportDiagnosticIfNotSuppressed(context,
+                    DiagnosticDescriptors.ExistingTargetNoMatchingForgeInto,
+                    method.Locations.FirstOrDefault(),
+                    $"{destProp.Name} (element type)");
+            }
+
+            sb.AppendLine($"                    }}");
+            sb.AppendLine($"                    else");
+            sb.AppendLine($"                    {{");
+
+            var syncTypesMatch = SymbolEqualityComparer.Default.Equals(srcElemType, destElemType) || CanAssign(srcElemType, destElemType);
+            if (elemForgeMethod.Count == 1 && !syncTypesMatch)
+            {
+                sb.AppendLine($"                        {tgtLocal}.Add({elemForgeMethod[0].Name}(__srcItem));");
+            }
+            else if (syncTypesMatch)
+            {
+                sb.AppendLine($"                        {tgtLocal}.Add(__srcItem);");
+            }
+            else
+            {
+                // Types differ, no forge method — skip add for safety. FM0030 already emitted above.
+                sb.AppendLine($"                        // Cannot add: no forge method for element type conversion");
+            }
+
+            sb.AppendLine($"                    }}");
+            sb.AppendLine($"                    __matched.Add(__srcItem.{keyPropName});");
+            sb.AppendLine($"                }}");
+            sb.AppendLine();
+            sb.AppendLine($"                {tgtLocal}.RemoveAll(__item => !__matched.Contains(__item.{keyPropName}));");
+            sb.Append($"            }}");
+
+            return sb.ToString();
+        }
+
+        return null;
     }
 
     /// <summary>

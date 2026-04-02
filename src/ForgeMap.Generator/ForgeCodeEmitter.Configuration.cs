@@ -94,6 +94,51 @@ internal sealed partial class ForgeCodeEmitter
     }
 
     /// <summary>
+    /// Gets properties marked with ExistingTarget = true from [ForgeProperty] attributes.
+    /// Returns a dictionary mapping destination property name to its ExistingTarget configuration.
+    /// </summary>
+    private Dictionary<string, ExistingTargetConfig> GetExistingTargetProperties(IMethodSymbol method)
+    {
+        var result = new Dictionary<string, ExistingTargetConfig>(StringComparer.Ordinal);
+        foreach (var attr in GetMethodAttributes(method, _forgePropertyAttributeSymbol))
+        {
+            if (attr.ConstructorArguments.Length >= 2)
+            {
+                var destinationProperty = attr.ConstructorArguments[1].Value as string;
+                if (string.IsNullOrEmpty(destinationProperty))
+                    continue;
+
+                bool existingTarget = false;
+                int collectionUpdate = 0; // Replace
+                string? keyProperty = null;
+
+                foreach (var named in attr.NamedArguments)
+                {
+                    switch (named.Key)
+                    {
+                        case "ExistingTarget":
+                            existingTarget = named.Value.Value is true;
+                            break;
+                        case "CollectionUpdate":
+                            if (named.Value.Value is int cu)
+                                collectionUpdate = cu;
+                            break;
+                        case "KeyProperty":
+                            keyProperty = named.Value.Value as string;
+                            break;
+                    }
+                }
+
+                if (existingTarget)
+                {
+                    result[destinationProperty!] = new ExistingTargetConfig(collectionUpdate, keyProperty);
+                }
+            }
+        }
+        return result;
+    }
+
+    /// <summary>
     /// Gets resolver mappings from [ForgeFrom] attributes.
     /// Returns a dictionary mapping destination property name to resolver method name.
     /// </summary>
@@ -409,6 +454,7 @@ internal sealed partial class ForgeCodeEmitter
         var resolverMappings = GetResolverMappings(method);
         var forgeWithMappings = GetForgeWithMappings(method);
         var nullPropertyHandlingOverrides = GetNullPropertyHandlingOverrides(method);
+        var existingTargetProperties = GetExistingTargetProperties(method);
 
         ResolveInheritedConfig(method, forger, context, ignoredProperties, propertyMappings, resolverMappings, forgeWithMappings, nullPropertyHandlingOverrides);
 
@@ -428,7 +474,8 @@ internal sealed partial class ForgeCodeEmitter
             forgeWithMappings,
             beforeForgeHooks,
             afterForgeHooks,
-            nullPropertyHandlingOverrides);
+            nullPropertyHandlingOverrides,
+            existingTargetProperties);
     }
 
     /// <summary>

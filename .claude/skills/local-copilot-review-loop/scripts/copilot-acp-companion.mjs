@@ -167,7 +167,7 @@ class AcpClient {
     return result;
   }
 
-  async prompt(text) {
+  async prompt(text, { onChunk } = {}) {
     if (!this.sessionId) throw new Error("No active session. Call newSession() first.");
 
     let fullText = "";
@@ -181,8 +181,10 @@ class AcpClient {
         const update = msg.params.update;
         if (update?.sessionUpdate === "agent_message_chunk" && update.content?.text) {
           fullText += update.content.text;
+          if (onChunk) onChunk("text", update.content.text);
+        } else if (update?.sessionUpdate && onChunk) {
+          onChunk("status", update.sessionUpdate);
         }
-        // Silently ignore other update types (tool calls, status, etc.)
         return;
       }
       if (prevHandler) prevHandler(msg);
@@ -352,13 +354,14 @@ ${diffText}
 async function handleReview(argv) {
   const { options, positionals } = parseArgs(argv, {
     valueOptions: ["cwd", "base", "timeout"],
-    booleanOptions: ["json"],
+    booleanOptions: ["json", "stream"],
     aliasMap: { C: "cwd" },
   });
 
   const cwd = path.resolve(options.cwd ?? process.cwd());
   const base = options.base != null && String(options.base).trim() !== "" ? String(options.base).trim() : null;
   const jsonOutput = Boolean(options.json);
+  const stream = Boolean(options.stream);
   let timeoutMs = 600000;
   if (options.timeout !== undefined) {
     const raw = String(options.timeout);
@@ -422,9 +425,30 @@ async function handleReview(argv) {
 
   try {
     await client.connect();
+    if (stream) process.stderr.write("[copilot] Connected. Starting review...\n");
     await client.newSession();
-    const result = await client.prompt(prompt);
+
+    let lastStatus = null;
+    const onChunk = stream
+      ? (kind, data) => {
+          if (kind === "text") {
+            process.stderr.write(data);
+          } else if (kind === "status") {
+            if (data !== lastStatus) {
+              if (lastStatus) process.stderr.write("\n");
+              process.stderr.write(`[copilot:${data}] `);
+              lastStatus = data;
+            } else {
+              process.stderr.write(".");
+            }
+          }
+        }
+      : undefined;
+
+    const result = await client.prompt(prompt, { onChunk });
     clearTimeout(timer);
+
+    if (stream) process.stderr.write("\n");
 
     if (timedOut) return;
 
@@ -471,6 +495,7 @@ async function main() {
         `  --cwd <path>     Working directory (default: cwd)\n` +
         `  --base <ref>     Git base ref for diff (default: working tree)\n` +
         `  --json           Output structured JSON\n` +
+        `  --stream         Stream progress to stderr as chunks arrive\n` +
         `  --timeout <ms>   Timeout in ms (default: 600000)\n`;
       if (subcommand) {
         process.stderr.write(usage);

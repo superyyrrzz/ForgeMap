@@ -35,4 +35,28 @@ public sealed class ForgePropertyAttribute : Attribute
     /// A value of <c>(NullPropertyHandling)(-1)</c> means "not set" (inherit from forger/assembly).
     /// </summary>
     public NullPropertyHandling NullPropertyHandling { get; set; } = (NullPropertyHandling)(-1);
+
+    /// <summary>
+    /// When true, the destination property's existing value is updated in place
+    /// rather than replaced with a new instance. Requires the destination property
+    /// to be a readable reference-type property. Runtime null values on the destination
+    /// are handled according to the configured <see cref="NullPropertyHandling"/> (skip/coalesce/throw).
+    /// Used with <see cref="UseExistingValueAttribute"/> mutation methods to preserve object identity
+    /// (e.g., EF Core change tracking). Default is false.
+    /// </summary>
+    public bool ExistingTarget { get; set; }
+
+    /// <summary>
+    /// Specifies how a collection property is updated when <see cref="ExistingTarget"/> is true.
+    /// Ignored when <see cref="ExistingTarget"/> is false or the property is not a collection type.
+    /// Default is <see cref="CollectionUpdateStrategy.Replace"/>.
+    /// </summary>
+    public CollectionUpdateStrategy CollectionUpdate { get; set; }
+
+    /// <summary>
+    /// The property name used as a matching key for <see cref="CollectionUpdateStrategy.Sync"/>.
+    /// Both source and destination element types must have a property with this name.
+    /// Required when <see cref="CollectionUpdate"/> is <see cref="CollectionUpdateStrategy.Sync"/>.
+    /// </summary>
+    public string? KeyProperty { get; set; }
 }

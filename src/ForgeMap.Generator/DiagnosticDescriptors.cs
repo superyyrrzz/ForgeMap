@@ -224,4 +224,44 @@ internal static class DiagnosticDescriptors
         category: Category,
         defaultSeverity: DiagnosticSeverity.Info,
         isEnabledByDefault: false);
+
+    public static readonly DiagnosticDescriptor ExistingTargetOnNonMutationMethod = new(
+        id: "FM0028",
+        title: "ExistingTarget is only valid on mutation methods",
+        messageFormat: "ExistingTarget = true is only valid on [UseExistingValue] mutation methods",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor ExistingTargetPropertyHasNoGetter = new(
+        id: "FM0029",
+        title: "Property has no getter for in-place update",
+        messageFormat: "Property '{0}' has no getter — cannot read existing value for in-place update",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor ExistingTargetNoMatchingForgeInto = new(
+        id: "FM0030",
+        title: "No matching ForgeInto method for nested existing-target",
+        messageFormat: "No matching ForgeInto method found for nested existing-target property '{0}'. The property will be skipped.",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor SyncRequiresKeyProperty = new(
+        id: "FM0031",
+        title: "CollectionUpdateStrategy.Sync requires KeyProperty",
+        messageFormat: "CollectionUpdateStrategy.Sync requires KeyProperty to be set on [ForgeProperty] for property '{0}'",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor KeyPropertyNotFound = new(
+        id: "FM0032",
+        title: "KeyProperty not found on element type",
+        messageFormat: "KeyProperty '{0}' not found on element type '{1}'",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
 }

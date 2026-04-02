@@ -1851,3 +1851,219 @@ public class AutoWireRuntimeTests
 }
 
 #endregion
+
+#region v1.4 Nested Existing-Target Models
+
+public class EtCustomerUpdateDto
+{
+    public string Name { get; set; } = string.Empty;
+    public string Email { get; set; } = string.Empty;
+}
+
+public class EtCustomer
+{
+    public string Name { get; set; } = string.Empty;
+    public string Email { get; set; } = string.Empty;
+}
+
+public class EtAddressUpdateDto
+{
+    public string City { get; set; } = string.Empty;
+    public string ZipCode { get; set; } = string.Empty;
+}
+
+public class EtAddress
+{
+    public string City { get; set; } = string.Empty;
+    public string ZipCode { get; set; } = string.Empty;
+}
+
+public class EtOrderUpdateDto
+{
+    public string Status { get; set; } = string.Empty;
+    public EtCustomerUpdateDto? Customer { get; set; }
+    public EtAddressUpdateDto? ShippingAddress { get; set; }
+    public List<EtOrderItemUpdateDto>? Items { get; set; }
+}
+
+public class EtOrderItemUpdateDto
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public int Quantity { get; set; }
+}
+
+public class EtOrder
+{
+    public string Status { get; set; } = string.Empty;
+    public EtCustomer? Customer { get; set; }
+    public EtAddress? ShippingAddress { get; set; }
+    public List<EtOrderItem>? Items { get; set; }
+}
+
+public class EtOrderItem
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public int Quantity { get; set; }
+}
+
+#endregion
+
+#region v1.4 Nested Existing-Target Forger
+
+[ForgeMap]
+public partial class ExistingTargetForger
+{
+    public partial void ForgeInto(EtCustomerUpdateDto source, [UseExistingValue] EtCustomer target);
+    public partial void ForgeInto(EtAddressUpdateDto source, [UseExistingValue] EtAddress target);
+    public partial void ForgeInto(EtOrderItemUpdateDto source, [UseExistingValue] EtOrderItem target);
+
+    public partial EtOrderItem Forge(EtOrderItemUpdateDto source);
+
+    [ForgeProperty("Customer", "Customer", ExistingTarget = true)]
+    [ForgeProperty("ShippingAddress", "ShippingAddress", ExistingTarget = true)]
+    public partial void ForgeInto(EtOrderUpdateDto source, [UseExistingValue] EtOrder target);
+
+    [ForgeProperty("Customer", "Customer", ExistingTarget = true)]
+    [ForgeProperty("ShippingAddress", "ShippingAddress", ExistingTarget = true)]
+    [ForgeProperty("Items", "Items", ExistingTarget = true,
+        CollectionUpdate = CollectionUpdateStrategy.Sync, KeyProperty = "Id")]
+    public partial void ForgeIntoWithSync(EtOrderUpdateDto source, [UseExistingValue] EtOrder target);
+}
+
+#endregion
+
+#region v1.4 Nested Existing-Target Tests
+
+public class NestedExistingTargetTests
+{
+    private readonly ExistingTargetForger _forger = new();
+
+    [Fact]
+    public void ExistingTarget_ShouldUpdateNestedObjectInPlace()
+    {
+        var source = new EtOrderUpdateDto
+        {
+            Status = "Shipped",
+            Customer = new EtCustomerUpdateDto { Name = "Alice Updated", Email = "alice@new.com" },
+            ShippingAddress = new EtAddressUpdateDto { City = "Springfield", ZipCode = "62704" }
+        };
+
+        var existingCustomer = new EtCustomer { Name = "Alice", Email = "alice@old.com" };
+        var existingAddress = new EtAddress { City = "OldCity", ZipCode = "00000" };
+        var target = new EtOrder
+        {
+            Status = "Pending",
+            Customer = existingCustomer,
+            ShippingAddress = existingAddress
+        };
+
+        _forger.ForgeInto(source, target);
+
+        // Status should be updated directly
+        target.Status.Should().Be("Shipped");
+
+        // Nested objects should be the SAME reference (updated in place)
+        target.Customer.Should().BeSameAs(existingCustomer);
+        target.Customer!.Name.Should().Be("Alice Updated");
+        target.Customer.Email.Should().Be("alice@new.com");
+
+        target.ShippingAddress.Should().BeSameAs(existingAddress);
+        target.ShippingAddress!.City.Should().Be("Springfield");
+        target.ShippingAddress.ZipCode.Should().Be("62704");
+    }
+
+    [Fact]
+    public void ExistingTarget_SourceNull_ShouldLeaveTargetUnchanged()
+    {
+        var source = new EtOrderUpdateDto
+        {
+            Status = "Shipped",
+            Customer = null,
+            ShippingAddress = null
+        };
+
+        var existingCustomer = new EtCustomer { Name = "Alice", Email = "alice@old.com" };
+        var target = new EtOrder
+        {
+            Status = "Pending",
+            Customer = existingCustomer,
+            ShippingAddress = new EtAddress { City = "OldCity", ZipCode = "00000" }
+        };
+
+        _forger.ForgeInto(source, target);
+
+        target.Status.Should().Be("Shipped");
+        // Source is null — target properties should remain unchanged
+        target.Customer.Should().BeSameAs(existingCustomer);
+        target.Customer!.Name.Should().Be("Alice");
+    }
+
+    [Fact]
+    public void ExistingTarget_TargetPropertyNull_ShouldSkip()
+    {
+        var source = new EtOrderUpdateDto
+        {
+            Status = "Shipped",
+            Customer = new EtCustomerUpdateDto { Name = "New Customer", Email = "new@test.com" }
+        };
+
+        var target = new EtOrder
+        {
+            Status = "Pending",
+            Customer = null // Target property is null
+        };
+
+        _forger.ForgeInto(source, target);
+
+        target.Status.Should().Be("Shipped");
+        // Default NullPropertyHandling (NullForgiving/SkipNull): skip when target is null
+        target.Customer.Should().BeNull();
+    }
+
+    [Fact]
+    public void ExistingTarget_CollectionSync_ShouldMatchUpdateAddRemove()
+    {
+        var source = new EtOrderUpdateDto
+        {
+            Status = "Shipped",
+            Customer = new EtCustomerUpdateDto { Name = "Alice", Email = "a@a.com" },
+            ShippingAddress = new EtAddressUpdateDto { City = "City", ZipCode = "12345" },
+            Items = new List<EtOrderItemUpdateDto>
+            {
+                new() { Id = 1, Name = "Widget Updated", Quantity = 5 },
+                new() { Id = 3, Name = "New Item", Quantity = 1 }
+            }
+        };
+
+        var existingItem1 = new EtOrderItem { Id = 1, Name = "Widget", Quantity = 2 };
+        var existingItem2 = new EtOrderItem { Id = 2, Name = "Gadget", Quantity = 3 };
+        var target = new EtOrder
+        {
+            Status = "Pending",
+            Customer = new EtCustomer { Name = "Alice", Email = "a@a.com" },
+            ShippingAddress = new EtAddress { City = "City", ZipCode = "12345" },
+            Items = new List<EtOrderItem> { existingItem1, existingItem2 }
+        };
+
+        _forger.ForgeIntoWithSync(source, target);
+
+        target.Items.Should().NotBeNull();
+        target.Items.Should().HaveCount(2);
+
+        // Item 1 should be updated in place (same reference)
+        target.Items![0].Should().BeSameAs(existingItem1);
+        target.Items[0].Name.Should().Be("Widget Updated");
+        target.Items[0].Quantity.Should().Be(5);
+
+        // Item 2 (Id=2) should be removed (not in source)
+        target.Items.Should().NotContain(i => i.Id == 2);
+
+        // Item 3 should be added (new)
+        target.Items.Should().Contain(i => i.Id == 3);
+        target.Items.First(i => i.Id == 3).Name.Should().Be("New Item");
+    }
+}
+
+#endregion
