@@ -185,6 +185,34 @@ class AcpClient {
         if (update?.sessionUpdate === "agent_message_chunk" && chunkText) {
           fullText += chunkText;
           if (onChunk) onChunk("text", chunkText);
+        } else if (update?.sessionUpdate === "agent_thought_chunk" && onChunk) {
+          onChunk("status", update.sessionUpdate);
+          const thoughtText = update?.content?.text ?? update?.text;
+          if (thoughtText) onChunk("thought", thoughtText);
+        } else if (update?.sessionUpdate === "tool_call" && onChunk) {
+          onChunk("status", update.sessionUpdate);
+          const title = update.title ?? "";
+          const kind = update.kind ?? "";
+          const path = update.rawInput?.path ?? update.locations?.[0]?.path ?? "";
+          const cmd = update.rawInput?.command ?? "";
+          const desc = update.rawInput?.description ?? "";
+          if (kind === "read" && path) {
+            const shortPath = path.split(/[\\/]/).slice(-3).join("/");
+            onChunk("tool", `  [read] ${shortPath}`);
+          } else if (kind === "execute" && cmd) {
+            const shortCmd = cmd.length > 80 ? cmd.slice(0, 80) + "..." : cmd;
+            onChunk("tool", `  [exec] ${shortCmd}`);
+          } else if (title) {
+            onChunk("tool", `  [${kind || "tool"}] ${title}`);
+          }
+        } else if (update?.sessionUpdate === "tool_call_update" && onChunk) {
+          const status = update.status ?? "";
+          if (status === "completed") {
+            onChunk("tool", `  [done] ${update.toolCallId?.slice(0, 12) ?? ""}`);
+          } else if (status === "failed") {
+            const reason = update.rawOutput?.message ?? "unknown";
+            onChunk("tool", `  [fail] ${reason}`);
+          }
         } else if (update?.sessionUpdate && onChunk) {
           onChunk("status", update.sessionUpdate);
         }
@@ -264,10 +292,10 @@ class AcpClient {
     // Server-initiated request (has both id and method) — e.g. session/request_permission
     if (msg.id !== undefined && msg.method) {
       if (msg.method === "session/request_permission") {
-        // Auto-approve: pick allow_always (or fall back to the first option)
+        // Auto-approve with allow_once (scoped to this request only)
         const options = msg.params?.options ?? [];
-        const allowAlways = options.find(o => o.kind === "allow_always");
-        const chosen = allowAlways ?? options[0];
+        const allowOnce = options.find(o => o.kind === "allow_once");
+        const chosen = allowOnce ?? options[0];
         if (chosen) {
           this.sendMessage({
             jsonrpc: "2.0",
@@ -437,32 +465,23 @@ async function handleReview(argv) {
   const client = new AcpClient(getRepoRoot(cwd));
   if (debug) {
     client.debugLog = (msg) => {
-      // For notifications, show method + update type + relevant content (skip thought text to reduce noise)
+      // For session/update notifications, dump the full update object
       if (msg.method === "session/update" && msg.params?.update) {
         const u = msg.params.update;
-        const summary = { sessionUpdate: u.sessionUpdate };
-        if (u.sessionUpdate === "tool_call" && u.toolCall) {
-          summary.tool = u.toolCall.name ?? u.toolCall.type ?? "unknown";
-          if (u.toolCall.arguments) summary.args = u.toolCall.arguments;
-        }
-        if (u.sessionUpdate === "tool_result" && u.toolResult) {
-          const text = typeof u.toolResult === "string" ? u.toolResult : JSON.stringify(u.toolResult);
-          summary.result = text.length > 500 ? text.slice(0, 500) + "..." : text;
-        }
-        if (u.sessionUpdate === "agent_message_chunk" && u.content?.text) {
-          summary.text = u.content.text;
-        }
-        if (u.sessionUpdate === "confirmation") {
-          summary.confirmation = u;
-        }
-        process.stderr.write("[debug] " + JSON.stringify(summary) + "\n");
+        // Truncate large text fields to keep output readable
+        const sanitized = JSON.stringify(u, (key, val) => {
+          if (typeof val === "string" && val.length > 300) return val.slice(0, 300) + "...[truncated]";
+          return val;
+        });
+        process.stderr.write("[debug:update] " + sanitized + "\n");
+      } else if (msg.id !== undefined && msg.method) {
+        // Server-initiated request (e.g. session/request_permission)
+        const text = JSON.stringify(msg);
+        process.stderr.write("[debug:server-request] " + (text.length > 1000 ? text.slice(0, 1000) + "..." : text) + "\n");
       } else if (msg.id !== undefined && !msg.method) {
         // Response to our request
         const text = JSON.stringify(msg);
         process.stderr.write("[debug:response] " + (text.length > 1000 ? text.slice(0, 1000) + "..." : text) + "\n");
-      } else if (msg.method && msg.method !== "session/update") {
-        // Other notification methods we might not handle
-        process.stderr.write("[debug:notification] " + JSON.stringify(msg) + "\n");
       }
     };
   }
@@ -491,18 +510,31 @@ async function handleReview(argv) {
     await client.newSession();
 
     let lastStatus = null;
+    let thoughtBuffer = "";
     const onChunk = stream
       ? (kind, data) => {
           if (kind === "text") {
+            // Flush any buffered thought before showing response text
+            if (thoughtBuffer) {
+              thoughtBuffer = "";
+            }
             process.stderr.write(data);
           } else if (kind === "status") {
             if (data !== lastStatus) {
+              if (lastStatus === "agent_thought_chunk" && thoughtBuffer) {
+                // Flush accumulated thought as a summary line
+                const trimmed = thoughtBuffer.trim().replace(/\s+/g, " ");
+                if (trimmed) process.stderr.write(trimmed);
+                thoughtBuffer = "";
+              }
               if (lastStatus) process.stderr.write("\n");
-              process.stderr.write(`[copilot:${data}] `);
               lastStatus = data;
-            } else {
-              process.stderr.write(".");
             }
+          } else if (kind === "thought") {
+            thoughtBuffer += data;
+          } else if (kind === "tool") {
+            // Show tool call details
+            process.stderr.write(data + "\n");
           }
         }
       : undefined;

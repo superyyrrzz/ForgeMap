@@ -514,6 +514,31 @@ internal sealed partial class ForgeCodeEmitter
         if (etConfig.CollectionUpdate == 0) // Replace — fall through to normal assignment
             return null;
 
+        // Add and Sync require a mutable collection (List<T> or ICollection<T>).
+        // Reject arrays, IEnumerable<T>, IReadOnlyList<T>, IReadOnlyCollection<T>.
+        if (destProp.Type is IArrayTypeSymbol)
+        {
+            ReportDiagnosticIfNotSuppressed(context,
+                DiagnosticDescriptors.ExistingTargetNoMatchingForgeInto,
+                method.Locations.FirstOrDefault(),
+                $"{destProp.Name} (Add/Sync requires a mutable collection, not an array)");
+            return null;
+        }
+        if (destProp.Type is INamedTypeSymbol destCollType)
+        {
+            var origDef = destCollType.OriginalDefinition.ToDisplayString();
+            if (origDef == "System.Collections.Generic.IEnumerable<T>" ||
+                origDef == "System.Collections.Generic.IReadOnlyList<T>" ||
+                origDef == "System.Collections.Generic.IReadOnlyCollection<T>")
+            {
+                ReportDiagnosticIfNotSuppressed(context,
+                    DiagnosticDescriptors.ExistingTargetNoMatchingForgeInto,
+                    method.Locations.FirstOrDefault(),
+                    $"{destProp.Name} (Add/Sync requires a mutable collection, not '{origDef}')");
+                return null;
+            }
+        }
+
         if (etConfig.CollectionUpdate == 1) // Add
         {
             // Find element forge method for type conversion
