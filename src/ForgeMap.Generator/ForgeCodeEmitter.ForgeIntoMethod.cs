@@ -635,9 +635,9 @@ internal sealed partial class ForgeCodeEmitter
             var keyPropName = etConfig.KeyProperty!;
 
             // Validate key property exists on both element types
-            var srcKeyProp = GetMappableProperties(srcElemType as INamedTypeSymbol ?? (srcElemType is INamedTypeSymbol snt ? snt : null!))
+            var srcKeyProp = GetMappableProperties(srcElemType as INamedTypeSymbol)
                 .FirstOrDefault(p => string.Equals(p.Name, keyPropName, StringComparison.Ordinal));
-            var destKeyProp = GetMappableProperties(destElemType as INamedTypeSymbol ?? (destElemType is INamedTypeSymbol dnt ? dnt : null!))
+            var destKeyProp = GetMappableProperties(destElemType as INamedTypeSymbol)
                 .FirstOrDefault(p => string.Equals(p.Name, keyPropName, StringComparison.Ordinal));
 
             if (srcKeyProp == null)

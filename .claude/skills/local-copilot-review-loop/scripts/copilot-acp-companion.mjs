@@ -617,7 +617,8 @@ async function main() {
         `  --cwd <path>     Working directory (default: cwd)\n` +
         `  --base <ref>     Git base ref for diff (default: working tree)\n` +
         `  --json           Output structured JSON\n` +
-        `  --stream         Stream progress to stderr as chunks arrive\n` +
+        `  --stream         Stream Copilot response text to stderr\n` +
+        `  --debug          Dump raw ACP protocol messages to stderr\n` +
         `  --timeout <ms>   Timeout in ms (default: 600000)\n`;
       if (subcommand) {
         process.stderr.write(usage);

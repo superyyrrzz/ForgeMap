@@ -113,7 +113,7 @@ internal sealed partial class ForgeCodeEmitter
         var nullPropertyHandlingOverrides = cfg.NullPropertyHandlingOverrides;
 
         // FM0028: ExistingTarget = true is only valid on [UseExistingValue] mutation methods
-        foreach (var etProp in cfg.ExistingTargetProperties)
+        if (cfg.ExistingTargetProperties.Count > 0)
         {
             ReportDiagnosticIfNotSuppressed(context,
                 DiagnosticDescriptors.ExistingTargetOnNonMutationMethod,

@@ -160,8 +160,8 @@ internal sealed partial class ForgeCodeEmitter
                 m.ReturnsVoid &&
                 m.Parameters.Length == 2 &&
                 SymbolEqualityComparer.Default.Equals(m.Parameters[0].Type, sourcePropertyType) &&
-                m.Parameters.Any(p => HasUseExistingValueAttribute(p) &&
-                    SymbolEqualityComparer.Default.Equals(p.Type, destPropertyType)))
+                HasUseExistingValueAttribute(m.Parameters[1]) &&
+                SymbolEqualityComparer.Default.Equals(m.Parameters[1].Type, destPropertyType))
             .ToList();
     }
 
