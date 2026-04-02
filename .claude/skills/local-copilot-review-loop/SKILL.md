@@ -47,13 +47,13 @@ node ".claude/skills/local-copilot-review-loop/scripts/copilot-acp-companion.mjs
 
 **IMPORTANT: This is a MANDATORY loop. You MUST keep iterating until a stop condition is met. Do NOT stop after a single iteration just because you fixed or dismissed some findings.**
 
-1. **Detect scope**: Determine `--base` ref. For PRs use the PR base branch. For local work use `main` or `origin/main`. Changes must be committed for `--base` to see them.
+1. **Detect scope**: Determine `--base` ref. For PRs use the PR base branch. For local work use `main` or `origin/main`. Note: `--base` performs a commit-to-commit diff (`base...HEAD`), so staged/unstaged working-tree changes are NOT included — commit first, or omit `--base` to diff against HEAD including working-tree changes.
 2. **Run the companion script** with appropriate `--base` flag
 3. **Process ALL findings from this iteration**:
    - Read the referenced code at the cited line numbers to verify each finding
    - Fix findings that are valid
    - Dismiss findings that are invalid (note why briefly)
-   - Track counts of fixed vs dismissed
+   - Track counts of fixed vs dismissed, and maintain a list of dismissed findings (file, line range, issue summary) for loop detection
 4. **If code was changed**: build and test. If build/test fails, stop and surface the error.
 5. **If code was changed**: commit the fixes (do NOT push unless user asked)
 6. **Re-run the companion script** — this is a NEW ACP session that sees the updated code
