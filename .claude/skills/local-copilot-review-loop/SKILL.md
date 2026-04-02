@@ -61,7 +61,7 @@ node ".claude/skills/local-copilot-review-loop/scripts/copilot-acp-companion.mjs
 
 ### Stop conditions
 
-- CLI output contains no `[file:line]` findings (only praise, "looks good", or "No issues found.")
+- CLI output contains no `[file:line]` findings (only praise, "looks good", "No issues found.", or "No changes found to review.")
 - ALL findings in the current iteration were already seen AND dismissed in a PREVIOUS iteration of THIS loop (loop detection). "Previous conversation" findings do NOT count — only findings from this invocation.
 - 5 iterations reached (safety valve — surface remaining findings to user)
 - Build/test fails after a fix (stop, surface error, let user decide)
