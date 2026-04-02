@@ -443,7 +443,7 @@ internal sealed partial class ForgeCodeEmitter
                 DiagnosticDescriptors.ExistingTargetNoMatchingForgeInto,
                 method.Locations.FirstOrDefault(),
                 destProp.Name);
-            return null;
+            return string.Empty; // Return empty (not null) to prevent fallthrough to normal replacement
         }
 
         var (sourceExpr, _) = GenerateSourceExpressionWithNullInfo(sourceParam, sourcePropPath, sourceNamedType);
@@ -561,6 +561,14 @@ internal sealed partial class ForgeCodeEmitter
                     $"{destProp.Name} (no forge method for element type conversion)");
                 return null;
             }
+            if (!typesMatch && elemForgeMethod.Count > 1)
+            {
+                ReportDiagnosticIfNotSuppressed(context,
+                    DiagnosticDescriptors.AmbiguousAutoWire,
+                    method.Locations.FirstOrDefault(),
+                    destProp.Name, destProp.ContainingType.Name);
+                return null;
+            }
 
             var sb = new StringBuilder();
             sb.AppendLine($"            if ({sourceExpr} is {{ }} {srcLocal} && {destParam}.{destProp.Name} is {{ }} {tgtLocal})");
@@ -580,13 +588,24 @@ internal sealed partial class ForgeCodeEmitter
 
             // Handle null target collection per NullPropertyHandling
             var strategy = ResolveNullPropertyHandling(destProp.Name, nullPropertyHandlingOverrides);
-            if (strategy == 2) // CoalesceToDefault
+            if (strategy == 2) // CoalesceToDefault — create collection and populate
             {
                 sb.AppendLine();
-                sb.AppendLine($"            else if ({sourceExpr} is not null && {destParam}.{destProp.Name} is null)");
+                sb.AppendLine($"            else if ({sourceExpr} is {{ }} {srcLocal}_new && {destParam}.{destProp.Name} is null)");
                 sb.AppendLine($"            {{");
                 var emptyExpr = GenerateEmptyCollectionExpression(destProp.Type);
                 sb.AppendLine($"                {destParam}.{destProp.Name} = {emptyExpr ?? $"new {destProp.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}()"};");
+                sb.AppendLine($"                foreach (var __srcItem in {srcLocal}_new)");
+                sb.AppendLine($"                {{");
+                if (elemForgeMethod.Count == 1 && !typesMatch)
+                {
+                    sb.AppendLine($"                    {destParam}.{destProp.Name}.Add({elemForgeMethod[0].Name}(__srcItem));");
+                }
+                else
+                {
+                    sb.AppendLine($"                    {destParam}.{destProp.Name}.Add(__srcItem);");
+                }
+                sb.AppendLine($"                }}");
                 sb.Append($"            }}");
             }
             else if (strategy == 3) // ThrowException
@@ -730,13 +749,25 @@ internal sealed partial class ForgeCodeEmitter
 
             // Handle null target collection per NullPropertyHandling
             var syncStrategy = ResolveNullPropertyHandling(destProp.Name, nullPropertyHandlingOverrides);
-            if (syncStrategy == 2) // CoalesceToDefault
+            if (syncStrategy == 2) // CoalesceToDefault — create and populate from source
             {
+                var syncTypesMatchCoalesce = SymbolEqualityComparer.Default.Equals(srcElemType, destElemType) || CanAssign(srcElemType, destElemType);
                 sb.AppendLine();
-                sb.AppendLine($"            else if ({sourceExpr} is not null && {destParam}.{destProp.Name} is null)");
+                sb.AppendLine($"            else if ({sourceExpr} is {{ }} {srcLocal}_new && {destParam}.{destProp.Name} is null)");
                 sb.AppendLine($"            {{");
                 var emptyExpr = GenerateEmptyCollectionExpression(destProp.Type);
                 sb.AppendLine($"                {destParam}.{destProp.Name} = {emptyExpr ?? $"new {destProp.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}()"};");
+                sb.AppendLine($"                foreach (var __srcItem in {srcLocal}_new)");
+                sb.AppendLine($"                {{");
+                if (elemForgeMethod.Count == 1 && !syncTypesMatchCoalesce)
+                {
+                    sb.AppendLine($"                    {destParam}.{destProp.Name}.Add({elemForgeMethod[0].Name}(__srcItem));");
+                }
+                else
+                {
+                    sb.AppendLine($"                    {destParam}.{destProp.Name}.Add(__srcItem);");
+                }
+                sb.AppendLine($"                }}");
                 sb.Append($"            }}");
             }
             else if (syncStrategy == 3) // ThrowException
