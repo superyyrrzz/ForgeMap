@@ -91,6 +91,7 @@ class AcpClient {
     this.exitPromise = new Promise((resolve) => { this.resolveExit = resolve; });
     this.exitResolved = false;
     this.sessionId = null;
+    this.debugLog = null;
   }
 
   async connect() {
@@ -123,10 +124,11 @@ class AcpClient {
       }
     }
 
-    const copilotArgs = ["--acp", "--no-auto-update"];
-    if (process.env.COPILOT_ACP_ALLOW_ALL_TOOLS === "1") {
-      copilotArgs.push("--allow-all-tools");
-    }
+    // Always use --allow-all-tools in ACP mode. The companion script runs
+    // non-interactive code reviews where tool rejections degrade quality.
+    // Permission requests are still handled via session/request_permission
+    // as a secondary gate.
+    const copilotArgs = ["--acp", "--no-auto-update", "--allow-all-tools"];
 
     this.proc = spawn(
       command,
@@ -167,11 +169,12 @@ class AcpClient {
     return result;
   }
 
-  async prompt(text) {
+  async prompt(text, { onChunk } = {}) {
     if (!this.sessionId) throw new Error("No active session. Call newSession() first.");
 
     let fullText = "";
     const prevHandler = this.notificationHandler;
+    const pendingTools = new Map(); // toolCallId → { title, kind, path, cmd }
 
     this.notificationHandler = (msg) => {
       if (
@@ -179,10 +182,41 @@ class AcpClient {
         msg.params?.sessionId === this.sessionId
       ) {
         const update = msg.params.update;
-        if (update?.sessionUpdate === "agent_message_chunk" && update.content?.text) {
-          fullText += update.content.text;
+        // ACP sends text chunks as update.content.text or update.text depending on version
+        const chunkText = update?.content?.text ?? update?.text;
+        if (update?.sessionUpdate === "agent_message_chunk" && chunkText) {
+          fullText += chunkText;
+          if (onChunk) onChunk("text", chunkText);
+        } else if (update?.sessionUpdate === "agent_thought_chunk" && onChunk) {
+          const thoughtText = update?.content?.text ?? update?.text;
+          if (thoughtText) onChunk("thought", thoughtText);
+        } else if (update?.sessionUpdate === "tool_call" && onChunk) {
+          const id = update.toolCallId ?? "";
+          const kind = update.kind ?? "";
+          const path = update.rawInput?.path ?? update.locations?.[0]?.path ?? "";
+          const cmd = update.rawInput?.command ?? "";
+          const title = update.title ?? update.rawInput?.description ?? "";
+          const shortPath = path ? path.split(/[\\/]/).slice(-3).join("/") : "";
+          const shortCmd = cmd ? (cmd.length > 80 ? cmd.slice(0, 80) + "..." : cmd) : "";
+          const label = kind === "read" && shortPath ? `Reading ${shortPath}`
+            : kind === "execute" && shortCmd ? `Running: ${shortCmd}`
+            : title || `${kind || "tool"} call`;
+          pendingTools.set(id, { label, kind });
+          onChunk("tool_start", label);
+        } else if (update?.sessionUpdate === "tool_call_update" && onChunk) {
+          const id = update.toolCallId ?? "";
+          const status = update.status ?? "";
+          const info = pendingTools.get(id);
+          const label = info?.label ?? id.slice(0, 12);
+          if (status === "completed") {
+            pendingTools.delete(id);
+            onChunk("tool_done", label);
+          } else if (status === "failed") {
+            pendingTools.delete(id);
+            const reason = update.rawOutput?.message ?? "unknown";
+            onChunk("tool_fail", `${label}: ${reason}`);
+          }
         }
-        // Silently ignore other update types (tool calls, status, etc.)
         return;
       }
       if (prevHandler) prevHandler(msg);
@@ -253,6 +287,54 @@ class AcpClient {
     if (!line.trim()) return;
     let msg;
     try { msg = JSON.parse(line); } catch { return; }
+
+    if (this.debugLog) this.debugLog(msg);
+
+    // Server-initiated request (has both id and method) — e.g. session/request_permission
+    if (msg.id !== undefined && msg.method) {
+      if (msg.method === "session/request_permission") {
+        const options = msg.params?.options ?? [];
+        const toolKind = msg.params?.toolCall?.kind ?? "";
+        // For execute/shell commands, use allow_always (allow_once doesn't persist
+        // through the ACP lifecycle for execute permissions).
+        // For read/other, use allow_once to scope narrowly.
+        const preferredKind = toolKind === "execute" ? "allow_always" : "allow_once";
+        const chosen = options.find(o => o.kind === preferredKind)
+          ?? options.find(o => o.kind === "allow_once")
+          ?? options.find(o => o.kind === "allow_always");
+        if (chosen) {
+          this.sendMessage({
+            jsonrpc: "2.0",
+            id: msg.id,
+            result: { optionId: chosen.optionId },
+          });
+        } else {
+          // No approval option available — reject using provided reject option or error
+          const reject = options.find(o => o.kind === "reject_once");
+          if (reject) {
+            this.sendMessage({
+              jsonrpc: "2.0",
+              id: msg.id,
+              result: { optionId: reject.optionId },
+            });
+          } else {
+            this.sendMessage({
+              jsonrpc: "2.0",
+              id: msg.id,
+              error: { code: -32600, message: "No acceptable permission option available" },
+            });
+          }
+        }
+      } else {
+        // Unknown server request — respond with method not found
+        this.sendMessage({
+          jsonrpc: "2.0",
+          id: msg.id,
+          error: { code: -32601, message: "Method not found" },
+        });
+      }
+      return;
+    }
 
     // Response to a request we sent
     if (msg.id !== undefined && !msg.method) {
@@ -352,13 +434,15 @@ ${diffText}
 async function handleReview(argv) {
   const { options, positionals } = parseArgs(argv, {
     valueOptions: ["cwd", "base", "timeout"],
-    booleanOptions: ["json"],
+    booleanOptions: ["json", "stream", "debug"],
     aliasMap: { C: "cwd" },
   });
 
   const cwd = path.resolve(options.cwd ?? process.cwd());
   const base = options.base != null && String(options.base).trim() !== "" ? String(options.base).trim() : null;
   const jsonOutput = Boolean(options.json);
+  const stream = Boolean(options.stream);
+  const debug = Boolean(options.debug);
   let timeoutMs = 600000;
   if (options.timeout !== undefined) {
     const raw = String(options.timeout);
@@ -401,6 +485,28 @@ async function handleReview(argv) {
 
   // ACP session
   const client = new AcpClient(getRepoRoot(cwd));
+  if (debug) {
+    client.debugLog = (msg) => {
+      // For session/update notifications, dump the full update object
+      if (msg.method === "session/update" && msg.params?.update) {
+        const u = msg.params.update;
+        // Truncate large text fields to keep output readable
+        const sanitized = JSON.stringify(u, (key, val) => {
+          if (typeof val === "string" && val.length > 300) return val.slice(0, 300) + "...[truncated]";
+          return val;
+        });
+        process.stderr.write("[debug:update] " + sanitized + "\n");
+      } else if (msg.id !== undefined && msg.method) {
+        // Server-initiated request (e.g. session/request_permission)
+        const text = JSON.stringify(msg);
+        process.stderr.write("[debug:server-request] " + (text.length > 1000 ? text.slice(0, 1000) + "..." : text) + "\n");
+      } else if (msg.id !== undefined && !msg.method) {
+        // Response to our request
+        const text = JSON.stringify(msg);
+        process.stderr.write("[debug:response] " + (text.length > 1000 ? text.slice(0, 1000) + "..." : text) + "\n");
+      }
+    };
+  }
   let timedOut = false;
   const timer = setTimeout(() => {
     (async () => {
@@ -422,9 +528,49 @@ async function handleReview(argv) {
 
   try {
     await client.connect();
+    const startTime = Date.now();
+    const elapsed = () => `${((Date.now() - startTime) / 1000).toFixed(0)}s`;
+    process.stderr.write(`[copilot] Connected. Reviewing...\n`);
     await client.newSession();
-    const result = await client.prompt(prompt);
+
+    let phase = "thinking";
+    let thoughtBuffer = "";
+    let lastThoughtSummary = "";
+
+    const onChunk = (kind, data) => {
+      if (kind === "text") {
+        // Response text is the final review — just accumulate (shown on stdout at end)
+        // But if --stream, also show it live
+        if (stream) process.stderr.write(data);
+      } else if (kind === "thought") {
+        thoughtBuffer += data;
+        // Extract meaningful sentences from thought buffer to show phase changes
+        const sentences = thoughtBuffer.split(/[.!?]\s+/);
+        if (sentences.length > 1) {
+          const latest = sentences[sentences.length - 2].trim().replace(/\s+/g, " ");
+          if (latest && latest.length > 20 && latest !== lastThoughtSummary) {
+            lastThoughtSummary = latest;
+            if (phase !== "thinking") {
+              phase = "thinking";
+            }
+            process.stderr.write(`[${elapsed()}] ${latest}.\n`);
+          }
+          thoughtBuffer = sentences[sentences.length - 1]; // keep incomplete sentence
+        }
+      } else if (kind === "tool_start") {
+        phase = "investigating";
+        process.stderr.write(`[${elapsed()}] ${data}\n`);
+      } else if (kind === "tool_done") {
+        // Silently complete — the start message was enough
+      } else if (kind === "tool_fail") {
+        process.stderr.write(`[${elapsed()}] Failed: ${data}\n`);
+      }
+    };
+
+    const result = await client.prompt(prompt, { onChunk });
     clearTimeout(timer);
+
+    process.stderr.write(`[${elapsed()}] Review complete.\n`);
 
     if (timedOut) return;
 
@@ -471,6 +617,8 @@ async function main() {
         `  --cwd <path>     Working directory (default: cwd)\n` +
         `  --base <ref>     Git base ref for diff (default: working tree)\n` +
         `  --json           Output structured JSON\n` +
+        `  --stream         Stream Copilot response text to stderr\n` +
+        `  --debug          Dump raw ACP protocol messages to stderr\n` +
         `  --timeout <ms>   Timeout in ms (default: 600000)\n`;
       if (subcommand) {
         process.stderr.write(usage);

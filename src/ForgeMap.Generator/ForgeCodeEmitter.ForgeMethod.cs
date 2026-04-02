@@ -112,6 +112,14 @@ internal sealed partial class ForgeCodeEmitter
         var afterForgeHooks = cfg.AfterForgeHooks;
         var nullPropertyHandlingOverrides = cfg.NullPropertyHandlingOverrides;
 
+        // FM0028: ExistingTarget = true is only valid on [UseExistingValue] mutation methods
+        if (cfg.ExistingTargetProperties.Count > 0)
+        {
+            ReportDiagnosticIfNotSuppressed(context,
+                DiagnosticDescriptors.ExistingTargetOnNonMutationMethod,
+                method.Locations.FirstOrDefault());
+        }
+
         var hasAfterForge = afterForgeHooks.Count > 0;
 
         // Method signature

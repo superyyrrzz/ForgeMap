@@ -131,6 +131,41 @@ internal sealed partial class ForgeCodeEmitter
     }
 
     /// <summary>
+    /// Finds a ForgeInto (void mutation) method on the forger class that accepts the given source property type
+    /// and has a [UseExistingValue] parameter matching the destination property type.
+    /// Used for nested existing-target mapping.
+    /// </summary>
+    private IMethodSymbol? FindForgeIntoMethod(INamedTypeSymbol forgerType, ITypeSymbol sourcePropertyType, ITypeSymbol destPropertyType)
+    {
+        return forgerType.GetMembers()
+            .OfType<IMethodSymbol>()
+            .FirstOrDefault(m =>
+                m.IsPartialDefinition &&
+                m.ReturnsVoid &&
+                m.Parameters.Length == 2 &&
+                SymbolEqualityComparer.Default.Equals(m.Parameters[0].Type, sourcePropertyType) &&
+                HasUseExistingValueAttribute(m.Parameters[1]) &&
+                SymbolEqualityComparer.Default.Equals(m.Parameters[1].Type, destPropertyType));
+    }
+
+    /// <summary>
+    /// Finds all ForgeInto (void mutation) method candidates on the forger class for auto-wiring.
+    /// </summary>
+    private List<IMethodSymbol> FindAutoWireForgeIntoMethodCandidates(INamedTypeSymbol forgerType, ITypeSymbol sourcePropertyType, ITypeSymbol destPropertyType)
+    {
+        return forgerType.GetMembers()
+            .OfType<IMethodSymbol>()
+            .Where(m =>
+                m.IsPartialDefinition &&
+                m.ReturnsVoid &&
+                m.Parameters.Length == 2 &&
+                SymbolEqualityComparer.Default.Equals(m.Parameters[0].Type, sourcePropertyType) &&
+                HasUseExistingValueAttribute(m.Parameters[1]) &&
+                SymbolEqualityComparer.Default.Equals(m.Parameters[1].Type, destPropertyType))
+            .ToList();
+    }
+
+    /// <summary>
     /// Finds a forging method on the forger class that accepts the given source type and returns the given destination type.
     /// </summary>
     private static IMethodSymbol? FindForgingMethod(INamedTypeSymbol forgerType, string methodName, ITypeSymbol sourcePropertyType, ITypeSymbol destPropertyType)

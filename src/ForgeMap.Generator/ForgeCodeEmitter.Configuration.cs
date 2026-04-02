@@ -94,6 +94,51 @@ internal sealed partial class ForgeCodeEmitter
     }
 
     /// <summary>
+    /// Gets properties marked with ExistingTarget = true from [ForgeProperty] attributes.
+    /// Returns a dictionary mapping destination property name to its ExistingTarget configuration.
+    /// </summary>
+    private Dictionary<string, ExistingTargetConfig> GetExistingTargetProperties(IMethodSymbol method)
+    {
+        var result = new Dictionary<string, ExistingTargetConfig>(StringComparer.Ordinal);
+        foreach (var attr in GetMethodAttributes(method, _forgePropertyAttributeSymbol))
+        {
+            if (attr.ConstructorArguments.Length >= 2)
+            {
+                var destinationProperty = attr.ConstructorArguments[1].Value as string;
+                if (string.IsNullOrEmpty(destinationProperty))
+                    continue;
+
+                bool existingTarget = false;
+                int collectionUpdate = 0; // Replace
+                string? keyProperty = null;
+
+                foreach (var named in attr.NamedArguments)
+                {
+                    switch (named.Key)
+                    {
+                        case "ExistingTarget":
+                            existingTarget = named.Value.Value is true;
+                            break;
+                        case "CollectionUpdate":
+                            if (named.Value.Value is int cu)
+                                collectionUpdate = cu;
+                            break;
+                        case "KeyProperty":
+                            keyProperty = named.Value.Value as string;
+                            break;
+                    }
+                }
+
+                if (existingTarget)
+                {
+                    result[destinationProperty!] = new ExistingTargetConfig(collectionUpdate, keyProperty);
+                }
+            }
+        }
+        return result;
+    }
+
+    /// <summary>
     /// Gets resolver mappings from [ForgeFrom] attributes.
     /// Returns a dictionary mapping destination property name to resolver method name.
     /// </summary>
@@ -239,20 +284,8 @@ internal sealed partial class ForgeCodeEmitter
         Dictionary<string, string> propertyMappings,
         Dictionary<string, string> resolverMappings,
         Dictionary<string, string> forgeWithMappings,
-        Dictionary<string, int> nullPropertyHandlingOverrides)
-    {
-        ResolveInheritedConfig(method, forger, context, ignoredProperties, propertyMappings, resolverMappings, forgeWithMappings, nullPropertyHandlingOverrides, new HashSet<string>());
-    }
-
-    private void ResolveInheritedConfig(
-        IMethodSymbol method,
-        ForgerInfo forger,
-        SourceProductionContext context,
-        HashSet<string> ignoredProperties,
-        Dictionary<string, string> propertyMappings,
-        Dictionary<string, string> resolverMappings,
-        Dictionary<string, string> forgeWithMappings,
         Dictionary<string, int> nullPropertyHandlingOverrides,
+        Dictionary<string, ExistingTargetConfig>? existingTargetProperties,
         HashSet<string> visited)
     {
         var includeBaseForges = GetIncludeBaseForgeAttributes(method);
@@ -328,7 +361,8 @@ internal sealed partial class ForgeCodeEmitter
             var baseResolverMappings = GetResolverMappings(baseMethod);
             var baseForgeWithMappings = GetForgeWithMappings(baseMethod);
             var baseNullPropertyHandlingOverrides = GetNullPropertyHandlingOverrides(baseMethod);
-            ResolveInheritedConfig(baseMethod, forger, context, baseIgnored, basePropertyMappings, baseResolverMappings, baseForgeWithMappings, baseNullPropertyHandlingOverrides, visited);
+            var baseExistingTargetProperties = GetExistingTargetProperties(baseMethod);
+            ResolveInheritedConfig(baseMethod, forger, context, baseIgnored, basePropertyMappings, baseResolverMappings, baseForgeWithMappings, baseNullPropertyHandlingOverrides, existingTargetProperties != null ? baseExistingTargetProperties : null, visited);
 
             // Merge all base config into derived using first-wins semantics + FM0021 override reporting
             var diagLocation = attrData.ApplicationSyntaxReference?.GetSyntax().GetLocation() ?? method.Locations.FirstOrDefault();
@@ -391,6 +425,16 @@ internal sealed partial class ForgeCodeEmitter
                 if (!nullPropertyHandlingOverrides.ContainsKey(kvp.Key))
                     nullPropertyHandlingOverrides[kvp.Key] = kvp.Value;
             }
+
+            // Merge base ExistingTarget properties using first-wins semantics
+            if (existingTargetProperties != null)
+            {
+                foreach (var kvp in baseExistingTargetProperties)
+                {
+                    if (!existingTargetProperties.ContainsKey(kvp.Key))
+                        existingTargetProperties[kvp.Key] = kvp.Value;
+                }
+            }
         }
     }
 
@@ -409,8 +453,9 @@ internal sealed partial class ForgeCodeEmitter
         var resolverMappings = GetResolverMappings(method);
         var forgeWithMappings = GetForgeWithMappings(method);
         var nullPropertyHandlingOverrides = GetNullPropertyHandlingOverrides(method);
+        var existingTargetProperties = GetExistingTargetProperties(method);
 
-        ResolveInheritedConfig(method, forger, context, ignoredProperties, propertyMappings, resolverMappings, forgeWithMappings, nullPropertyHandlingOverrides);
+        ResolveInheritedConfig(method, forger, context, ignoredProperties, propertyMappings, resolverMappings, forgeWithMappings, nullPropertyHandlingOverrides, existingTargetProperties, new HashSet<string>());
 
         var beforeForgeHooks = GetBeforeForgeHooks(method)
             .Select(h => ValidateBeforeForgeHook(h, sourceType, forger, context, method))
@@ -428,7 +473,8 @@ internal sealed partial class ForgeCodeEmitter
             forgeWithMappings,
             beforeForgeHooks,
             afterForgeHooks,
-            nullPropertyHandlingOverrides);
+            nullPropertyHandlingOverrides,
+            existingTargetProperties);
     }
 
     /// <summary>

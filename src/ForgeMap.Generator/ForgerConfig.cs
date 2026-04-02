@@ -32,6 +32,24 @@ internal sealed class ForgerConfig
 }
 
 /// <summary>
+/// Configuration for an ExistingTarget property from [ForgeProperty].
+/// </summary>
+internal readonly struct ExistingTargetConfig
+{
+    public ExistingTargetConfig(int collectionUpdate, string? keyProperty)
+    {
+        CollectionUpdate = collectionUpdate;
+        KeyProperty = keyProperty;
+    }
+
+    /// <summary>0 = Replace, 1 = Add, 2 = Sync</summary>
+    public int CollectionUpdate { get; }
+
+    /// <summary>Key property name for Sync strategy. Null otherwise.</summary>
+    public string? KeyProperty { get; }
+}
+
+/// <summary>
 /// Resolved attribute configuration for a forge method.
 /// </summary>
 internal readonly struct ResolvedMethodConfig
@@ -43,7 +61,8 @@ internal readonly struct ResolvedMethodConfig
         Dictionary<string, string> forgeWithMappings,
         List<string> beforeForgeHooks,
         List<string> afterForgeHooks,
-        Dictionary<string, int> nullPropertyHandlingOverrides)
+        Dictionary<string, int> nullPropertyHandlingOverrides,
+        Dictionary<string, ExistingTargetConfig> existingTargetProperties)
     {
         IgnoredProperties = ignoredProperties;
         PropertyMappings = propertyMappings;
@@ -52,6 +71,7 @@ internal readonly struct ResolvedMethodConfig
         BeforeForgeHooks = beforeForgeHooks;
         AfterForgeHooks = afterForgeHooks;
         NullPropertyHandlingOverrides = nullPropertyHandlingOverrides;
+        ExistingTargetProperties = existingTargetProperties;
     }
 
     public HashSet<string> IgnoredProperties { get; }
@@ -62,4 +82,6 @@ internal readonly struct ResolvedMethodConfig
     public List<string> AfterForgeHooks { get; }
     /// <summary>Per-property NullPropertyHandling overrides. Key = dest property name, Value = enum int value (0-3). Only explicitly set overrides are included.</summary>
     public Dictionary<string, int> NullPropertyHandlingOverrides { get; }
+    /// <summary>Properties marked with ExistingTarget = true. Key = dest property name.</summary>
+    public Dictionary<string, ExistingTargetConfig> ExistingTargetProperties { get; }
 }
