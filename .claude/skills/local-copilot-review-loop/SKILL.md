@@ -23,8 +23,6 @@ node ".claude/skills/local-copilot-review-loop/scripts/copilot-acp-companion.mjs
 - `--base <ref>` — Git base ref for diff (e.g., `main`, `origin/main`). Omit for working-tree changes.
 - `--cwd <path>` — Working directory (default: current directory)
 - `--json` — Output structured JSON: `{ review, stopReason, base, exitCode }`
-- `--stream` — Stream Copilot's response text to stderr as it arrives
-- `--debug` — Dump raw ACP protocol messages to stderr
 - `--timeout <ms>` — Timeout in ms (default: 600000 = 10 min)
 - Positional args after flags are treated as additional focus text
 
@@ -40,11 +38,8 @@ node ".claude/skills/local-copilot-review-loop/scripts/copilot-acp-companion.mjs
 node ".claude/skills/local-copilot-review-loop/scripts/copilot-acp-companion.mjs" review --base main --json "focus on error handling"
 ```
 
-**Progress output:** The script always shows progress on stderr (elapsed time, tool calls, thinking summaries). No flags needed for basic visibility.
-
 - The companion script manages the ACP lifecycle internally (connect, session, prompt, cleanup)
-- Copilot CLI is started with `--allow-all-tools` for non-interactive review
-- `session/request_permission` requests are auto-approved with `allow_once`/`allow_always` as appropriate
+- Set `COPILOT_ACP_ALLOW_ALL_TOOLS=1` to pass `--allow-all-tools` to Copilot CLI, broadening tool-execution permissions. Only enable in trusted, controlled environments.
 - Has a built-in 10-minute timeout; cancels and exits if exceeded
 - Findings are reported as `[file:line] severity (high/medium/low): description`
 
