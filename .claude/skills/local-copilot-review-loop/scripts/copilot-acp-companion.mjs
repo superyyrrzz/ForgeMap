@@ -295,12 +295,19 @@ class AcpClient {
         // Auto-approve with allow_once (scoped to this request only)
         const options = msg.params?.options ?? [];
         const allowOnce = options.find(o => o.kind === "allow_once");
-        const chosen = allowOnce ?? options[0];
-        if (chosen) {
+        if (allowOnce) {
           this.sendMessage({
             jsonrpc: "2.0",
             id: msg.id,
-            result: { optionId: chosen.optionId },
+            result: { optionId: allowOnce.optionId },
+          });
+        } else {
+          // No allow_once available — reject to fail closed
+          const reject = options.find(o => o.kind === "reject_once") ?? options[options.length - 1];
+          this.sendMessage({
+            jsonrpc: "2.0",
+            id: msg.id,
+            result: { optionId: reject?.optionId ?? "reject_once" },
           });
         }
       } else {

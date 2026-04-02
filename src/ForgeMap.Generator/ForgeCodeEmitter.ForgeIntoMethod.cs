@@ -471,10 +471,18 @@ internal sealed partial class ForgeCodeEmitter
             {
                 sb.AppendLine($"                {destParam}.{destProp.Name} = {forgeMethod[0].Name}({srcLocal}_new);");
             }
-            else
+            else if (destProp.Type is INamedTypeSymbol destNamed
+                     && destNamed.TypeKind == TypeKind.Class
+                     && !destNamed.IsAbstract
+                     && destNamed.InstanceConstructors.Any(c => c.Parameters.Length == 0 && c.DeclaredAccessibility >= Accessibility.Internal))
             {
                 sb.AppendLine($"                {destParam}.{destProp.Name} = new {destProp.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}();");
                 sb.AppendLine($"                {forgeIntoMethod.Name}({srcLocal}_new, {destParam}.{destProp.Name});");
+            }
+            else
+            {
+                // Non-constructible type (interface, abstract, no parameterless ctor) — skip coalesce
+                sb.AppendLine($"                // Cannot coalesce: {destProp.Type.ToDisplayString()} has no accessible parameterless constructor");
             }
             sb.Append($"            }}");
         }
