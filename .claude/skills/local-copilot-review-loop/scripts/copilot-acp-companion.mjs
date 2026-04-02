@@ -91,6 +91,7 @@ class AcpClient {
     this.exitPromise = new Promise((resolve) => { this.resolveExit = resolve; });
     this.exitResolved = false;
     this.sessionId = null;
+    this.debugLog = null;
   }
 
   async connect() {
@@ -179,9 +180,11 @@ class AcpClient {
         msg.params?.sessionId === this.sessionId
       ) {
         const update = msg.params.update;
-        if (update?.sessionUpdate === "agent_message_chunk" && update.content?.text) {
-          fullText += update.content.text;
-          if (onChunk) onChunk("text", update.content.text);
+        // ACP sends text chunks as update.content.text or update.text depending on version
+        const chunkText = update?.content?.text ?? update?.text;
+        if (update?.sessionUpdate === "agent_message_chunk" && chunkText) {
+          fullText += chunkText;
+          if (onChunk) onChunk("text", chunkText);
         } else if (update?.sessionUpdate && onChunk) {
           onChunk("status", update.sessionUpdate);
         }
@@ -255,6 +258,33 @@ class AcpClient {
     if (!line.trim()) return;
     let msg;
     try { msg = JSON.parse(line); } catch { return; }
+
+    if (this.debugLog) this.debugLog(msg);
+
+    // Server-initiated request (has both id and method) — e.g. session/request_permission
+    if (msg.id !== undefined && msg.method) {
+      if (msg.method === "session/request_permission") {
+        // Auto-approve: pick allow_always (or fall back to the first option)
+        const options = msg.params?.options ?? [];
+        const allowAlways = options.find(o => o.kind === "allow_always");
+        const chosen = allowAlways ?? options[0];
+        if (chosen) {
+          this.sendMessage({
+            jsonrpc: "2.0",
+            id: msg.id,
+            result: { optionId: chosen.optionId },
+          });
+        }
+      } else {
+        // Unknown server request — respond with method not found
+        this.sendMessage({
+          jsonrpc: "2.0",
+          id: msg.id,
+          error: { code: -32601, message: "Method not found" },
+        });
+      }
+      return;
+    }
 
     // Response to a request we sent
     if (msg.id !== undefined && !msg.method) {
@@ -354,7 +384,7 @@ ${diffText}
 async function handleReview(argv) {
   const { options, positionals } = parseArgs(argv, {
     valueOptions: ["cwd", "base", "timeout"],
-    booleanOptions: ["json", "stream"],
+    booleanOptions: ["json", "stream", "debug"],
     aliasMap: { C: "cwd" },
   });
 
@@ -362,6 +392,7 @@ async function handleReview(argv) {
   const base = options.base != null && String(options.base).trim() !== "" ? String(options.base).trim() : null;
   const jsonOutput = Boolean(options.json);
   const stream = Boolean(options.stream);
+  const debug = Boolean(options.debug);
   let timeoutMs = 600000;
   if (options.timeout !== undefined) {
     const raw = String(options.timeout);
@@ -404,6 +435,37 @@ async function handleReview(argv) {
 
   // ACP session
   const client = new AcpClient(getRepoRoot(cwd));
+  if (debug) {
+    client.debugLog = (msg) => {
+      // For notifications, show method + update type + relevant content (skip thought text to reduce noise)
+      if (msg.method === "session/update" && msg.params?.update) {
+        const u = msg.params.update;
+        const summary = { sessionUpdate: u.sessionUpdate };
+        if (u.sessionUpdate === "tool_call" && u.toolCall) {
+          summary.tool = u.toolCall.name ?? u.toolCall.type ?? "unknown";
+          if (u.toolCall.arguments) summary.args = u.toolCall.arguments;
+        }
+        if (u.sessionUpdate === "tool_result" && u.toolResult) {
+          const text = typeof u.toolResult === "string" ? u.toolResult : JSON.stringify(u.toolResult);
+          summary.result = text.length > 500 ? text.slice(0, 500) + "..." : text;
+        }
+        if (u.sessionUpdate === "agent_message_chunk" && u.content?.text) {
+          summary.text = u.content.text;
+        }
+        if (u.sessionUpdate === "confirmation") {
+          summary.confirmation = u;
+        }
+        process.stderr.write("[debug] " + JSON.stringify(summary) + "\n");
+      } else if (msg.id !== undefined && !msg.method) {
+        // Response to our request
+        const text = JSON.stringify(msg);
+        process.stderr.write("[debug:response] " + (text.length > 1000 ? text.slice(0, 1000) + "..." : text) + "\n");
+      } else if (msg.method && msg.method !== "session/update") {
+        // Other notification methods we might not handle
+        process.stderr.write("[debug:notification] " + JSON.stringify(msg) + "\n");
+      }
+    };
+  }
   let timedOut = false;
   const timer = setTimeout(() => {
     (async () => {
