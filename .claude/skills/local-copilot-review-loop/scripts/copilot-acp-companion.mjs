@@ -173,6 +173,7 @@ class AcpClient {
 
     let fullText = "";
     const prevHandler = this.notificationHandler;
+    const pendingTools = new Map(); // toolCallId → { title, kind, path, cmd }
 
     this.notificationHandler = (msg) => {
       if (
@@ -186,35 +187,34 @@ class AcpClient {
           fullText += chunkText;
           if (onChunk) onChunk("text", chunkText);
         } else if (update?.sessionUpdate === "agent_thought_chunk" && onChunk) {
-          onChunk("status", update.sessionUpdate);
           const thoughtText = update?.content?.text ?? update?.text;
           if (thoughtText) onChunk("thought", thoughtText);
         } else if (update?.sessionUpdate === "tool_call" && onChunk) {
-          onChunk("status", update.sessionUpdate);
-          const title = update.title ?? "";
+          const id = update.toolCallId ?? "";
           const kind = update.kind ?? "";
           const path = update.rawInput?.path ?? update.locations?.[0]?.path ?? "";
           const cmd = update.rawInput?.command ?? "";
-          const desc = update.rawInput?.description ?? "";
-          if (kind === "read" && path) {
-            const shortPath = path.split(/[\\/]/).slice(-3).join("/");
-            onChunk("tool", `  [read] ${shortPath}`);
-          } else if (kind === "execute" && cmd) {
-            const shortCmd = cmd.length > 80 ? cmd.slice(0, 80) + "..." : cmd;
-            onChunk("tool", `  [exec] ${shortCmd}`);
-          } else if (title) {
-            onChunk("tool", `  [${kind || "tool"}] ${title}`);
-          }
+          const title = update.title ?? update.rawInput?.description ?? "";
+          const shortPath = path ? path.split(/[\\/]/).slice(-3).join("/") : "";
+          const shortCmd = cmd ? (cmd.length > 80 ? cmd.slice(0, 80) + "..." : cmd) : "";
+          const label = kind === "read" && shortPath ? `Reading ${shortPath}`
+            : kind === "execute" && shortCmd ? `Running: ${shortCmd}`
+            : title || `${kind || "tool"} call`;
+          pendingTools.set(id, { label, kind });
+          onChunk("tool_start", label);
         } else if (update?.sessionUpdate === "tool_call_update" && onChunk) {
+          const id = update.toolCallId ?? "";
           const status = update.status ?? "";
+          const info = pendingTools.get(id);
+          const label = info?.label ?? id.slice(0, 12);
           if (status === "completed") {
-            onChunk("tool", `  [done] ${update.toolCallId?.slice(0, 12) ?? ""}`);
+            pendingTools.delete(id);
+            onChunk("tool_done", label);
           } else if (status === "failed") {
+            pendingTools.delete(id);
             const reason = update.rawOutput?.message ?? "unknown";
-            onChunk("tool", `  [fail] ${reason}`);
+            onChunk("tool_fail", `${label}: ${reason}`);
           }
-        } else if (update?.sessionUpdate && onChunk) {
-          onChunk("status", update.sessionUpdate);
         }
         return;
       }
@@ -513,43 +513,49 @@ async function handleReview(argv) {
 
   try {
     await client.connect();
-    if (stream) process.stderr.write("[copilot] Connected. Starting review...\n");
+    const startTime = Date.now();
+    const elapsed = () => `${((Date.now() - startTime) / 1000).toFixed(0)}s`;
+    process.stderr.write(`[copilot] Connected. Reviewing...\n`);
     await client.newSession();
 
-    let lastStatus = null;
+    let phase = "thinking";
     let thoughtBuffer = "";
-    const onChunk = stream
-      ? (kind, data) => {
-          if (kind === "text") {
-            // Flush any buffered thought before showing response text
-            if (thoughtBuffer) {
-              thoughtBuffer = "";
+    let lastThoughtSummary = "";
+
+    const onChunk = (kind, data) => {
+      if (kind === "text") {
+        // Response text is the final review — just accumulate (shown on stdout at end)
+        // But if --stream, also show it live
+        if (stream) process.stderr.write(data);
+      } else if (kind === "thought") {
+        thoughtBuffer += data;
+        // Extract meaningful sentences from thought buffer to show phase changes
+        const sentences = thoughtBuffer.split(/[.!?]\s+/);
+        if (sentences.length > 1) {
+          const latest = sentences[sentences.length - 2].trim().replace(/\s+/g, " ");
+          if (latest && latest.length > 20 && latest !== lastThoughtSummary) {
+            lastThoughtSummary = latest;
+            if (phase !== "thinking") {
+              phase = "thinking";
             }
-            process.stderr.write(data);
-          } else if (kind === "status") {
-            if (data !== lastStatus) {
-              if (lastStatus === "agent_thought_chunk" && thoughtBuffer) {
-                // Flush accumulated thought as a summary line
-                const trimmed = thoughtBuffer.trim().replace(/\s+/g, " ");
-                if (trimmed) process.stderr.write(trimmed);
-                thoughtBuffer = "";
-              }
-              if (lastStatus) process.stderr.write("\n");
-              lastStatus = data;
-            }
-          } else if (kind === "thought") {
-            thoughtBuffer += data;
-          } else if (kind === "tool") {
-            // Show tool call details
-            process.stderr.write(data + "\n");
+            process.stderr.write(`[${elapsed()}] ${latest}.\n`);
           }
+          thoughtBuffer = sentences[sentences.length - 1]; // keep incomplete sentence
         }
-      : undefined;
+      } else if (kind === "tool_start") {
+        phase = "investigating";
+        process.stderr.write(`[${elapsed()}] ${data}\n`);
+      } else if (kind === "tool_done") {
+        // Silently complete — the start message was enough
+      } else if (kind === "tool_fail") {
+        process.stderr.write(`[${elapsed()}] Failed: ${data}\n`);
+      }
+    };
 
     const result = await client.prompt(prompt, { onChunk });
     clearTimeout(timer);
 
-    if (stream) process.stderr.write("\n");
+    process.stderr.write(`[${elapsed()}] Review complete.\n`);
 
     if (timedOut) return;
 
