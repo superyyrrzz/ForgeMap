@@ -289,6 +289,28 @@ internal sealed partial class ForgeCodeEmitter
                         // String→enum conversion for explicit [ForgeProperty] path
                         if (sourceLeafType != null && _config.StringToEnum != 2 && IsStringToEnumPair(sourceLeafType, destProp.Type))
                         {
+                            // Check if SkipNull applies for nullable source → non-nullable enum
+                            if (sourceLeafType.NullableAnnotation == NullableAnnotation.Annotated
+                                && GetNullableUnderlyingType(destProp.Type) == null)
+                            {
+                                var strategy2 = ResolveNullPropertyHandling(destProp.Name, nullPropertyHandlingOverrides);
+                                if (strategy2 == 1) // SkipNull — wrap with if-guard
+                                {
+                                    var localVar = "__strVal_" + SanitizeVarName(destProp.Name);
+                                    sb.AppendLine($"            if ({sourceExpr} is {{ }} {localVar})");
+                                    sb.AppendLine($"            {{");
+                                    // Generate conversion using the non-nullable local var
+                                    var innerExpr = TryGenerateStringToEnumConversion(
+                                        sourceLeafType.WithNullableAnnotation(NullableAnnotation.NotAnnotated), destProp.Type, localVar,
+                                        destProp.Name, destProp.ContainingType.Name,
+                                        nullPropertyHandlingOverrides, context, method);
+                                    if (innerExpr != null)
+                                        sb.AppendLine($"                {destParam}.{destProp.Name} = {innerExpr};");
+                                    sb.AppendLine($"            }}");
+                                    continue;
+                                }
+                            }
+
                             var enumConvExpr = TryGenerateStringToEnumConversion(
                                 sourceLeafType, destProp.Type, sourceExpr,
                                 destProp.Name, destProp.ContainingType.Name,
@@ -385,12 +407,44 @@ internal sealed partial class ForgeCodeEmitter
                 // String→enum auto-conversion
                 else if (_config.StringToEnum != 2 && IsStringToEnumPair(sourceProp.Type, destProp.Type))
                 {
-                    var enumConvExpr = TryGenerateStringToEnumConversion(
-                        sourceProp.Type, destProp.Type, $"{sourceParam}.{sourceProp.Name}",
-                        destProp.Name, destProp.ContainingType.Name,
-                        nullPropertyHandlingOverrides, context, method);
-                    if (enumConvExpr != null)
-                        sb.AppendLine($"            {destParam}.{destProp.Name} = {enumConvExpr};");
+                    var srcExpr = $"{sourceParam}.{sourceProp.Name}";
+                    // Check if SkipNull applies for nullable source → non-nullable enum
+                    if (sourceProp.Type.NullableAnnotation == NullableAnnotation.Annotated
+                        && GetNullableUnderlyingType(destProp.Type) == null)
+                    {
+                        var strategy = ResolveNullPropertyHandling(destProp.Name, nullPropertyHandlingOverrides);
+                        if (strategy == 1) // SkipNull — wrap with if-guard
+                        {
+                            var localVar = "__strVal_" + SanitizeVarName(destProp.Name);
+                            sb.AppendLine($"            if ({srcExpr} is {{ }} {localVar})");
+                            sb.AppendLine($"            {{");
+                            var innerExpr = TryGenerateStringToEnumConversion(
+                                sourceProp.Type.WithNullableAnnotation(NullableAnnotation.NotAnnotated), destProp.Type, localVar,
+                                destProp.Name, destProp.ContainingType.Name,
+                                nullPropertyHandlingOverrides, context, method);
+                            if (innerExpr != null)
+                                sb.AppendLine($"                {destParam}.{destProp.Name} = {innerExpr};");
+                            sb.AppendLine($"            }}");
+                        }
+                        else
+                        {
+                            var enumConvExpr = TryGenerateStringToEnumConversion(
+                                sourceProp.Type, destProp.Type, srcExpr,
+                                destProp.Name, destProp.ContainingType.Name,
+                                nullPropertyHandlingOverrides, context, method);
+                            if (enumConvExpr != null)
+                                sb.AppendLine($"            {destParam}.{destProp.Name} = {enumConvExpr};");
+                        }
+                    }
+                    else
+                    {
+                        var enumConvExpr = TryGenerateStringToEnumConversion(
+                            sourceProp.Type, destProp.Type, srcExpr,
+                            destProp.Name, destProp.ContainingType.Name,
+                            nullPropertyHandlingOverrides, context, method);
+                        if (enumConvExpr != null)
+                            sb.AppendLine($"            {destParam}.{destProp.Name} = {enumConvExpr};");
+                    }
                 }
                 // Enum→string auto-conversion
                 else if (IsEnumToStringPair(sourceProp.Type, destProp.Type))

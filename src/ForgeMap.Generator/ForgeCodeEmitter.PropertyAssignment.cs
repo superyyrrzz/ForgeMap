@@ -27,7 +27,7 @@ internal sealed partial class ForgeCodeEmitter
         SourceProductionContext context,
         IMethodSymbol method,
         Dictionary<string, int> nullPropertyHandlingOverrides,
-        List<(string DestPropName, string SourceExpr, string LocalVarName)>? skipNullAssignments = null,
+        List<(string DestPropName, string SourceExpr, string LocalVarName, string? AssignExpr)>? skipNullAssignments = null,
         List<(string DestPropName, string Block)>? postConstructionCollections = null,
         List<string>? preConstructionBlocks = null)
     {
@@ -79,7 +79,7 @@ internal sealed partial class ForgeCodeEmitter
                     if (destProp.SetMethod?.IsInitOnly == true)
                         return $"{sourceExpr}!";
                     var localVar = GenerateSafeVariableName(destProp.Type) + "_" + destProp.Name;
-                    skipNullAssignments.Add((destProp.Name, sourceExpr, localVar));
+                    skipNullAssignments.Add((destProp.Name, sourceExpr, localVar, null));
                     return null;
                 }
                 var handledExpr = ApplyNullPropertyHandlingExpression(
@@ -103,9 +103,12 @@ internal sealed partial class ForgeCodeEmitter
                         sourceLeafType, destProp.Type, sourceExpr,
                         destProp.Name, destProp.ContainingType.Name,
                         nullPropertyHandlingOverrides,
-                        context, method);
+                        context, method, skipNullAssignments, destProp);
                     if (enumExpr != null)
                         return enumExpr;
+                    // null means either not applicable or SkipNull added to skipNullAssignments
+                    if (skipNullAssignments != null && skipNullAssignments.Any(s => s.DestPropName == destProp.Name))
+                        return null;
                 }
 
                 // Enum→string auto-conversion for [ForgeProperty] mapped properties
@@ -117,6 +120,14 @@ internal sealed partial class ForgeCodeEmitter
                         && destProp.Type.NullableAnnotation != NullableAnnotation.Annotated)
                     {
                         var strategy = ResolveNullPropertyHandling(destProp.Name, nullPropertyHandlingOverrides);
+                        if (strategy == 1 && skipNullAssignments != null) // SkipNull
+                        {
+                            if (destProp.SetMethod?.IsInitOnly == true)
+                                return $"{expr}!";
+                            var localVar = "__enumVal_" + SanitizeVarName(destProp.Name);
+                            skipNullAssignments.Add((destProp.Name, sourceExpr, localVar, $"{localVar}.ToString()"));
+                            return null;
+                        }
                         var handledExpr = ApplyNullPropertyHandlingExpression(
                             expr, destProp.Type, destProp.Name,
                             destProp.ContainingType.Name, strategy);
@@ -170,7 +181,7 @@ internal sealed partial class ForgeCodeEmitter
                     if (destProp.SetMethod?.IsInitOnly == true)
                         return $"{sourceExprConv}!";
                     var localVar = GenerateSafeVariableName(destProp.Type) + "_" + destProp.Name;
-                    skipNullAssignments.Add((destProp.Name, sourceExprConv, localVar));
+                    skipNullAssignments.Add((destProp.Name, sourceExprConv, localVar, null));
                     return null;
                 }
                 var handledExpr = ApplyNullPropertyHandlingExpression(
@@ -198,9 +209,12 @@ internal sealed partial class ForgeCodeEmitter
                 sourceProp.Type, destProp.Type, $"{sourceParam}.{sourceProp.Name}",
                 destProp.Name, destProp.ContainingType.Name,
                 nullPropertyHandlingOverrides,
-                context, method);
+                context, method, skipNullAssignments, destProp);
             if (enumExpr != null)
                 return enumExpr;
+            // null with SkipNull entry means property should be skipped
+            if (skipNullAssignments != null && skipNullAssignments.Any(s => s.DestPropName == destProp.Name))
+                return null;
         }
 
         // Enum→string auto-conversion (convention path)
@@ -212,6 +226,14 @@ internal sealed partial class ForgeCodeEmitter
                 && destProp.Type.NullableAnnotation != NullableAnnotation.Annotated)
             {
                 var strategy = ResolveNullPropertyHandling(destProp.Name, nullPropertyHandlingOverrides);
+                if (strategy == 1 && skipNullAssignments != null) // SkipNull
+                {
+                    if (destProp.SetMethod?.IsInitOnly == true)
+                        return $"{expr}!";
+                    var localVar = "__enumVal_" + SanitizeVarName(destProp.Name);
+                    skipNullAssignments.Add((destProp.Name, $"{sourceParam}.{sourceProp.Name}", localVar, $"{localVar}.ToString()"));
+                    return null;
+                }
                 var handledExpr = ApplyNullPropertyHandlingExpression(
                     expr, destProp.Type, destProp.Name,
                     destProp.ContainingType.Name, strategy);
@@ -240,7 +262,7 @@ internal sealed partial class ForgeCodeEmitter
                     if (destProp.SetMethod?.IsInitOnly == true)
                         return $"{flattenResult}!";
                     var localVar = GenerateSafeVariableName(destProp.Type) + "_" + destProp.Name;
-                    skipNullAssignments.Add((destProp.Name, flattenResult, localVar));
+                    skipNullAssignments.Add((destProp.Name, flattenResult, localVar, null));
                     return null;
                 }
                 var handledExpr = ApplyNullPropertyHandlingExpression(
@@ -473,7 +495,7 @@ internal sealed partial class ForgeCodeEmitter
     /// <summary>
     /// Tries to generate a string→enum conversion expression for a property assignment.
     /// Handles string/string? source → enum/enum? destination with NullPropertyHandling integration.
-    /// Returns null if the types are not a string→enum pair.
+    /// Returns null if the types are not a string→enum pair, or if SkipNull applies (adds to skipNullAssignments).
     /// </summary>
     private string? TryGenerateStringToEnumConversion(
         ITypeSymbol sourceType,
@@ -483,7 +505,9 @@ internal sealed partial class ForgeCodeEmitter
         string destTypeName,
         Dictionary<string, int> nullPropertyHandlingOverrides,
         SourceProductionContext context,
-        IMethodSymbol method)
+        IMethodSymbol method,
+        List<(string DestPropName, string SourceExpr, string LocalVarName, string? AssignExpr)>? skipNullAssignments = null,
+        IPropertySymbol? destProp = null)
     {
         if (!IsStringToEnumPair(sourceType, destType))
             return null;
@@ -503,17 +527,36 @@ internal sealed partial class ForgeCodeEmitter
         var enumFqn = $"global::{destEnumUnderlying.ToDisplayString()}";
 
         // TryParse strategy (1): generates multi-statement for non-nullable dest
+        string? result;
         if (_config.StringToEnum == 1) // TryParse
         {
-            return GenerateStringToEnumTryParseExpression(
+            result = GenerateStringToEnumTryParseExpression(
                 sourceExpr, enumFqn, isSourceNullable, isDestNullable,
                 destPropertyName, nullPropertyHandlingOverrides);
         }
+        else
+        {
+            // Parse strategy (0): generates inline expression
+            result = GenerateStringToEnumParseExpressionWithNullHandling(
+                sourceExpr, enumFqn, isSourceNullable, isDestNullable,
+                destPropertyName, destTypeName, nullPropertyHandlingOverrides);
+        }
 
-        // Parse strategy (0): generates inline expression
-        return GenerateStringToEnumParseExpressionWithNullHandling(
-            sourceExpr, enumFqn, isSourceNullable, isDestNullable,
-            destPropertyName, destTypeName, nullPropertyHandlingOverrides);
+        // null means SkipNull was selected — handle via skipNullAssignments for Forge methods
+        if (result == null && skipNullAssignments != null && destProp != null)
+        {
+            if (destProp.SetMethod?.IsInitOnly == true)
+                return $"({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), {sourceExpr}!, true)"; // init-only: fall back to NullForgiving
+            var localVar = "__strVal_" + SanitizeVarName(destPropertyName);
+            string assignExpr;
+            if (_config.StringToEnum == 1) // TryParse
+                assignExpr = $"(global::System.Enum.TryParse<{enumFqn}>({localVar}, true, out var __enumParsed_{SanitizeVarName(destPropertyName)}) ? __enumParsed_{SanitizeVarName(destPropertyName)} : default({enumFqn}))";
+            else // Parse
+                assignExpr = $"({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), {localVar}, true)";
+            skipNullAssignments.Add((destPropertyName, sourceExpr, localVar, assignExpr));
+        }
+
+        return result;
     }
 
     /// <summary>
@@ -588,9 +631,8 @@ internal sealed partial class ForgeCodeEmitter
             case 0: // NullForgiving
                 return $"({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), {sourceExpr}!, true)";
 
-            case 1: // SkipNull
-                // Non-nullable dest + SkipNull + nullable source → fall back to NullForgiving
-                return $"({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), {sourceExpr}!, true)";
+            case 1: // SkipNull — return null to signal the caller to skip the assignment
+                return null;
 
             case 2: // CoalesceToDefault
                 return $"{sourceExpr} is null ? default({enumFqn}) : ({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), {sourceExpr}, true)";
@@ -640,8 +682,8 @@ internal sealed partial class ForgeCodeEmitter
             case 0: // NullForgiving — try parse the potentially-null string
                 return $"(global::System.Enum.TryParse<{enumFqn}>({sourceExpr}!, true, out var __enum_{varSuffix}) ? __enum_{varSuffix} : default({enumFqn}))";
 
-            case 1: // SkipNull — fall back to NullForgiving for inline expression
-                return $"(global::System.Enum.TryParse<{enumFqn}>({sourceExpr}!, true, out var __enum_{varSuffix}) ? __enum_{varSuffix} : default({enumFqn}))";
+            case 1: // SkipNull — return null to signal the caller to skip the assignment
+                return null;
 
             case 2: // CoalesceToDefault
                 return $"({sourceExpr} is {{ }} __strVal_{varSuffix} && global::System.Enum.TryParse<{enumFqn}>(__strVal_{varSuffix}, true, out var __enum_{varSuffix}) ? __enum_{varSuffix} : default({enumFqn}))";

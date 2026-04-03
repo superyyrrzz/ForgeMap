@@ -2098,6 +2098,18 @@ public class TicketWithNullableEnumPriority
     public Priority? Priority { get; set; }
 }
 
+public class TicketWithEnumPriorityInitialized
+{
+    public int Id { get; set; }
+    public Priority Priority { get; set; } = Priority.Critical;
+}
+
+public class TicketWithStringPriorityFromEnum
+{
+    public int Id { get; set; }
+    public string Priority { get; set; } = "Default";
+}
+
 #endregion
 
 #region v1.4 String→Enum Forgers
@@ -2135,6 +2147,22 @@ public partial class StringToEnumNoneForger
 {
     [Ignore(nameof(TicketWithEnumPriority.Priority))]
     public partial TicketWithEnumPriority Forge(TicketWithStringPriority source);
+}
+
+[ForgeMap(NullPropertyHandling = NullPropertyHandling.SkipNull)]
+public partial class StringToEnumSkipNullForger
+{
+    // string? → enum (SkipNull: should skip assignment when null, preserving default)
+    public partial TicketWithEnumPriorityInitialized Forge(TicketWithNullableStringPriority source);
+
+    // enum? → string (SkipNull: should skip assignment when null, preserving default)
+    public partial TicketWithStringPriorityFromEnum ForgeEnumToString(TicketWithNullableEnumPriority source);
+
+    // ForgeInto: string? → enum (SkipNull)
+    public partial void ForgeInto(TicketWithNullableStringPriority source, [UseExistingValue] TicketWithEnumPriorityInitialized destination);
+
+    // ForgeInto: enum? → string (SkipNull)
+    public partial void ForgeIntoEnumToString(TicketWithNullableEnumPriority source, [UseExistingValue] TicketWithStringPriorityFromEnum destination);
 }
 
 #endregion
@@ -2250,6 +2278,83 @@ public class StringToEnumNoneTests
         var result = _forger.Forge(source);
         // Priority is ignored, so it should be default
         result.Priority.Should().Be(default(Priority));
+    }
+}
+
+public class StringToEnumSkipNullTests
+{
+    private readonly StringToEnumSkipNullForger _forger = new();
+
+    [Fact]
+    public void SkipNull_StringToEnum_NullSource_ShouldPreserveDefault()
+    {
+        // string? → enum with SkipNull: null source should preserve the initializer (Critical)
+        var source = new TicketWithNullableStringPriority { Id = 1, Priority = null };
+        var result = _forger.Forge(source);
+        result.Priority.Should().Be(Priority.Critical);
+    }
+
+    [Fact]
+    public void SkipNull_StringToEnum_NonNullSource_ShouldConvert()
+    {
+        var source = new TicketWithNullableStringPriority { Id = 1, Priority = "Low" };
+        var result = _forger.Forge(source);
+        result.Priority.Should().Be(Priority.Low);
+    }
+
+    [Fact]
+    public void SkipNull_EnumToString_NullSource_ShouldPreserveDefault()
+    {
+        // enum? → string with SkipNull: null source should preserve the initializer ("Default")
+        var source = new TicketWithNullableEnumPriority { Id = 1, Priority = null };
+        var result = _forger.ForgeEnumToString(source);
+        result.Priority.Should().Be("Default");
+    }
+
+    [Fact]
+    public void SkipNull_EnumToString_NonNullSource_ShouldConvert()
+    {
+        var source = new TicketWithNullableEnumPriority { Id = 1, Priority = Priority.High };
+        var result = _forger.ForgeEnumToString(source);
+        result.Priority.Should().Be("High");
+    }
+
+    [Fact]
+    public void SkipNull_ForgeInto_StringToEnum_NullSource_ShouldPreserveExisting()
+    {
+        var source = new TicketWithNullableStringPriority { Id = 1, Priority = null };
+        var dest = new TicketWithEnumPriorityInitialized { Id = 99, Priority = Priority.High };
+        _forger.ForgeInto(source, dest);
+        dest.Priority.Should().Be(Priority.High); // preserved, not overwritten
+        dest.Id.Should().Be(1); // Id still mapped
+    }
+
+    [Fact]
+    public void SkipNull_ForgeInto_StringToEnum_NonNullSource_ShouldConvert()
+    {
+        var source = new TicketWithNullableStringPriority { Id = 1, Priority = "Low" };
+        var dest = new TicketWithEnumPriorityInitialized { Id = 99, Priority = Priority.High };
+        _forger.ForgeInto(source, dest);
+        dest.Priority.Should().Be(Priority.Low);
+    }
+
+    [Fact]
+    public void SkipNull_ForgeInto_EnumToString_NullSource_ShouldPreserveExisting()
+    {
+        var source = new TicketWithNullableEnumPriority { Id = 1, Priority = null };
+        var dest = new TicketWithStringPriorityFromEnum { Id = 99, Priority = "Existing" };
+        _forger.ForgeIntoEnumToString(source, dest);
+        dest.Priority.Should().Be("Existing"); // preserved, not overwritten
+        dest.Id.Should().Be(1);
+    }
+
+    [Fact]
+    public void SkipNull_ForgeInto_EnumToString_NonNullSource_ShouldConvert()
+    {
+        var source = new TicketWithNullableEnumPriority { Id = 1, Priority = Priority.Medium };
+        var dest = new TicketWithStringPriorityFromEnum { Id = 99, Priority = "Existing" };
+        _forger.ForgeIntoEnumToString(source, dest);
+        dest.Priority.Should().Be("Medium");
     }
 }
 
