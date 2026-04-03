@@ -633,8 +633,10 @@ internal sealed partial class ForgeCodeEmitter
             }
             else
             {
+                if (isDestNullable)
+                    return $"(global::System.Enum.TryParse<{enumFqn}>({sourceExpr}, true, out var __enumVal_{varSuffix}) ? ({enumFqn}?)__enumVal_{varSuffix} : null)";
                 var parseExpr = $"(global::System.Enum.TryParse<{enumFqn}>({sourceExpr}, true, out var __enumVal_{varSuffix}) ? __enumVal_{varSuffix} : default({enumFqn}))";
-                return isDestNullable ? $"({enumFqn}?){parseExpr}" : parseExpr;
+                return parseExpr;
             }
         }
 
