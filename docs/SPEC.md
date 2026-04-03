@@ -29,8 +29,8 @@
 | **v1.1** | Mapping inheritance, polymorphic dispatch, inherited property resolution ([spec](SPEC-v1.1-inheritance.md)) |
 | **v1.2** | Null-safe property assignment: `NullPropertyHandling` enum with 4 strategies, three-tier config, FM0007 activation ([spec](SPEC-v1.2-null-property-handling.md)) |
 | ***v1.3*** | *Abstract destination dispatch, auto-wire nested mappings, inline collection mapping, diagnostics FM0024–FM0027 ([spec](SPEC-v1.3-auto-wiring.md))* |
-| ***v1.4*** | *Nested existing-target mapping, auto-flattening with `init`/`required`, dictionary-to-typed-object mapping, diagnostics FM0028–FM0038 ([spec](SPEC-v1.4-advanced-mapping.md))* |
-| *Future* | `[ConvertWith]`, `ITypeConverter<S,D>` |
+| ***v1.4*** | *Nested existing-target mapping, string→enum auto-conversion, `[ConvertWith]` code generation, diagnostics FM0028–FM0037 ([spec](SPEC-v1.4-advanced-mapping.md))* |
+| *v1.5* | *Auto-flattening with `init`/`required`, dictionary-to-typed-object mapping ([spec](SPEC-v1.5-advanced-mapping.md))* |
 | *Future* | `ProjectTo<T>()` |
 
 ---
@@ -350,9 +350,9 @@ public partial class AppForger
 
 **Note:** Since the null check runs first, `[BeforeForge]` callbacks are guaranteed to receive a non-null source when `NullHandling.ReturnNull` is set. With `NullHandling.ThrowException`, an exception is thrown before callbacks execute.
 
-#### 2.10 `[ConvertWith]` - Method Level *(Future)*
+#### 2.10 `[ConvertWith]` - Method Level *(v1.4)*
 
-> **Note:** This feature is planned for a future version. For v1.0, use `[ForgeFrom]` with a static method that contains the conversion logic.
+> **Status:** Planned for v1.4. See `docs/SPEC-v1.4-advanced-mapping.md` Feature 3 for full specification.
 
 Uses a custom converter class for complex type transformations. This is the ForgeMap equivalent of AutoMapper's `ITypeConverter` and `ConvertUsing()`.
 
@@ -852,9 +852,9 @@ public partial DestType Forge(SourceType source)
 | `.ForMember(d => d.X, o => o.Ignore())` | `[Ignore(nameof(D.X))]` |
 | `.ForMember(d => d.X, o => o.MapFrom(s => s.Y))` | `[ForgeProperty(nameof(S.Y), nameof(D.X))]` |
 | `.ForMember(d => d.X, o => o.MapFrom(s => Calc(s)))` | `[ForgeFrom(nameof(D.X), nameof(Calc))]` |
-| `.ConvertUsing<TConverter>()` | `[ConvertWith(typeof(TConverter))]` *(future)* |
-| `.ConvertUsing(new Converter())` | `[ConvertWith(typeof(Converter))]` *(future)* |
-| `ITypeConverter<S, D>` | `ITypeConverter<S, D>` *(future)* |
+| `.ConvertUsing<TConverter>()` | `[ConvertWith(typeof(TConverter))]` *(planned for v1.4)* |
+| `.ConvertUsing(new Converter())` | `[ConvertWith(nameof(_converter))]` *(planned for v1.4)* |
+| `ITypeConverter<S, D>` | `ITypeConverter<S, D>` *(planned for v1.4)* |
 | `.IncludeBase<TBaseSrc, TBaseDst>()` | `[IncludeBaseForge(typeof(TBaseSrc), typeof(TBaseDst))]` |
 | `.Include<TDerivedSrc, TDerivedDst>()` | Auto-discovered by `[ForgeAllDerived]` |
 | `.IncludeAllDerived()` | `[ForgeAllDerived]` |
@@ -868,7 +868,7 @@ public partial DestType Forge(SourceType source)
 
 - Simple property-access `MapFrom(s => s.Y)` maps to `[ForgeProperty]`.
 - Computed `MapFrom` lambdas map to `[ForgeFrom]`.
-- Converter-based AutoMapper features are planned for a future version.
+- Converter-based AutoMapper features are planned for v1.4 (see [spec](SPEC-v1.4-advanced-mapping.md)).
 - Inheritance/polymorphism features (`[IncludeBaseForge]`, `[ForgeAllDerived]`) are available since v1.1.
 
 ### Example Migration
