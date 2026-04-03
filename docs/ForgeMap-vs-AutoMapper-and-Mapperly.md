@@ -156,7 +156,7 @@ ForgeMap was designed with a **1:1 concept mapping** from AutoMapper:
 | `.ForMember(d => d.X, o => o.Ignore())` | `[Ignore(nameof(D.X))]` | |
 | `.ForMember(d => d.X, o => o.MapFrom(s => s.Y))` | `[ForgeProperty(nameof(S.Y), nameof(D.X))]` | |
 | `.ForMember(d => d.X, o => o.MapFrom(s => Calc(s)))` | `[ForgeFrom(nameof(D.X), nameof(Calc))]` | |
-| `.ConvertUsing<TConverter>()` | `[ConvertWith(typeof(TConverter))]` | Planned — attribute defined, not yet code-generated |
+| `.ConvertUsing<TConverter>()` | `[ConvertWith(typeof(TConverter))]` | v1.4 |
 | `.IncludeBase<TSourceBase, TDestinationBase>()` | `[IncludeBaseForge(typeof(TSourceBase), typeof(TDestinationBase))]` | |
 | `.IncludeAllDerived()` | `[ForgeAllDerived]` | Auto-discovered, no manual listing |
 | `.ReverseMap()` | `[ReverseForge]` | With compile-time validation |
@@ -165,7 +165,7 @@ ForgeMap was designed with a **1:1 concept mapping** from AutoMapper:
 | `mapper.Map(source, existing)` | Void partial method with `[UseExistingValue]` destination | Method name is arbitrary (e.g. `ForgeInto`) |
 | `services.AddAutoMapper(cfg => { }, assemblies...)` | `services.AddForgeMaps()` | Registers as singletons by default (optional `ServiceLifetime` parameter) |
 
-Nearly every AutoMapper concept has a direct ForgeMap equivalent (`[ConvertWith]` is defined but not yet code-generated). Teams migrating from AutoMapper can apply mechanical, pattern-based transformations rather than re-thinking their mapping architecture.
+Every AutoMapper concept has a direct ForgeMap equivalent. Teams migrating from AutoMapper can apply mechanical, pattern-based transformations rather than re-thinking their mapping architecture.
 
 ### Automated Migration Skill
 

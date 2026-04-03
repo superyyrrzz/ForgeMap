@@ -2,13 +2,22 @@
 
 ## Overview
 
-v1.4 targets the three highest-demand gaps identified through Mapperly GitHub issue analysis. These features address real pain points that Mapperly users face today — validated by community reaction counts and open issue longevity.
+v1.4 delivers nested existing-target mapping plus two AutoMapper migration pain points identified from real-world migration experience.
 
-| Feature | Mapperly Pain Point | Evidence | Impact |
-|---------|---------------------|----------|--------|
-| Nested existing-target mapping | [riok/mapperly#884](https://github.com/riok/mapperly/issues/884) (13👍), [#1311](https://github.com/riok/mapperly/issues/1311) (11👍), [#665](https://github.com/riok/mapperly/issues/665) (4👍) | 32 reactions across 3 open issues, unresolved since 2023 | EF Core CRUD apps — updates break change tracking |
-| Auto-flattening with `init`/`required` support | [riok/mapperly#643](https://github.com/riok/mapperly/issues/643) (6👍), [#589](https://github.com/riok/mapperly/issues/589) (4👍) | Broken in Mapperly since mid-2023 | Modern C# users blocked on `init`/`required` + flattening |
-| Dictionary-to-typed-object mapping | [riok/mapperly#1309](https://github.com/riok/mapperly/issues/1309) (10👍) | Top-10 most-reacted open Mapperly issue | Common in deserialization, config, NoSQL, dynamic scenarios |
+| # | Feature | Issue | Status |
+|---|---------|-------|--------|
+| 1 | Nested existing-target mapping | [#77](https://github.com/superyyrrzz/ForgeMap/pull/77) | **Shipped** |
+| 2 | Auto-convert string→enum | [#80](https://github.com/superyyrrzz/ForgeMap/issues/80) | Planned |
+| 3 | `[ConvertWith]` code generation | [#81](https://github.com/superyyrrzz/ForgeMap/issues/81) | Planned |
+
+### Deferred to v1.5
+
+The following features were originally planned for v1.4 but have been moved to v1.5 to prioritize migration-driven issues #80 and #81:
+
+| Feature | Issue | Original v1.4 Section |
+|---------|-------|-----------------------|
+| Auto-flattening with `init`/`required` support | [#82](https://github.com/superyyrrzz/ForgeMap/issues/82) | Feature 2 (below, retained for reference) |
+| Dictionary-to-typed-object mapping (`[ForgeDictionary]`) | [#83](https://github.com/superyyrrzz/ForgeMap/issues/83) | Feature 3 (below, retained for reference) |
 
 ---
 
@@ -232,9 +241,292 @@ if (source.Items is { } __src_Items && target.Items is { } __tgt_Items)
 
 ---
 
-## Feature 2: Auto-Flattening with `init`/`required` Support
+## Feature 2: Auto-Convert String Properties to Enum Destinations
+
+> **Issue:** [#80](https://github.com/superyyrrzz/ForgeMap/issues/80)
 
 ### Problem
+
+When a source property is `string` and the destination property is an `enum`, ForgeMap currently requires an explicit `[ForgeFrom]` resolver for each property. AutoMapper and Mapperly handle this by convention. In a real-world migration (Docs.LocalizationContentService), this pattern repeated ~6 times, adding ~40-60 lines of boilerplate:
+
+```csharp
+// Current workaround: one resolver per property
+[ForgeFrom(nameof(UploadFileViewObjectOutput.Type), nameof(ResolveFileType))]
+public partial UploadFileViewObjectOutput ForgeUploadFileViewObjectOutput(FileRequest source);
+
+private static FileType ResolveFileType(FileRequest source)
+    => Enum.Parse<FileType>(source.Type);
+```
+
+### Design
+
+When the generator detects that the source property type is `string` and the destination property type is an `enum`, and no explicit `[ForgeFrom]`, `[ForgeProperty]`, or `[Ignore]` overrides the property, it automatically emits `Enum.Parse<T>()`.
+
+### Configuration
+
+A `StringToEnumConversion` option on `[ForgeMap]` and `[ForgeMapDefaults]` controls the strategy:
+
+```csharp
+public enum StringToEnumConversion
+{
+    /// <summary>Use Enum.Parse (throws on invalid values). Default.</summary>
+    Parse,
+
+    /// <summary>Use Enum.TryParse (falls back to default(T) on failure).</summary>
+    TryParse,
+
+    /// <summary>Do not auto-convert; require explicit [ForgeFrom] resolver.</summary>
+    None
+}
+```
+
+```csharp
+[AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = false)]
+public sealed class ForgeMapAttribute : Attribute
+{
+    // ... existing properties ...
+
+    /// <summary>
+    /// Controls automatic string-to-enum conversion behavior.
+    /// Default is <see cref="StringToEnumConversion.Parse"/>.
+    /// </summary>
+    public StringToEnumConversion StringToEnum { get; set; } = StringToEnumConversion.Parse;
+}
+
+[AttributeUsage(AttributeTargets.Assembly, AllowMultiple = false, Inherited = false)]
+public sealed class ForgeMapDefaultsAttribute : Attribute
+{
+    // ... existing properties ...
+
+    /// <summary>
+    /// Assembly-level default for string-to-enum conversion.
+    /// Default is <see cref="StringToEnumConversion.Parse"/>.
+    /// </summary>
+    public StringToEnumConversion StringToEnum { get; set; } = StringToEnumConversion.Parse;
+}
+```
+
+### Generated Code
+
+**Parse strategy (default):**
+
+```csharp
+__result.Type = global::System.Enum.Parse<FileType>(source.Type);
+```
+
+**TryParse strategy:**
+
+```csharp
+if (global::System.Enum.TryParse<FileType>(source.Type, out var __enum_Type))
+    __result.Type = __enum_Type;
+```
+
+### Null Handling
+
+When the source `string` is nullable, the generated code respects the forger's `NullPropertyHandling`:
+
+| `NullPropertyHandling` | Generated Code |
+|-------------------------|----------------|
+| `NullForgiving` | `Enum.Parse<T>(source.Prop!)` |
+| `SkipNull` | `if (source.Prop is { } __v) __result.Prop = Enum.Parse<T>(__v);` |
+| `CoalesceToDefault` | `__result.Prop = string.IsNullOrEmpty(source.Prop) ? default : Enum.Parse<T>(source.Prop);` |
+| `ThrowException` | `__result.Prop = Enum.Parse<T>(source.Prop ?? throw new ArgumentNullException(...));` |
+
+### Interaction with Existing Features
+
+| Feature | Interaction |
+|---------|-------------|
+| `[ForgeFrom]` / `[ForgeProperty]` / `[Ignore]` | Explicit attributes take precedence — auto-conversion is skipped |
+| `[ReverseForge]` | Reverse direction emits `source.Prop.ToString()` (enum→string) |
+| `[ForgeDictionary]` value conversion | Enum.Parse already exists in the dictionary pipeline (priority 4); this feature applies the same logic to standard property mapping |
+| `PropertyMatching` | Does not affect conversion — only type detection matters |
+
+### Diagnostics
+
+| Code | Severity | Description |
+|------|----------|-------------|
+| **FM0033** | Info | Property '{0}' auto-converted from string to enum '{1}' using {Parse\|TryParse} (disabled by default) |
+
+### Behavioral Contract
+
+| Scenario | Behavior |
+|----------|----------|
+| `string` source → `enum` destination, no override | Auto-convert via configured strategy |
+| `string?` source → `enum` destination | Follows `NullPropertyHandling` |
+| `string` source → `enum?` destination | `Enum.Parse<T>(source.Prop)` assigned to nullable |
+| `StringToEnum = None` | No auto-conversion; unmapped property emits FM0006 if no explicit mapping |
+| `TryParse` with invalid value | Falls back to `default(T)` — no exception |
+| `Parse` with invalid value | Runtime `ArgumentException` |
+| Explicit `[ForgeFrom]` on same property | Explicit resolver takes precedence |
+
+### Competitor Comparison
+
+| Aspect | AutoMapper | Mapperly | ForgeMap v1.4 |
+|--------|-----------|---------|---------------|
+| String→enum | ✅ Convention (runtime) | ✅ Compile-time | ✅ Compile-time |
+| Configurable strategy | ❌ Always Parse | ❌ Always Parse | ✅ Parse / TryParse / None |
+| Null handling | Runtime | Compile-time | ✅ Follows `NullPropertyHandling` |
+
+---
+
+## Feature 3: `[ConvertWith]` Code Generation
+
+> **Issue:** [#81](https://github.com/superyyrrzz/ForgeMap/issues/81)
+
+### Problem
+
+The `[ConvertWith(typeof(TConverter))]` attribute and `ITypeConverter<TSource, TDest>` interface are defined in ForgeMap.Abstractions but not yet code-generated. Without it, complex multi-step conversions (JSON deserialization, aggregation, cross-type business logic) require manual helper methods in the forger class, losing the declarative pattern.
+
+In the Docs.LocalizationContentService migration, 4 AutoMapper converters became ~120 lines of manual helper methods.
+
+### Existing API Surface
+
+The attribute and interface already exist in `ForgeMap.Abstractions`:
+
+```csharp
+// ConvertWithAttribute.cs
+[AttributeUsage(AttributeTargets.Method, AllowMultiple = false, Inherited = false)]
+public sealed class ConvertWithAttribute : Attribute
+{
+    public ConvertWithAttribute(Type converterType) { ... }
+    public Type ConverterType { get; }
+}
+
+// ITypeConverter.cs
+public interface ITypeConverter<in TSource, out TDestination>
+{
+    TDestination Convert(TSource source);
+}
+```
+
+### Usage
+
+**Type-based (parameterless constructor):**
+
+```csharp
+[ForgeMap]
+public partial class AppForger
+{
+    [ConvertWith(typeof(SendEventRequestConverter))]
+    public partial FailedNotificationStorageModel Forge(SendEventRequest source);
+}
+
+public class SendEventRequestConverter : ITypeConverter<SendEventRequest, FailedNotificationStorageModel>
+{
+    public FailedNotificationStorageModel Convert(SendEventRequest source)
+    {
+        // Complex conversion logic here
+    }
+}
+```
+
+**Instance-based (DI-aware via field/property reference):**
+
+```csharp
+[ForgeMap]
+public partial class AppForger
+{
+    private readonly SendEventRequestConverter _sendEventRequestConverter;
+
+    public AppForger(SendEventRequestConverter converter)
+    {
+        _sendEventRequestConverter = converter;
+    }
+
+    [ConvertWith(nameof(_sendEventRequestConverter))]
+    public partial FailedNotificationStorageModel Forge(SendEventRequest source);
+}
+```
+
+### Generated Code
+
+**Type-based:**
+
+```csharp
+public partial FailedNotificationStorageModel Forge(SendEventRequest source)
+{
+    if (source == null) return null!;
+    return new SendEventRequestConverter().Convert(source);
+}
+```
+
+**Instance-based (field reference):**
+
+```csharp
+public partial FailedNotificationStorageModel Forge(SendEventRequest source)
+{
+    if (source == null) return null!;
+    return _sendEventRequestConverter.Convert(source);
+}
+```
+
+**DI via IServiceProvider (existing constructor pattern from SPEC.md):**
+
+```csharp
+public partial DestType Forge(SourceType source)
+{
+    if (source == null) return null!;
+    var converter = (MyConverter)_services.GetRequiredService(typeof(MyConverter));
+    return converter.Convert(source);
+}
+```
+
+### Resolution Algorithm
+
+1. **Detect attribute**: Check if the forge method has `[ConvertWith]`
+2. **Resolve converter reference**:
+   - If constructor argument is a `Type`: use type-based instantiation
+   - If constructor argument is a `string` (via `nameof`): locate field/property on the forger class
+3. **Validate ITypeConverter**: The converter type must implement `ITypeConverter<TSource, TDest>` where `TSource` and `TDest` match the method's parameter and return types
+4. **Check constructor** (type-based only): The converter type must have an accessible parameterless constructor
+5. **Emit**: Generate the appropriate delegation code
+6. **Precedence**: `[ConvertWith]` takes full control of the method body — `[ForgeProperty]`, `[ForgeFrom]`, and auto-wiring are all ignored
+
+### Diagnostics
+
+| Code | Severity | Description |
+|------|----------|-------------|
+| **FM0034** | Error | `[ConvertWith]` type '{0}' does not implement `ITypeConverter<{1}, {2}>` for the method's source and destination types |
+| **FM0035** | Error | `[ConvertWith]` converter type '{0}' has no accessible parameterless constructor (for type-based usage) |
+| **FM0036** | Warning | `[ConvertWith]` on a method that also has `[ForgeProperty]` / `[ForgeFrom]` attributes — converter takes full precedence, property-level attributes are ignored |
+
+### Interaction with Existing Features
+
+| Feature | Interaction |
+|---------|-------------|
+| `[ForgeProperty]` / `[ForgeFrom]` | Ignored — converter takes full precedence (FM0036 warning) |
+| `[ForgeAllDerived]` | FM0023 error (existing diagnostic — mutually exclusive) |
+| `[ReverseForge]` | Reverse not auto-generated — if both directions need conversion, declare two `[ConvertWith]` methods |
+| `[UseExistingValue]` mutation | Converter's `Convert` returns a new object; direct mutation not supported. Use `[ForgeFrom]` for mutation patterns |
+| `NullHandling` | Null check emitted before converter call (same as all forge methods) |
+
+### Behavioral Contract
+
+| Scenario | Behavior |
+|----------|----------|
+| `[ConvertWith(typeof(T))]` with valid `ITypeConverter` | Instantiate `T` and delegate |
+| `[ConvertWith(nameof(field))]` with valid field | Use field reference |
+| Converter type doesn't implement `ITypeConverter<S,D>` | FM0034 error |
+| Converter type has no parameterless constructor (type-based) | FM0035 error |
+| Combined with `[ForgeProperty]` or `[ForgeFrom]` | FM0036 warning, converter wins |
+| Combined with `[ForgeAllDerived]` | FM0023 error |
+| Source is null | Returns `null!` (before converter is called) |
+
+### Competitor Comparison
+
+| Aspect | AutoMapper | Mapperly | ForgeMap v1.4 |
+|--------|-----------|---------|---------------|
+| Custom converter | ✅ `.ConvertUsing<T>()` (runtime) | ❌ No equivalent | ✅ `[ConvertWith(typeof(T))]` (compile-time) |
+| DI support | ✅ Runtime resolution | N/A | ✅ Field reference or `IServiceProvider` |
+| Compile-time validation | ❌ Runtime errors | N/A | ✅ FM0034/FM0035 diagnostics |
+
+---
+
+## Deferred to v1.5: Auto-Flattening with `init`/`required` Support
+
+> **Deferred:** See [#82](https://github.com/superyyrrzz/ForgeMap/issues/82). Specification retained below for reference.
+
+### Problem (Auto-Flattening)
 
 Users frequently map nested source objects to flattened DTOs (e.g., `Order.Customer.Name` → `OrderDto.CustomerName`). This is one of the most common mapping patterns in enterprise applications:
 
@@ -453,9 +745,11 @@ public Order Forge(OrderDto source)
 
 ---
 
-## Feature 3: Dictionary-to-Typed-Object Mapping
+## Deferred to v1.5: Dictionary-to-Typed-Object Mapping
 
-### Problem
+> **Deferred:** See [#83](https://github.com/superyyrrzz/ForgeMap/issues/83). Specification retained below for reference.
+
+### Problem (Dictionary Mapping)
 
 Many real-world scenarios produce `Dictionary<string, object?>` (or `IDictionary<string, object?>`, `IReadOnlyDictionary<string, object?>`):
 
@@ -755,46 +1049,67 @@ public Dictionary<string, object?> Forge(UserDto source)
 
 ## New Diagnostics Summary
 
-| Code | Severity | Category | Description |
-|------|----------|----------|-------------|
-| FM0028 | Error | `ForgeMap` | `ExistingTarget = true` is only valid on `[UseExistingValue]` mutation methods |
-| FM0029 | Error | `ForgeMap` | Property '{0}' has no getter — cannot read existing value for in-place update |
-| FM0030 | Warning | `ForgeMap` | No matching `ForgeInto` method found for nested existing-target property '{0}'. The property will be skipped |
-| FM0031 | Error | `ForgeMap` | `CollectionUpdateStrategy.Sync` requires `KeyProperty` to be set on `[ForgeProperty]` for property '{0}' |
-| FM0032 | Error | `ForgeMap` | `KeyProperty` '{0}' not found on element type '{1}' |
-| FM0033 | Info | `ForgeMap` | Property '{0}' auto-flattened from '{1}' (disabled by default) |
-| FM0034 | Error | `ForgeMap` | Unflattening requires type '{0}' to have an accessible constructor, but none was found |
-| FM0035 | Warning | `ForgeMap` | Auto-flattened property '{0}' cannot be unflattened for `[ReverseForge]`: {reason} |
-| FM0036 | Error | `ForgeMap` | `[ForgeDictionary]` source parameter must be `Dictionary<string, object?>`, `IDictionary<string, object?>`, or `IReadOnlyDictionary<string, object?>` |
-| FM0037 | Warning | `ForgeMap` | Destination property '{0}' of type '{1}' has no applicable conversion from `object?`. The property will be skipped |
-| FM0038 | Info | `ForgeMap` | Property '{0}' mapped from dictionary key '{1}' with conversion '{2}' (disabled by default) |
+### v1.4 Diagnostics (shipping)
+
+| Code | Severity | Category | Feature | Description |
+|------|----------|----------|---------|-------------|
+| FM0028 | Error | `ForgeMap` | Nested existing-target | `ExistingTarget = true` is only valid on `[UseExistingValue]` mutation methods |
+| FM0029 | Error | `ForgeMap` | Nested existing-target | Property '{0}' has no getter — cannot read existing value for in-place update |
+| FM0030 | Warning | `ForgeMap` | Nested existing-target | No matching `ForgeInto` method found for nested existing-target property '{0}'. The property will be skipped |
+| FM0031 | Error | `ForgeMap` | Nested existing-target | `CollectionUpdateStrategy.Sync` requires `KeyProperty` to be set on `[ForgeProperty]` for property '{0}' |
+| FM0032 | Error | `ForgeMap` | Nested existing-target | `KeyProperty` '{0}' not found on element type '{1}' |
+| FM0033 | Info | `ForgeMap` | String→enum | Property '{0}' auto-converted from string to enum '{1}' using {Parse\|TryParse} (disabled by default) |
+| FM0034 | Error | `ForgeMap` | `[ConvertWith]` | `[ConvertWith]` type '{0}' does not implement `ITypeConverter<{1}, {2}>` |
+| FM0035 | Error | `ForgeMap` | `[ConvertWith]` | `[ConvertWith]` converter type '{0}' has no accessible parameterless constructor |
+| FM0036 | Warning | `ForgeMap` | `[ConvertWith]` | `[ConvertWith]` on a method that also has `[ForgeProperty]` / `[ForgeFrom]` — converter takes full precedence |
+
+### v1.5 Diagnostics (deferred)
+
+| Code | Severity | Category | Feature | Description |
+|------|----------|----------|---------|-------------|
+| FM0037 | Info | `ForgeMap` | Auto-flattening | Property '{0}' auto-flattened from '{1}' (disabled by default) |
+| FM0038 | Error | `ForgeMap` | Auto-flattening | Unflattening requires type '{0}' to have an accessible constructor |
+| FM0039 | Warning | `ForgeMap` | Auto-flattening | Auto-flattened property '{0}' cannot be unflattened for `[ReverseForge]`: {reason} |
+| FM0040 | Error | `ForgeMap` | `[ForgeDictionary]` | Source parameter must be `Dictionary<string, object?>`, `IDictionary<string, object?>`, or `IReadOnlyDictionary<string, object?>` |
+| FM0041 | Warning | `ForgeMap` | `[ForgeDictionary]` | Destination property '{0}' of type '{1}' has no applicable conversion from `object?` |
+| FM0042 | Info | `ForgeMap` | `[ForgeDictionary]` | Property '{0}' mapped from dictionary key '{1}' with conversion '{2}' (disabled by default) |
 
 ---
 
 ## API Changes Summary
 
-### New Attributes
-
-| Attribute | Target | Description |
-|-----------|--------|-------------|
-| `ForgeDictionaryAttribute` | Method | Marks a method as dictionary-to-typed-object mapping |
-
-### New Enums
+### New Enums (v1.4)
 
 | Enum | Values | Description |
 |------|--------|-------------|
 | `CollectionUpdateStrategy` | `Replace`, `Add`, `Sync` | How collection properties are updated in existing-target mutation |
-| `MissingKeyBehavior` | `Skip`, `Throw` | Behavior when a dictionary key is missing |
+| `StringToEnumConversion` | `Parse`, `TryParse`, `None` | How string source properties are converted to enum destinations |
 
-### New Properties on Existing Attributes
+### New Properties on Existing Attributes (v1.4)
 
 | Attribute | Property | Type | Default | Description |
 |-----------|----------|------|---------|-------------|
 | `ForgePropertyAttribute` | `ExistingTarget` | `bool` | `false` | Update nested object in place |
 | `ForgePropertyAttribute` | `CollectionUpdate` | `CollectionUpdateStrategy` | `Replace` | Collection update strategy for existing-target |
 | `ForgePropertyAttribute` | `KeyProperty` | `string?` | `null` | Key property for `Sync` strategy |
-| `ForgeMapAttribute` | `AutoFlatten` | `bool` | `true` | Enable auto-flattening |
-| `ForgeMapDefaultsAttribute` | `AutoFlatten` | `bool` | `true` | Assembly-level auto-flattening default |
+| `ForgeMapAttribute` | `StringToEnum` | `StringToEnumConversion` | `Parse` | String-to-enum conversion strategy |
+| `ForgeMapDefaultsAttribute` | `StringToEnum` | `StringToEnumConversion` | `Parse` | Assembly-level string-to-enum default |
+
+### Existing Abstractions Used (v1.4 — no new API surface)
+
+| Type | Description |
+|------|-------------|
+| `ConvertWithAttribute` | Already defined; now code-generated |
+| `ITypeConverter<TSource, TDest>` | Already defined; now code-generated |
+
+### Deferred to v1.5
+
+| Type | Kind | Description |
+|------|------|-------------|
+| `ForgeDictionaryAttribute` | Attribute | Dictionary-to-typed-object mapping |
+| `MissingKeyBehavior` | Enum | Skip / Throw for missing dictionary keys |
+| `ForgeMapAttribute.AutoFlatten` | Property | Enable auto-flattening |
+| `ForgeMapDefaultsAttribute.AutoFlatten` | Property | Assembly-level auto-flattening default |
 
 ---
 
@@ -802,29 +1117,17 @@ public Dictionary<string, object?> Forge(UserDto source)
 
 ### From v1.3 to v1.4
 
-v1.4 introduces no required source changes and no API-surface breaks, but there is an intentional **behavior change** in default mapping semantics due to auto-flattening:
+v1.4 introduces no required source changes and no API-surface breaks. Two behavior changes are opt-in:
 
-1. **Auto-flattening is on by default (behavior change with opt-out)** — destination properties that were previously unmatched (producing FM0006 by default) may now be mapped via auto-flattening, which can change runtime results compared to v1.3 in previously warning-only scenarios. To restore v1.3 behavior for a given map, disable auto-flattening:
+1. **String-to-enum auto-conversion is on by default** — `string` source properties mapped to `enum` destinations now auto-convert via `Enum.Parse<T>()`. Previously-unmapped properties that now match may change behavior. To restore v1.3 behavior:
    ```csharp
-   [ForgeMap(AutoFlatten = false)]
+   [ForgeMap(StringToEnum = StringToEnumConversion.None)]
    ```
-   or set the assembly-level default via `[ForgeMapDefaults(AutoFlatten = false)]`.
+   or set the assembly-level default via `[ForgeMapDefaults(StringToEnum = StringToEnumConversion.None)]`.
 
-2. **Explicit `[ForgeProperty]` with dot-paths still works** — auto-flattening produces identical codegen. Explicit attributes take precedence and can be gradually removed
+2. **Nested existing-target requires opt-in** — `ExistingTarget = true` must be explicitly set; no behavior changes to existing mutation methods
 
-3. **Nested existing-target requires opt-in** — `ExistingTarget = true` must be explicitly set; no behavior changes to existing mutation methods
-
-4. **`[ForgeDictionary]` is a new attribute** — no interaction with existing code unless added
-
-### Identifying auto-flattened properties
-
-FM0033 is an info-level diagnostic (disabled by default). Enable it to see which properties are auto-flattened:
-
-```ini
-# In .editorconfig
-[*.cs]
-dotnet_diagnostic.FM0033.severity = suggestion
-```
+3. **`[ConvertWith]` is now code-generated** — methods with `[ConvertWith]` that previously compiled but produced no generated code will now produce generated code. This is the intended behavior; no migration action needed unless converters were incomplete placeholders
 
 ---
 
@@ -833,13 +1136,12 @@ dotnet_diagnostic.FM0033.severity = suggestion
 | Limitation | Reason | Workaround |
 |-----------|--------|------------|
 | Collection `Sync` only supports `List<T>` destinations with `RemoveAll` | `ICollection<T>` lacks `RemoveAll`; generating LINQ-based removal adds complexity | Use `Replace` strategy or implement sync manually |
-| Auto-flattening max depth: 4 segments | Prevents combinatorial explosion in segment matching | Use explicit `[ForgeProperty]` with dot-path for deeper nesting |
-| `[ForgeDictionary]` value types: `object?` only | `Dictionary<string, string>` or other typed dictionaries use standard property mapping | Use `Dictionary<string, object?>` or wrap in an adapter |
-| Case-insensitive dictionary lookup is O(n) regardless of dictionary comparer | Generated code performs a linear scan over `source` keys and compares via `string.Equals(..., OrdinalIgnoreCase)` | For better performance, pre-normalize keys or use case-sensitive lookup |
 | `ExistingTarget` auto-wiring requires a suitable `void` method with `[UseExistingValue]` parameter | Auto-wiring selects methods by signature and attributes, not by method name | Use the conventional `ForgeInto` method name or explicit `[ForgeWith]` to control/disambiguate mapping |
+| `[ConvertWith]` instance-based usage requires manually declaring the field | Generator cannot infer DI bindings | Use `nameof(field)` pattern or inject `IServiceProvider` |
+| `StringToEnum = TryParse` silently falls back to `default(T)` | By design — mirrors `Enum.TryParse` semantics | Use `Parse` if invalid values should throw |
 
 ---
 
-*Specification Version: 1.4*
-*Status: Proposed*
+*Specification Version: 1.4 (revised 2026-04-03)*
+*Status: In Progress — Feature 1 shipped, Features 2-3 planned*
 *License: MIT*

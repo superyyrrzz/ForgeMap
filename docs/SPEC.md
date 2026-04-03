@@ -30,7 +30,7 @@
 | **v1.2** | Null-safe property assignment: `NullPropertyHandling` enum with 4 strategies, three-tier config, FM0007 activation ([spec](SPEC-v1.2-null-property-handling.md)) |
 | ***v1.3*** | *Abstract destination dispatch, auto-wire nested mappings, inline collection mapping, diagnostics FM0024–FM0027 ([spec](SPEC-v1.3-auto-wiring.md))* |
 | ***v1.4*** | *Nested existing-target mapping, auto-flattening with `init`/`required`, dictionary-to-typed-object mapping, diagnostics FM0028–FM0038 ([spec](SPEC-v1.4-advanced-mapping.md))* |
-| *Future* | `[ConvertWith]`, `ITypeConverter<S,D>` |
+| *v1.4* | `[ConvertWith]`, `ITypeConverter<S,D>` |
 | *Future* | `ProjectTo<T>()` |
 
 ---
@@ -350,9 +350,9 @@ public partial class AppForger
 
 **Note:** Since the null check runs first, `[BeforeForge]` callbacks are guaranteed to receive a non-null source when `NullHandling.ReturnNull` is set. With `NullHandling.ThrowException`, an exception is thrown before callbacks execute.
 
-#### 2.10 `[ConvertWith]` - Method Level *(Future)*
+#### 2.10 `[ConvertWith]` - Method Level *(v1.4)*
 
-> **Note:** This feature is planned for a future version. For v1.0, use `[ForgeFrom]` with a static method that contains the conversion logic.
+> **Status:** Shipping in v1.4. See `docs/SPEC-v1.4-advanced-mapping.md` Feature 3 for full specification.
 
 Uses a custom converter class for complex type transformations. This is the ForgeMap equivalent of AutoMapper's `ITypeConverter` and `ConvertUsing()`.
 
