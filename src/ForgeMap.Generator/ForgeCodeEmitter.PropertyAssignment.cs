@@ -480,12 +480,56 @@ internal sealed partial class ForgeCodeEmitter
         // String→enum auto-conversion for constructor parameters
         if (sourcePropertyType != null && _config.StringToEnum != 2 && IsStringToEnumPair(sourcePropertyType, destPropertyType))
         {
+            var isSourceNullable = sourcePropertyType.NullableAnnotation == NullableAnnotation.Annotated;
+            var destEnumUnderlying = GetNullableUnderlyingType(destPropertyType) ?? destPropertyType;
+            var isDestNullable = GetNullableUnderlyingType(destPropertyType) != null;
+
+            // Nullable string → non-nullable enum: apply NullPropertyHandling before parsing
+            if (isSourceNullable && !isDestNullable)
+            {
+                var strategy = ResolveNullPropertyHandling(destPropertyName, nullPropertyHandlingOverrides);
+                if (strategy == 1) strategy = 0; // SkipNull → NullForgiving for ctor params
+                var enumFqn = $"global::{destEnumUnderlying.ToDisplayString()}";
+                switch (strategy)
+                {
+                    case 3: // ThrowException — null-check then parse
+                        var nullChecked = $"({sourceExpression} ?? throw new global::System.ArgumentNullException(\"{destPropertyName}\", \"Cannot assign null source property '{sourceExpression}' to non-nullable destination '{destTypeName}.{destPropertyName}'.\"))";
+                        if (_config.StringToEnum == 1) // TryParse
+                            return $"(global::System.Enum.TryParse<{enumFqn}>({nullChecked}, true, out var __enumVal_{SanitizeVarName(sourceExpression)}) ? __enumVal_{SanitizeVarName(sourceExpression)} : default({enumFqn}))";
+                        return $"({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), {nullChecked}, true)";
+                    case 2: // CoalesceToDefault — return default enum when source is null
+                        if (_config.StringToEnum == 1) // TryParse
+                            return $"({sourceExpression} is {{ }} __enumStr_{SanitizeVarName(sourceExpression)} && global::System.Enum.TryParse<{enumFqn}>(__enumStr_{SanitizeVarName(sourceExpression)}, true, out var __enumVal_{SanitizeVarName(sourceExpression)}) ? __enumVal_{SanitizeVarName(sourceExpression)} : default({enumFqn}))";
+                        return $"({sourceExpression} is {{ }} __enumStr_{SanitizeVarName(sourceExpression)} ? ({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), __enumStr_{SanitizeVarName(sourceExpression)}, true) : default({enumFqn}))";
+                    default: // NullForgiving (0) — fall through to default handler
+                        break;
+                }
+            }
             return GenerateStringToEnumParseExpression(sourcePropertyType, destPropertyType, sourceExpression);
         }
 
         // Enum→string auto-conversion for constructor parameters
         if (sourcePropertyType != null && IsEnumToStringPair(sourcePropertyType, destPropertyType))
         {
+            var srcUnderlying = GetNullableUnderlyingType(sourcePropertyType);
+            var isDestNullableStr = destPropertyType.NullableAnnotation == NullableAnnotation.Annotated;
+
+            // Nullable enum → non-nullable string: apply NullPropertyHandling
+            if (srcUnderlying != null && !isDestNullableStr)
+            {
+                var strategy = ResolveNullPropertyHandling(destPropertyName, nullPropertyHandlingOverrides);
+                if (strategy == 1) strategy = 0; // SkipNull → NullForgiving for ctor params
+                var toStrExpr = $"{sourceExpression}?.ToString()";
+                switch (strategy)
+                {
+                    case 3: // ThrowException
+                        return $"{toStrExpr} ?? throw new global::System.ArgumentNullException(\"{destPropertyName}\", \"Cannot assign null source property '{sourceExpression}' to non-nullable destination '{destTypeName}.{destPropertyName}'.\")";
+                    case 2: // CoalesceToDefault
+                        return $"{toStrExpr} ?? \"\"";
+                    default: // NullForgiving (0)
+                        return $"{toStrExpr}!";
+                }
+            }
             return GenerateEnumToStringExpression(sourcePropertyType, sourceExpression);
         }
 
