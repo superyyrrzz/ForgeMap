@@ -1140,7 +1140,7 @@ public Dictionary<string, object?> Forge(UserDto source)
 
 v1.4 introduces no required source changes and no API-surface breaks. Two behavior changes are opt-in:
 
-1. **String-to-enum auto-conversion is on by default** — `string` source properties mapped to `enum` destinations now auto-convert via `Enum.Parse<T>()`. Previously-unmapped properties that now match may change behavior. To restore v1.3 behavior:
+1. **String-to-enum auto-conversion will be on by default** — `string` source properties mapped to `enum` destinations will auto-convert via `Enum.Parse<T>()`. Previously-unmapped properties that now match may change behavior. To restore v1.3 behavior:
    ```csharp
    [ForgeMap(StringToEnum = StringToEnumConversion.None)]
    ```
@@ -1148,7 +1148,7 @@ v1.4 introduces no required source changes and no API-surface breaks. Two behavi
 
 2. **Nested existing-target requires opt-in** — `ExistingTarget = true` must be explicitly set; no behavior changes to existing mutation methods
 
-3. **`[ConvertWith]` is now code-generated** — methods with `[ConvertWith]` that previously compiled but produced no generated code will now produce generated code. This is the intended behavior; no migration action needed unless converters were incomplete placeholders
+3. **`[ConvertWith]` will be code-generated** — methods with `[ConvertWith]` that previously compiled but produced no generated code will produce generated code once implemented. This is the intended behavior; no migration action needed unless converters were incomplete placeholders
 
 ---
 
