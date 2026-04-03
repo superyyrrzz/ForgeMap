@@ -446,7 +446,7 @@ The generator applies the following conversion hierarchy for each destination pr
 | 1 | Pattern match (`is T`) | `value is int x` | Exact type match, reference conversions |
 | 2 | Nullable unwrap | `value is int x` for `int?` dest | `object?` → `Nullable<T>` |
 | 3 | `Convert.ToXxx()` | `Convert.ToDouble(value)` | Numeric widening (int→double), string→number |
-| 4 | `Enum.Parse` / cast | `value is int i ? (MyEnum)i : value is string s ? Enum.Parse<MyEnum>(s) : /* skip/throw */` | String→enum, int→enum |
+| 4 | `Enum.Parse` / cast | `value is int i ? (MyEnum)i : value is string s ? (MyEnum)Enum.Parse(typeof(MyEnum), s, true) : /* skip/throw */` | String→enum, int→enum |
 | 5 | Nested `[ForgeDictionary]` | `value is IDictionary<string, object?> d ? Forge(d) : value is IReadOnlyDictionary<string, object?> rd ? Forge(rd) : /* skip/throw */` | Nested dictionary-like → nested object |
 | 6 | Auto-wired forge method | `value is SourceType s ? Forge(s) : /* skip/throw */` | Complex nested types |
 | 7 | `ToString()` | `value?.ToString()` | Any → string (fallback) |
