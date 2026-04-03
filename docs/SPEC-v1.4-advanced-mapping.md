@@ -498,10 +498,10 @@ public partial DestType Forge(SourceType source)
 1. **Detect attribute**: Check if the forge method has `[ConvertWith]`
 2. **Resolve converter reference**:
    - If constructor argument is a `Type`: use type-based instantiation
-     - If the forger has an `IServiceProvider` constructor parameter, resolve the converter from DI: `_services.GetRequiredService(typeof(T))`. **Note:** Since forgers default to singleton lifetime, only singleton or transient converters are safe to resolve from the root provider. Scoped converters require `IServiceScopeFactory` (see below).
-     - If the forger has an `IServiceScopeFactory` constructor parameter, create a scope and resolve: `using var __scope = _scopeFactory.CreateScope(); __scope.ServiceProvider.GetRequiredService(typeof(T))`. The scope is disposed after the converter call completes.
+     - If the forger has an `IServiceScopeFactory` constructor parameter, prefer scoped resolution: `using var __scope = _scopeFactory.CreateScope(); __scope.ServiceProvider.GetRequiredService(typeof(T))`. The scope is disposed after the converter call completes. This is the preferred DI path because it safely handles scoped, transient, and singleton converters.
+     - Else if the forger has an `IServiceProvider` constructor parameter (but no `IServiceScopeFactory`), resolve from DI: `_services.GetRequiredService(typeof(T))`. **Note:** Since forgers default to singleton lifetime, only singleton or transient converters are safe to resolve from the root provider.
      - Otherwise, require an accessible parameterless constructor and instantiate via `new T()`
-   - If constructor argument is a `string` (via `nameof`): locate field/property on the forger class
+   - If constructor argument is a `string` (via `nameof`): locate field/property on the forger class. The member must be accessible and its type must implement `ITypeConverter<TSource, TDest>`.
 3. **Validate ITypeConverter**: The converter type must implement `ITypeConverter<TSource, TDest>` where `TSource` and `TDest` match the method's parameter and return types
 4. **Check constructor** (type-based only, non-DI path): The converter type must have an accessible parameterless constructor only when it is instantiated directly rather than resolved from DI
 5. **Emit**: Generate the appropriate delegation code
@@ -514,6 +514,7 @@ public partial DestType Forge(SourceType source)
 | **FM0034** | Error | `[ConvertWith]` type '{0}' does not implement `ITypeConverter<{1}, {2}>` for the method's source and destination types |
 | **FM0035** | Error | `[ConvertWith]` converter type '{0}' has no accessible parameterless constructor and forger has no DI (IServiceProvider/IServiceScopeFactory) |
 | **FM0036** | Warning | `[ConvertWith]` on a method that also has `[ForgeProperty]` / `[ForgeFrom]` attributes — converter takes full precedence, property-level attributes are ignored |
+| **FM0037** | Error | `[ConvertWith]` member '{0}' not found on forger class, or is inaccessible, or its type does not implement `ITypeConverter<{1}, {2}>` |
 
 ### Interaction with Existing Features
 
