@@ -356,6 +356,7 @@ When the source `string` is nullable, the generated code respects the forger's `
 | `string` source → `enum` destination, no override | Auto-convert via configured strategy |
 | `string?` source → `enum` destination | Follows `NullPropertyHandling` |
 | `string` source → `enum?` destination | Parse uses underlying enum type: `(MyEnum?)((MyEnum)Enum.Parse(typeof(MyEnum), source.Prop, true))` |
+| `string?` source → `enum?` destination | Combines `NullPropertyHandling` with nullable parse: null source follows null strategy, non-null source parses via underlying enum type |
 | `StringToEnum = None` | No auto-conversion; unmapped property emits FM0006 if no explicit mapping |
 | `TryParse` with invalid value | Falls back to `default(T)` — no exception |
 | `Parse` with invalid value | Runtime `ArgumentException` |
