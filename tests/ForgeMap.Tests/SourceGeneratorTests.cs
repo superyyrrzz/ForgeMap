@@ -5191,9 +5191,7 @@ public partial class TestForger
         Assert.Empty(errors);
 
         var generatedCode = string.Join("\n", trees.Select(t => t.GetText().ToString()));
-        Assert.Contains("Enum.Parse", generatedCode);
-        Assert.Contains("typeof(global::Priority)", generatedCode);
-        Assert.Contains("true)", generatedCode); // case-insensitive flag
+        Assert.Contains("Enum.Parse(typeof(global::Priority), source.Priority, true)", generatedCode);
     }
 
     [Fact]
