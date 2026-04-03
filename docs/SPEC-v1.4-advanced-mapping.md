@@ -331,7 +331,7 @@ When the source `string` is nullable, the generated code respects the forger's `
 |-------------------------|----------------|
 | `NullForgiving` | `Enum.Parse<T>(source.Prop!)` |
 | `SkipNull` | `if (source.Prop is { } __v) __result.Prop = Enum.Parse<T>(__v);` |
-| `CoalesceToDefault` | `__result.Prop = string.IsNullOrEmpty(source.Prop) ? default : Enum.Parse<T>(source.Prop);` |
+| `CoalesceToDefault` | `__result.Prop = source.Prop is null ? default : Enum.Parse<T>(source.Prop);` |
 | `ThrowException` | `__result.Prop = Enum.Parse<T>(source.Prop ?? throw new ArgumentNullException(...));` |
 
 ### Interaction with Existing Features
@@ -447,10 +447,17 @@ public partial class AppForger
 **Type-based:**
 
 ```csharp
-// Reference-type destination:
+// Reference-type destination, NullHandling = ReturnNull (default):
 public partial FailedNotificationStorageModel Forge(SendEventRequest source)
 {
     if (source == null) return null!;
+    return new SendEventRequestConverter().Convert(source);
+}
+
+// Reference-type destination, NullHandling = ThrowException:
+public partial FailedNotificationStorageModel Forge(SendEventRequest source)
+{
+    if (source == null) throw new global::System.ArgumentNullException(nameof(source));
     return new SendEventRequestConverter().Convert(source);
 }
 
@@ -462,7 +469,7 @@ public partial int Forge(SourceType source)
 }
 ```
 
-> **Note:** When the source type is a reference type and the destination is a value type, the null check follows the method's `NullHandling` setting — `ThrowException` throws `ArgumentNullException`, `ReturnNull` is not applicable (compile-time error for value-type returns).
+> **Note:** The null check follows the method's `NullHandling` setting, consistent with all other forge methods. When the source type is a reference type and the destination is a value type, `NullHandling = ReturnNull` is not applicable (compile-time error for value-type returns).
 
 **Instance-based (field reference):**
 
@@ -723,17 +730,17 @@ public Order Forge(OrderDto source)
 ```
 
 **Unflattening constraints:**
-- Intermediate types must have accessible parameterless constructors (or constructor parameters matching the properties). Emit **FM0034** if not constructible
+- Intermediate types must have accessible parameterless constructors (or constructor parameters matching the properties). Emit **FM0038** if not constructible
 - When multiple destination properties unflatten into the same intermediate object, they are grouped into a single object initializer
-- `[ReverseForge]` unflattening is best-effort — emit **FM0035** (warning) for any property that cannot be unflattened, with a suggestion to add explicit `[ForgeProperty]` on the reverse method
+- `[ReverseForge]` unflattening is best-effort — emit **FM0039** (warning) for any property that cannot be unflattened, with a suggestion to add explicit `[ForgeProperty]` on the reverse method
 
 ### Diagnostics
 
 | Code | Severity | Description |
 |------|----------|-------------|
-| **FM0033** | Info | Property '{0}' auto-flattened from '{1}' (disabled by default; enable via `.editorconfig`) |
-| **FM0034** | Error | Unflattening requires type '{0}' to have an accessible constructor, but none was found |
-| **FM0035** | Warning | Auto-flattened property '{0}' cannot be unflattened for `[ReverseForge]`: {reason} |
+| **FM0037** | Info | Property '{0}' auto-flattened from '{1}' (disabled by default; enable via `.editorconfig`) |
+| **FM0038** | Error | Unflattening requires type '{0}' to have an accessible constructor, but none was found |
+| **FM0039** | Warning | Auto-flattened property '{0}' cannot be unflattened for `[ReverseForge]`: {reason} |
 
 ### Interaction with Existing Features
 
@@ -976,7 +983,7 @@ The generator applies the following conversion hierarchy for each destination pr
 | 6 | Auto-wired forge method | `value is SourceType s ? Forge(s) : /* skip/throw */` | Complex nested types |
 | 7 | `ToString()` | `value?.ToString()` | Any → string (fallback) |
 
-The generator picks the **first applicable** strategy at compile time. If no strategy applies, the property is skipped and **FM0037** is emitted.
+The generator picks the **first applicable** strategy at compile time. If no strategy applies, the property is skipped and **FM0041** is emitted.
 
 For strategies that use framework conversion helpers (e.g., `Convert.ToXxx`, `Enum.Parse`), any exceptions thrown by those helpers (`FormatException`, `OverflowException`, `ArgumentException`, etc.) are propagated as-is; the generator does **not** catch and wrap them into a uniform `InvalidCastException`.
 
@@ -1031,9 +1038,9 @@ public Dictionary<string, object?> Forge(UserDto source)
 
 | Code | Severity | Description |
 |------|----------|-------------|
-| **FM0036** | Error | `[ForgeDictionary]` source parameter must be `Dictionary<string, object?>`, `IDictionary<string, object?>`, or `IReadOnlyDictionary<string, object?>` |
-| **FM0037** | Warning | Destination property '{0}' of type '{1}' has no applicable conversion from `object?`. The property will be skipped |
-| **FM0038** | Info | Property '{0}' mapped from dictionary key '{1}' with conversion '{2}' (disabled by default) |
+| **FM0040** | Error | `[ForgeDictionary]` source parameter must be `Dictionary<string, object?>`, `IDictionary<string, object?>`, or `IReadOnlyDictionary<string, object?>` |
+| **FM0041** | Warning | Destination property '{0}' of type '{1}' has no applicable conversion from `object?`. The property will be skipped |
+| **FM0042** | Info | Property '{0}' mapped from dictionary key '{1}' with conversion '{2}' (disabled by default) |
 
 ### Behavioral Contract
 
