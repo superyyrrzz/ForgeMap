@@ -497,6 +497,10 @@ public partial DestType Forge(SourceType source)
 1. **Detect attribute**: Check if the forge method has `[ConvertWith]`
 2. **Resolve converter reference**:
    - If constructor argument is a `Type`: use type-based instantiation
+     - If the forger has an `IServiceProvider` constructor parameter, resolve the converter from DI: `_services.GetRequiredService(typeof(T))`
+     - If the forger has an `IServiceScopeFactory` constructor parameter, create a scope and resolve: `_scopeFactory.CreateScope().ServiceProvider.GetRequiredService(typeof(T))`
+     - Otherwise, require an accessible parameterless constructor and instantiate via `new T()`
+   - If constructor argument is a `string` (via `nameof`): locate field/property on the forger class
    - If constructor argument is a `string` (via `nameof`): locate field/property on the forger class
 3. **Validate ITypeConverter**: The converter type must implement `ITypeConverter<TSource, TDest>` where `TSource` and `TDest` match the method's parameter and return types
 4. **Check constructor** (type-based only): The converter type must have an accessible parameterless constructor
@@ -508,7 +512,7 @@ public partial DestType Forge(SourceType source)
 | Code | Severity | Description |
 |------|----------|-------------|
 | **FM0034** | Error | `[ConvertWith]` type '{0}' does not implement `ITypeConverter<{1}, {2}>` for the method's source and destination types |
-| **FM0035** | Error | `[ConvertWith]` converter type '{0}' has no accessible parameterless constructor (for type-based usage) |
+| **FM0035** | Error | `[ConvertWith]` converter type '{0}' has no accessible parameterless constructor and forger has no DI (IServiceProvider/IServiceScopeFactory) |
 | **FM0036** | Warning | `[ConvertWith]` on a method that also has `[ForgeProperty]` / `[ForgeFrom]` attributes — converter takes full precedence, property-level attributes are ignored |
 
 ### Interaction with Existing Features
@@ -528,10 +532,11 @@ public partial DestType Forge(SourceType source)
 | `[ConvertWith(typeof(T))]` with valid `ITypeConverter` | Instantiate `T` and delegate |
 | `[ConvertWith(nameof(field))]` with valid field | Use field reference |
 | Converter type doesn't implement `ITypeConverter<S,D>` | FM0034 error |
-| Converter type has no parameterless constructor (type-based) | FM0035 error |
+| Converter type has no parameterless constructor and forger has no DI (type-based) | FM0035 error |
 | Combined with `[ForgeProperty]` or `[ForgeFrom]` | FM0036 warning, converter wins |
 | Combined with `[ForgeAllDerived]` | FM0023 error |
-| Source is null | Returns `null!` (before converter is called) |
+| Source is null with `NullHandling = ReturnNull` | Returns `null!` (before converter is called) |
+| Source is null with `NullHandling = ThrowException` | Throws `ArgumentNullException` (before converter is called) |
 
 ### Competitor Comparison
 
@@ -754,7 +759,7 @@ public Order Forge(OrderDto source)
 
 ### Competitor Comparison
 
-| Aspect | AutoMapper | Mapperly | ForgeMap v1.4 |
+| Aspect | AutoMapper | Mapperly | ForgeMap v1.5 (planned) |
 |--------|-----------|---------|---------------|
 | Auto-flattening | ✅ Runtime convention | ✅ Compile-time PascalCase | ✅ Compile-time PascalCase |
 | `init`/`required` properties | ✅ Runtime (since v13) | ❌ Broken (#643) | ✅ Object initializer routing |
@@ -762,7 +767,7 @@ public Order Forge(OrderDto source)
 | Opt-out | `.DisableCtorValidation()` | No opt-out | `AutoFlatten = false` |
 | Case sensitivity control | Always case-insensitive | Case-insensitive | Follows `PropertyMatching` |
 | Null-safe paths | Runtime null checks | Compile-time `?.` chains | Compile-time `?.` chains |
-| Diagnostic visibility | None (runtime only) | Compile-time | FM0033 info (opt-in) |
+| Diagnostic visibility | None (runtime only) | Compile-time | FM0037 info (opt-in) |
 
 ---
 
@@ -1057,7 +1062,7 @@ public Dictionary<string, object?> Forge(UserDto source)
 
 ### Competitor Comparison
 
-| Aspect | AutoMapper | Mapperly | ForgeMap v1.4 |
+| Aspect | AutoMapper | Mapperly | ForgeMap v1.5 (planned) |
 |--------|-----------|---------|---------------|
 | Dictionary→Object | ❌ Not supported | ❌ Not supported (#1309) | ✅ `[ForgeDictionary]` |
 | Case-insensitive keys | N/A | N/A | ✅ `KeyMatching` option |
@@ -1081,7 +1086,7 @@ public Dictionary<string, object?> Forge(UserDto source)
 | FM0032 | Error | `ForgeMap` | Nested existing-target | `KeyProperty` '{0}' not found on element type '{1}' |
 | FM0033 | Info | `ForgeMap` | String→enum | Property '{0}' auto-converted from string to enum '{1}' using {Parse\|TryParse} (disabled by default) |
 | FM0034 | Error | `ForgeMap` | `[ConvertWith]` | `[ConvertWith]` type '{0}' does not implement `ITypeConverter<{1}, {2}>` |
-| FM0035 | Error | `ForgeMap` | `[ConvertWith]` | `[ConvertWith]` converter type '{0}' has no accessible parameterless constructor |
+| FM0035 | Error | `ForgeMap` | `[ConvertWith]` | `[ConvertWith]` converter type '{0}' has no accessible parameterless constructor and forger has no DI |
 | FM0036 | Warning | `ForgeMap` | `[ConvertWith]` | `[ConvertWith]` on a method that also has `[ForgeProperty]` / `[ForgeFrom]` — converter takes full precedence |
 
 ### v1.5 Diagnostics (deferred)

@@ -156,7 +156,7 @@ ForgeMap was designed with a **1:1 concept mapping** from AutoMapper:
 | `.ForMember(d => d.X, o => o.Ignore())` | `[Ignore(nameof(D.X))]` | |
 | `.ForMember(d => d.X, o => o.MapFrom(s => s.Y))` | `[ForgeProperty(nameof(S.Y), nameof(D.X))]` | |
 | `.ForMember(d => d.X, o => o.MapFrom(s => Calc(s)))` | `[ForgeFrom(nameof(D.X), nameof(Calc))]` | |
-| `.ConvertUsing<TConverter>()` | `[ConvertWith(typeof(TConverter))]` | Shipping in v1.4 |
+| `.ConvertUsing<TConverter>()` | `[ConvertWith(typeof(TConverter))]` | Planned for v1.4 |
 | `.IncludeBase<TSourceBase, TDestinationBase>()` | `[IncludeBaseForge(typeof(TSourceBase), typeof(TDestinationBase))]` | |
 | `.IncludeAllDerived()` | `[ForgeAllDerived]` | Auto-discovered, no manual listing |
 | `.ReverseMap()` | `[ReverseForge]` | With compile-time validation |

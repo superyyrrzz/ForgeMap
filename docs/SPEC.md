@@ -852,9 +852,9 @@ public partial DestType Forge(SourceType source)
 | `.ForMember(d => d.X, o => o.Ignore())` | `[Ignore(nameof(D.X))]` |
 | `.ForMember(d => d.X, o => o.MapFrom(s => s.Y))` | `[ForgeProperty(nameof(S.Y), nameof(D.X))]` |
 | `.ForMember(d => d.X, o => o.MapFrom(s => Calc(s)))` | `[ForgeFrom(nameof(D.X), nameof(Calc))]` |
-| `.ConvertUsing<TConverter>()` | `[ConvertWith(typeof(TConverter))]` *(future)* |
-| `.ConvertUsing(new Converter())` | `[ConvertWith(typeof(Converter))]` *(future)* |
-| `ITypeConverter<S, D>` | `ITypeConverter<S, D>` *(future)* |
+| `.ConvertUsing<TConverter>()` | `[ConvertWith(typeof(TConverter))]` *(planned for v1.4)* |
+| `.ConvertUsing(new Converter())` | `[ConvertWith(typeof(Converter))]` *(planned for v1.4)* |
+| `ITypeConverter<S, D>` | `ITypeConverter<S, D>` *(planned for v1.4)* |
 | `.IncludeBase<TBaseSrc, TBaseDst>()` | `[IncludeBaseForge(typeof(TBaseSrc), typeof(TBaseDst))]` |
 | `.Include<TDerivedSrc, TDerivedDst>()` | Auto-discovered by `[ForgeAllDerived]` |
 | `.IncludeAllDerived()` | `[ForgeAllDerived]` |
@@ -868,7 +868,7 @@ public partial DestType Forge(SourceType source)
 
 - Simple property-access `MapFrom(s => s.Y)` maps to `[ForgeProperty]`.
 - Computed `MapFrom` lambdas map to `[ForgeFrom]`.
-- Converter-based AutoMapper features are planned for a future version.
+- Converter-based AutoMapper features are planned for v1.4 (see [spec](SPEC-v1.4-advanced-mapping.md)).
 - Inheritance/polymorphism features (`[IncludeBaseForge]`, `[ForgeAllDerived]`) are available since v1.1.
 
 ### Example Migration
