@@ -639,6 +639,11 @@ internal sealed partial class ForgeCodeEmitter
         }
 
         // Parse strategy
+        if (isSourceNullable && isDestNullable)
+        {
+            // Nullable source → nullable dest: null maps to null, non-null gets parsed
+            return $"{sourceExpr} is {{ }} __strVal_{varSuffix} ? ({enumFqn}?)(({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), __strVal_{varSuffix}, true)) : null";
+        }
         var parseBase = $"({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), {sourceExpr}{(isSourceNullable ? "!" : "")}, true)";
         if (isDestNullable)
             return $"({enumFqn}?)({parseBase})";
