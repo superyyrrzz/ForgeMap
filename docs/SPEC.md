@@ -853,7 +853,7 @@ public partial DestType Forge(SourceType source)
 | `.ForMember(d => d.X, o => o.MapFrom(s => s.Y))` | `[ForgeProperty(nameof(S.Y), nameof(D.X))]` |
 | `.ForMember(d => d.X, o => o.MapFrom(s => Calc(s)))` | `[ForgeFrom(nameof(D.X), nameof(Calc))]` |
 | `.ConvertUsing<TConverter>()` | `[ConvertWith(typeof(TConverter))]` *(planned for v1.4)* |
-| `.ConvertUsing(new Converter())` | `[ConvertWith(typeof(Converter))]` *(planned for v1.4)* |
+| `.ConvertUsing(new Converter())` | `[ConvertWith(nameof(_converter))]` *(planned for v1.4)* |
 | `ITypeConverter<S, D>` | `ITypeConverter<S, D>` *(planned for v1.4)* |
 | `.IncludeBase<TBaseSrc, TBaseDst>()` | `[IncludeBaseForge(typeof(TBaseSrc), typeof(TBaseDst))]` |
 | `.Include<TDerivedSrc, TDerivedDst>()` | Auto-discovered by `[ForgeAllDerived]` |

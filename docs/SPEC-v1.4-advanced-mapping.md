@@ -14,10 +14,10 @@ v1.4 delivers nested existing-target mapping plus two AutoMapper migration pain 
 
 The following features were originally planned for v1.4 but have been moved to v1.5 to prioritize migration-driven issues #80 and #81:
 
-| Feature | Issue | Original v1.4 Section |
-|---------|-------|-----------------------|
-| Auto-flattening with `init`/`required` support | [#82](https://github.com/superyyrrzz/ForgeMap/issues/82) | Feature 2 (below, retained for reference) |
-| Dictionary-to-typed-object mapping (`[ForgeDictionary]`) | [#83](https://github.com/superyyrrzz/ForgeMap/issues/83) | Feature 3 (below, retained for reference) |
+| Feature | Issue | Notes |
+|---------|-------|-------|
+| Auto-flattening with `init`/`required` support | [#82](https://github.com/superyyrrzz/ForgeMap/issues/82) | Originally v1.4 Feature 2 (spec retained below for reference) |
+| Dictionary-to-typed-object mapping (`[ForgeDictionary]`) | [#83](https://github.com/superyyrrzz/ForgeMap/issues/83) | Originally v1.4 Feature 3 (spec retained below for reference) |
 
 ---
 
@@ -331,7 +331,7 @@ When the source `string` is nullable, the generated code respects the forger's `
 |-------------------------|----------------|
 | `NullForgiving` | `Enum.Parse<T>(source.Prop!)` |
 | `SkipNull` | `if (source.Prop is { } __v) __result.Prop = Enum.Parse<T>(__v);` |
-| `CoalesceToDefault` | `__result.Prop = source.Prop is null ? default : Enum.Parse<T>(source.Prop);` |
+| `CoalesceToDefault` | `__result.Prop = source.Prop is null ? default : Enum.Parse<T>(source.Prop);` (empty strings are still parsed and may throw `ArgumentException`) |
 | `ThrowException` | `__result.Prop = Enum.Parse<T>(source.Prop ?? throw new ArgumentNullException(...));` |
 
 ### Interaction with Existing Features
@@ -501,9 +501,8 @@ public partial DestType Forge(SourceType source)
      - If the forger has an `IServiceScopeFactory` constructor parameter, create a scope and resolve: `_scopeFactory.CreateScope().ServiceProvider.GetRequiredService(typeof(T))`
      - Otherwise, require an accessible parameterless constructor and instantiate via `new T()`
    - If constructor argument is a `string` (via `nameof`): locate field/property on the forger class
-   - If constructor argument is a `string` (via `nameof`): locate field/property on the forger class
 3. **Validate ITypeConverter**: The converter type must implement `ITypeConverter<TSource, TDest>` where `TSource` and `TDest` match the method's parameter and return types
-4. **Check constructor** (type-based only): The converter type must have an accessible parameterless constructor
+4. **Check constructor** (type-based only, non-DI path): The converter type must have an accessible parameterless constructor only when it is instantiated directly rather than resolved from DI
 5. **Emit**: Generate the appropriate delegation code
 6. **Precedence**: `[ConvertWith]` takes full control of the method body — `[ForgeProperty]`, `[ForgeFrom]`, and auto-wiring are all ignored
 
@@ -1143,17 +1142,17 @@ public Dictionary<string, object?> Forge(UserDto source)
 
 ### From v1.3 to v1.4
 
-v1.4 introduces no required source changes and no API-surface breaks. Two behavior changes are opt-in:
+v1.4 introduces no required source changes and no API-surface breaks. Three behavior items to be aware of:
 
-1. **String-to-enum auto-conversion will be on by default** — `string` source properties mapped to `enum` destinations will auto-convert via `Enum.Parse<T>()`. Previously-unmapped properties that now match may change behavior. To restore v1.3 behavior:
+1. **String-to-enum auto-conversion (default-on)** — `string` source properties mapped to `enum` destinations will auto-convert via `Enum.Parse<T>()`. Previously-unmapped properties that now match may change behavior. To restore v1.3 behavior:
    ```csharp
    [ForgeMap(StringToEnum = StringToEnumConversion.None)]
    ```
    or set the assembly-level default via `[ForgeMapDefaults(StringToEnum = StringToEnumConversion.None)]`.
 
-2. **Nested existing-target requires opt-in** — `ExistingTarget = true` must be explicitly set; no behavior changes to existing mutation methods
+2. **Nested existing-target (opt-in)** — `ExistingTarget = true` must be explicitly set; no behavior changes to existing mutation methods
 
-3. **`[ConvertWith]` will be code-generated** — methods with `[ConvertWith]` that previously compiled but produced no generated code will produce generated code once implemented. This is the intended behavior; no migration action needed unless converters were incomplete placeholders
+3. **`[ConvertWith]` code generation (automatic)** — methods with `[ConvertWith]` that previously compiled but produced no generated code will produce generated code once implemented. This is the intended behavior; no migration action needed unless converters were incomplete placeholders
 
 ---
 

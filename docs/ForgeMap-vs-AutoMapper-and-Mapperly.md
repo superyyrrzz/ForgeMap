@@ -165,7 +165,7 @@ ForgeMap was designed with a **1:1 concept mapping** from AutoMapper:
 | `mapper.Map(source, existing)` | Void partial method with `[UseExistingValue]` destination | Method name is arbitrary (e.g. `ForgeInto`) |
 | `services.AddAutoMapper(cfg => { }, assemblies...)` | `services.AddForgeMaps()` | Registers as singletons by default (optional `ServiceLifetime` parameter) |
 
-Every AutoMapper concept has a direct ForgeMap equivalent. Teams migrating from AutoMapper can apply mechanical, pattern-based transformations rather than re-thinking their mapping architecture.
+Most AutoMapper concepts already have a direct ForgeMap equivalent, with the remaining equivalents (`[ConvertWith]`) planned for v1.4. Teams migrating from AutoMapper can apply mechanical, pattern-based transformations rather than re-thinking their mapping architecture.
 
 ### Automated Migration Skill
 
