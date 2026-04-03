@@ -340,7 +340,7 @@ When the source `string` is nullable, the generated code respects the forger's `
 |---------|-------------|
 | `[ForgeFrom]` / `[ForgeProperty]` / `[Ignore]` | Explicit attributes take precedence — auto-conversion is skipped |
 | `[ReverseForge]` | Reverse direction emits `source.Prop.ToString()` (enum→string) |
-| `[ForgeDictionary]` value conversion | Enum.Parse already exists in the dictionary pipeline (priority 4); this feature applies the same logic to standard property mapping |
+| `[ForgeDictionary]` value conversion | Aligns with the planned v1.5 dictionary conversion strategy ([SPEC-v1.5](SPEC-v1.5-advanced-mapping.md) priority 4); in v1.4, this feature applies equivalent `Enum.Parse`-based logic to standard property mapping |
 | `PropertyMatching` | Does not affect conversion — only type detection matters |
 
 ### Diagnostics

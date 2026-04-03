@@ -132,12 +132,12 @@ public partial class ExplicitForger { ... }
 
 ### Generated Code
 
-**Regular setter properties:**
+**Regular setter properties** (`NullHandling = ReturnNull`, `NullPropertyHandling = NullForgiving` — defaults):
 
 ```csharp
 public partial OrderDto Forge(Order source)
 {
-    if (source == null) return null!;
+    if (source == null) return null!;  // NullHandling.ReturnNull (default); ThrowException would throw here
 
     var __result = new OrderDto
     {
@@ -322,12 +322,12 @@ public partial class AppForger
 
 ### Generated Code
 
-**Basic case-sensitive mapping:**
+**Basic case-sensitive mapping** (`NullHandling = ReturnNull`, default):
 
 ```csharp
 public partial UserDto Forge(Dictionary<string, object?> source)
 {
-    if (source == null) return null!;
+    if (source == null) return null!;  // NullHandling.ReturnNull (default); ThrowException would throw here
 
     var __result = new UserDto();
 
@@ -487,10 +487,10 @@ When `[ReverseForge]` is present on a `[ForgeDictionary]` method, the generator 
 // Forward (user-declared signature; implementation generated from [ForgeDictionary] + [ReverseForge]):
 public partial UserDto Forge(Dictionary<string, object?> source);
 
-// Reverse (auto-generated):
+// Reverse (auto-generated, NullHandling = ReturnNull default):
 public Dictionary<string, object?> Forge(UserDto source)
 {
-    if (source == null) return null!;
+    if (source == null) return null!;  // NullHandling.ReturnNull (default); ThrowException would throw here
 
     return new global::System.Collections.Generic.Dictionary<string, object?>
     {
