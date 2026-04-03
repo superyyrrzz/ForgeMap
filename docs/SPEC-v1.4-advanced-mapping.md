@@ -355,7 +355,7 @@ When the source `string` is nullable, the generated code respects the forger's `
 |----------|----------|
 | `string` source → `enum` destination, no override | Auto-convert via configured strategy |
 | `string?` source → `enum` destination | Follows `NullPropertyHandling` |
-| `string` source → `enum?` destination | `(T)Enum.Parse(typeof(T), source.Prop, true)` assigned to nullable |
+| `string` source → `enum?` destination | Parse uses underlying enum type: `(MyEnum?)((MyEnum)Enum.Parse(typeof(MyEnum), source.Prop, true))` |
 | `StringToEnum = None` | No auto-conversion; unmapped property emits FM0006 if no explicit mapping |
 | `TryParse` with invalid value | Falls back to `default(T)` — no exception |
 | `Parse` with invalid value | Runtime `ArgumentException` |
@@ -497,8 +497,8 @@ public partial DestType Forge(SourceType source)
 1. **Detect attribute**: Check if the forge method has `[ConvertWith]`
 2. **Resolve converter reference**:
    - If constructor argument is a `Type`: use type-based instantiation
-     - If the forger has an `IServiceProvider` constructor parameter, resolve the converter from DI: `_services.GetRequiredService(typeof(T))`
-     - If the forger has an `IServiceScopeFactory` constructor parameter, create a scope and resolve: `_scopeFactory.CreateScope().ServiceProvider.GetRequiredService(typeof(T))`
+     - If the forger has an `IServiceProvider` constructor parameter, resolve the converter from DI: `_services.GetRequiredService(typeof(T))`. **Note:** Since forgers default to singleton lifetime, only singleton or transient converters are safe to resolve from the root provider. Scoped converters require `IServiceScopeFactory` (see below).
+     - If the forger has an `IServiceScopeFactory` constructor parameter, create a scope and resolve: `using var __scope = _scopeFactory.CreateScope(); __scope.ServiceProvider.GetRequiredService(typeof(T))`. The scope is disposed after the converter call completes.
      - Otherwise, require an accessible parameterless constructor and instantiate via `new T()`
    - If constructor argument is a `string` (via `nameof`): locate field/property on the forger class
 3. **Validate ITypeConverter**: The converter type must implement `ITypeConverter<TSource, TDest>` where `TSource` and `TDest` match the method's parameter and return types
