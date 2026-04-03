@@ -562,6 +562,7 @@ public partial DestType Forge(SourceType source)
 | FM0034 | Error | `ForgeMap` | `[ConvertWith]` | `[ConvertWith]` type '{0}' does not implement `ITypeConverter<{1}, {2}>` |
 | FM0035 | Error | `ForgeMap` | `[ConvertWith]` | `[ConvertWith]` converter type '{0}' has no accessible parameterless constructor and forger has no DI |
 | FM0036 | Warning | `ForgeMap` | `[ConvertWith]` | `[ConvertWith]` on a method that also has `[ForgeProperty]` / `[ForgeFrom]` — converter takes full precedence |
+| FM0037 | Error | `ForgeMap` | `[ConvertWith]` | `[ConvertWith]` member '{0}' not found on forger class, or is inaccessible, or its type does not implement `ITypeConverter<{1}, {2}>` |
 
 ---
 
