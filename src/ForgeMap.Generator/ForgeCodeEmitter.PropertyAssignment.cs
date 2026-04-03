@@ -744,7 +744,7 @@ internal sealed partial class ForgeCodeEmitter
                 return $"({sourceExpr} is {{ }} __strVal_{varSuffix} && global::System.Enum.TryParse<{enumFqn}>(__strVal_{varSuffix}, true, out var __enum_{varSuffix}) ? __enum_{varSuffix} : default({enumFqn}))";
 
             case 3: // ThrowException
-                return $"({sourceExpr} ?? throw new global::System.ArgumentNullException(\"{destPropertyName}\")) is {{ }} __strVal_{varSuffix} && global::System.Enum.TryParse<{enumFqn}>(__strVal_{varSuffix}, true, out var __enum_{varSuffix}) ? __enum_{varSuffix} : default({enumFqn})";
+                return $"({sourceExpr} ?? throw new global::System.ArgumentNullException(\"{destPropertyName}\", \"Cannot assign null source property '{sourceExpr}' to non-nullable destination property '{destPropertyName}'.\")) is {{ }} __strVal_{varSuffix} && global::System.Enum.TryParse<{enumFqn}>(__strVal_{varSuffix}, true, out var __enum_{varSuffix}) ? __enum_{varSuffix} : default({enumFqn})";
 
             default:
                 return $"(global::System.Enum.TryParse<{enumFqn}>({sourceExpr}!, true, out var __enum_{varSuffix}) ? __enum_{varSuffix} : default({enumFqn}))";
