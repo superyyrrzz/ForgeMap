@@ -319,6 +319,8 @@ __result.Type = global::System.Enum.Parse<FileType>(source.Type);
 ```csharp
 if (global::System.Enum.TryParse<FileType>(source.Type, out var __enum_Type))
     __result.Type = __enum_Type;
+else
+    __result.Type = default;
 ```
 
 ### Null Handling
@@ -381,18 +383,20 @@ In the Docs.LocalizationContentService migration, 4 AutoMapper converters became
 
 ### Existing API Surface
 
-The attribute and interface already exist in `ForgeMap.Abstractions`:
+The attribute already exists in `ForgeMap.Abstractions` with a `Type` constructor. v1.4 adds a second `string` constructor overload for instance-based (field/property) references:
 
 ```csharp
-// ConvertWithAttribute.cs
+// ConvertWithAttribute.cs (existing + new overload)
 [AttributeUsage(AttributeTargets.Method, AllowMultiple = false, Inherited = false)]
 public sealed class ConvertWithAttribute : Attribute
 {
     public ConvertWithAttribute(Type converterType) { ... }
-    public Type ConverterType { get; }
+    public ConvertWithAttribute(string memberName) { ... }
+    public Type? ConverterType { get; }
+    public string? MemberName { get; }
 }
 
-// ITypeConverter.cs
+// ITypeConverter.cs (existing, unchanged)
 public interface ITypeConverter<in TSource, out TDestination>
 {
     TDestination Convert(TSource source);
@@ -443,12 +447,22 @@ public partial class AppForger
 **Type-based:**
 
 ```csharp
+// Reference-type destination:
 public partial FailedNotificationStorageModel Forge(SendEventRequest source)
 {
     if (source == null) return null!;
     return new SendEventRequestConverter().Convert(source);
 }
+
+// Value-type destination:
+public partial int Forge(SourceType source)
+{
+    // No null check — value-type source cannot be null
+    return new SourceToIntConverter().Convert(source);
+}
 ```
+
+> **Note:** When the source type is a reference type and the destination is a value type, the null check follows the method's `NullHandling` setting — `ThrowException` throws `ArgumentNullException`, `ReturnNull` is not applicable (compile-time error for value-type returns).
 
 **Instance-based (field reference):**
 
@@ -1095,12 +1109,12 @@ public Dictionary<string, object?> Forge(UserDto source)
 | `ForgeMapAttribute` | `StringToEnum` | `StringToEnumConversion` | `Parse` | String-to-enum conversion strategy |
 | `ForgeMapDefaultsAttribute` | `StringToEnum` | `StringToEnumConversion` | `Parse` | Assembly-level string-to-enum default |
 
-### Existing Abstractions Used (v1.4 — no new API surface)
+### Existing Abstractions Extended (v1.4)
 
-| Type | Description |
-|------|-------------|
-| `ConvertWithAttribute` | Already defined; now code-generated |
-| `ITypeConverter<TSource, TDest>` | Already defined; now code-generated |
+| Type | Change | Description |
+|------|--------|-------------|
+| `ConvertWithAttribute` | New `string` constructor overload | Enables instance-based converter references via `nameof(field)` |
+| `ITypeConverter<TSource, TDest>` | No change | Now code-generated |
 
 ### Deferred to v1.5
 

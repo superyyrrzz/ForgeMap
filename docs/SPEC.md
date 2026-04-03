@@ -29,8 +29,8 @@
 | **v1.1** | Mapping inheritance, polymorphic dispatch, inherited property resolution ([spec](SPEC-v1.1-inheritance.md)) |
 | **v1.2** | Null-safe property assignment: `NullPropertyHandling` enum with 4 strategies, three-tier config, FM0007 activation ([spec](SPEC-v1.2-null-property-handling.md)) |
 | ***v1.3*** | *Abstract destination dispatch, auto-wire nested mappings, inline collection mapping, diagnostics FM0024–FM0027 ([spec](SPEC-v1.3-auto-wiring.md))* |
-| ***v1.4*** | *Nested existing-target mapping, auto-flattening with `init`/`required`, dictionary-to-typed-object mapping, diagnostics FM0028–FM0038 ([spec](SPEC-v1.4-advanced-mapping.md))* |
-| *v1.4* | `[ConvertWith]`, `ITypeConverter<S,D>` |
+| ***v1.4*** | *Nested existing-target mapping, string→enum auto-conversion, `[ConvertWith]` code generation, diagnostics FM0028–FM0036 ([spec](SPEC-v1.4-advanced-mapping.md))* |
+| *v1.5* | *Auto-flattening with `init`/`required`, dictionary-to-typed-object mapping* |
 | *Future* | `ProjectTo<T>()` |
 
 ---
