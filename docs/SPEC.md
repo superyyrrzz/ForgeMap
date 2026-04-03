@@ -352,7 +352,7 @@ public partial class AppForger
 
 #### 2.10 `[ConvertWith]` - Method Level *(v1.4)*
 
-> **Status:** Shipping in v1.4. See `docs/SPEC-v1.4-advanced-mapping.md` Feature 3 for full specification.
+> **Status:** Planned for v1.4. See `docs/SPEC-v1.4-advanced-mapping.md` Feature 3 for full specification.
 
 Uses a custom converter class for complex type transformations. This is the ForgeMap equivalent of AutoMapper's `ITypeConverter` and `ConvertUsing()`.
 

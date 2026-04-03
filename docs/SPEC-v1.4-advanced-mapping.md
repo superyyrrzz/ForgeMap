@@ -355,7 +355,7 @@ When the source `string` is nullable, the generated code respects the forger's `
 |----------|----------|
 | `string` source → `enum` destination, no override | Auto-convert via configured strategy |
 | `string?` source → `enum` destination | Follows `NullPropertyHandling` |
-| `string` source → `enum?` destination | `Enum.Parse<T>(source.Prop)` assigned to nullable |
+| `string` source → `enum?` destination | `(T)Enum.Parse(typeof(T), source.Prop, true)` assigned to nullable |
 | `StringToEnum = None` | No auto-conversion; unmapped property emits FM0006 if no explicit mapping |
 | `TryParse` with invalid value | Falls back to `default(T)` — no exception |
 | `Parse` with invalid value | Runtime `ArgumentException` |
@@ -597,7 +597,7 @@ public partial DestType Forge(SourceType source)
 
 v1.4 introduces no required source changes and no API-surface breaks. Three behavior items to be aware of:
 
-1. **String-to-enum auto-conversion (default-on)** — `string` source properties mapped to `enum` destinations will auto-convert via `Enum.Parse<T>()`. Previously-unmapped properties that now match may change behavior. To restore v1.3 behavior:
+1. **String-to-enum auto-conversion (default-on)** — `string` source properties mapped to `enum` destinations will auto-convert using the generated `(TEnum)Enum.Parse(typeof(TEnum), value, true)` pattern. Previously-unmapped properties that now match may change behavior. To restore v1.3 behavior:
    ```csharp
    [ForgeMap(StringToEnum = StringToEnumConversion.None)]
    ```
