@@ -258,7 +258,9 @@ internal sealed partial class ForgeCodeEmitter
                 {
                     // Check if leaf type is assignable first
                     if (sourceLeafType != null && !CanAssign(sourceLeafType, destProp.Type)
-                        && !IsCompatibleEnumPair(sourceLeafType, destProp.Type))
+                        && !IsCompatibleEnumPair(sourceLeafType, destProp.Type)
+                        && !(_config.StringToEnum != 2 && IsStringToEnumPair(sourceLeafType, destProp.Type))
+                        && !IsEnumToStringPair(sourceLeafType, destProp.Type))
                     {
                         // Try auto-wire for non-assignable leaf types
                         if (_config.AutoWireNestedMappings)
@@ -284,6 +286,52 @@ internal sealed partial class ForgeCodeEmitter
                     }
                     else
                     {
+                        // String→enum conversion for explicit [ForgeProperty] path
+                        if (sourceLeafType != null && _config.StringToEnum != 2 && IsStringToEnumPair(sourceLeafType, destProp.Type))
+                        {
+                            var enumConvExpr = TryGenerateStringToEnumConversion(
+                                sourceLeafType, destProp.Type, sourceExpr,
+                                destProp.Name, destProp.ContainingType.Name,
+                                nullPropertyHandlingOverrides, context, method);
+                            if (enumConvExpr != null)
+                            {
+                                sb.AppendLine($"            {destParam}.{destProp.Name} = {enumConvExpr};");
+                                continue;
+                            }
+                        }
+
+                        // Enum→string conversion for explicit [ForgeProperty] path
+                        if (sourceLeafType != null && IsEnumToStringPair(sourceLeafType, destProp.Type))
+                        {
+                            var enumStrExpr = GenerateEnumToStringExpression(sourceLeafType, sourceExpr);
+                            // Handle nullable enum → non-nullable string
+                            if (GetNullableUnderlyingType(sourceLeafType) != null
+                                && destProp.Type.NullableAnnotation != NullableAnnotation.Annotated)
+                            {
+                                var strategy2 = ResolveNullPropertyHandling(destProp.Name, nullPropertyHandlingOverrides);
+                                if (strategy2 == 1) // SkipNull
+                                {
+                                    var localVar = "__enumStr_" + destProp.Name;
+                                    sb.AppendLine($"            if ({enumStrExpr} is {{ }} {localVar})");
+                                    sb.AppendLine($"            {{");
+                                    sb.AppendLine($"                {destParam}.{destProp.Name} = {localVar};");
+                                    sb.AppendLine($"            }}");
+                                }
+                                else
+                                {
+                                    var handledExpr = ApplyNullPropertyHandlingExpression(
+                                        enumStrExpr, destProp.Type, destProp.Name,
+                                        destProp.ContainingType.Name, strategy2);
+                                    sb.AppendLine($"            {destParam}.{destProp.Name} = {handledExpr ?? $"{enumStrExpr}!"};");
+                                }
+                            }
+                            else
+                            {
+                                sb.AppendLine($"            {destParam}.{destProp.Name} = {enumStrExpr};");
+                            }
+                            continue;
+                        }
+
                         // Add null-forgiving operator if we used null-conditional and dest is non-nullable
                         var nullForgiving = hasNullConditional && destProp.Type.NullableAnnotation != NullableAnnotation.Annotated ? "!" : "";
                         sb.AppendLine($"            {destParam}.{destProp.Name} = {sourceExpr}{nullForgiving};");
@@ -334,6 +382,46 @@ internal sealed partial class ForgeCodeEmitter
                 var enumCastExpr = TryGenerateCompatibleEnumCast(sourceProp.Type, destProp.Type, $"{sourceParam}.{sourceProp.Name}");
                 if (enumCastExpr != null)
                     sb.AppendLine($"            {destParam}.{destProp.Name} = {enumCastExpr};");
+                // String→enum auto-conversion
+                else if (_config.StringToEnum != 2 && IsStringToEnumPair(sourceProp.Type, destProp.Type))
+                {
+                    var enumConvExpr = TryGenerateStringToEnumConversion(
+                        sourceProp.Type, destProp.Type, $"{sourceParam}.{sourceProp.Name}",
+                        destProp.Name, destProp.ContainingType.Name,
+                        nullPropertyHandlingOverrides, context, method);
+                    if (enumConvExpr != null)
+                        sb.AppendLine($"            {destParam}.{destProp.Name} = {enumConvExpr};");
+                }
+                // Enum→string auto-conversion
+                else if (IsEnumToStringPair(sourceProp.Type, destProp.Type))
+                {
+                    var enumStrExpr = GenerateEnumToStringExpression(sourceProp.Type, $"{sourceParam}.{sourceProp.Name}");
+                    // Handle nullable enum → non-nullable string
+                    if (GetNullableUnderlyingType(sourceProp.Type) != null
+                        && destProp.Type.NullableAnnotation != NullableAnnotation.Annotated)
+                    {
+                        var strategy = ResolveNullPropertyHandling(destProp.Name, nullPropertyHandlingOverrides);
+                        if (strategy == 1) // SkipNull
+                        {
+                            var localVar = "__enumStr_" + destProp.Name;
+                            sb.AppendLine($"            if ({enumStrExpr} is {{ }} {localVar})");
+                            sb.AppendLine($"            {{");
+                            sb.AppendLine($"                {destParam}.{destProp.Name} = {localVar};");
+                            sb.AppendLine($"            }}");
+                        }
+                        else
+                        {
+                            var handledExpr = ApplyNullPropertyHandlingExpression(
+                                enumStrExpr, destProp.Type, destProp.Name,
+                                destProp.ContainingType.Name, strategy);
+                            sb.AppendLine($"            {destParam}.{destProp.Name} = {handledExpr ?? $"{enumStrExpr}!"};");
+                        }
+                    }
+                    else
+                    {
+                        sb.AppendLine($"            {destParam}.{destProp.Name} = {enumStrExpr};");
+                    }
+                }
                 else if (_config.AutoWireNestedMappings)
                 {
                     // Try inline collection auto-wire first

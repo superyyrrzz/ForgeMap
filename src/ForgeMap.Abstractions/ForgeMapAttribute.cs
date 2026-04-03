@@ -48,4 +48,10 @@ public sealed class ForgeMapAttribute : Attribute
     /// for nested complex properties. Default is true.
     /// </summary>
     public bool AutoWireNestedMappings { get; set; } = true;
+
+    /// <summary>
+    /// Controls automatic string-to-enum conversion behavior.
+    /// Default is <see cref="StringToEnumConversion.Parse"/>.
+    /// </summary>
+    public StringToEnumConversion StringToEnum { get; set; } = StringToEnumConversion.Parse;
 }

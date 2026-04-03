@@ -515,7 +515,9 @@ internal sealed partial class ForgeCodeEmitter
                 }
 
                 if (sourceExpr != null && sourcePropType != null &&
-                    (CanAssign(sourcePropType, param.Type) || IsCompatibleEnumPair(sourcePropType, param.Type)))
+                    (CanAssign(sourcePropType, param.Type) || IsCompatibleEnumPair(sourcePropType, param.Type)
+                     || (_config.StringToEnum != 2 && IsStringToEnumPair(sourcePropType, param.Type))
+                     || IsEnumToStringPair(sourcePropType, param.Type)))
                 {
                     mappings.Add(new CtorParamMapping(param.Name, matchedDestPropName!, sourceExpr, sourcePropType, param.Type));
                 }

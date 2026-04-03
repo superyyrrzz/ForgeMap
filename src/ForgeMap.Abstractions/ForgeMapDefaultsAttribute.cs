@@ -35,4 +35,10 @@ public sealed class ForgeMapDefaultsAttribute : Attribute
     /// Default is true.
     /// </summary>
     public bool AutoWireNestedMappings { get; set; } = true;
+
+    /// <summary>
+    /// Assembly-level default for string-to-enum conversion.
+    /// Default is <see cref="StringToEnumConversion.Parse"/>.
+    /// </summary>
+    public StringToEnumConversion StringToEnum { get; set; } = StringToEnumConversion.Parse;
 }

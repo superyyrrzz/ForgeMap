@@ -264,4 +264,12 @@ internal static class DiagnosticDescriptors
         category: Category,
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor StringToEnumAutoConverted = new(
+        id: "FM0033",
+        title: "Property auto-converted from string to enum",
+        messageFormat: "Property '{0}' auto-converted from string to enum '{1}' using {2}",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Info,
+        isEnabledByDefault: false);
 }

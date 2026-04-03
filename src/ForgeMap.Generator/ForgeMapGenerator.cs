@@ -127,6 +127,9 @@ public sealed class ForgeMapGenerator : IIncrementalGenerator
                 case "AutoWireNestedMappings":
                     config.AutoWireNestedMappings = (bool)named.Value.Value!;
                     break;
+                case "StringToEnum":
+                    config.StringToEnum = (int)named.Value.Value!;
+                    break;
             }
         }
 

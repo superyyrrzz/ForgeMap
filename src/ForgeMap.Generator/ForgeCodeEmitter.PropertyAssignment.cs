@@ -96,6 +96,35 @@ internal sealed partial class ForgeCodeEmitter
             if (sourceLeafType != null && !CanAssign(sourceLeafType, destProp.Type)
                 && !IsCompatibleEnumPair(sourceLeafType, destProp.Type))
             {
+                // String→enum auto-conversion for [ForgeProperty] mapped properties
+                if (_config.StringToEnum != 2 && IsStringToEnumPair(sourceLeafType, destProp.Type))
+                {
+                    var enumExpr = TryGenerateStringToEnumConversion(
+                        sourceLeafType, destProp.Type, sourceExpr,
+                        destProp.Name, destProp.ContainingType.Name,
+                        nullPropertyHandlingOverrides,
+                        context, method);
+                    if (enumExpr != null)
+                        return enumExpr;
+                }
+
+                // Enum→string auto-conversion for [ForgeProperty] mapped properties
+                if (IsEnumToStringPair(sourceLeafType, destProp.Type))
+                {
+                    var expr = GenerateEnumToStringExpression(sourceLeafType, sourceExpr);
+                    // Handle nullable enum → non-nullable string
+                    if (GetNullableUnderlyingType(sourceLeafType) != null
+                        && destProp.Type.NullableAnnotation != NullableAnnotation.Annotated)
+                    {
+                        var strategy = ResolveNullPropertyHandling(destProp.Name, nullPropertyHandlingOverrides);
+                        var handledExpr = ApplyNullPropertyHandlingExpression(
+                            expr, destProp.Type, destProp.Name,
+                            destProp.ContainingType.Name, strategy);
+                        return handledExpr ?? $"{expr}!";
+                    }
+                    return expr;
+                }
+
                 if (_config.AutoWireNestedMappings)
                 {
                     // Try inline collection auto-wire first
@@ -160,6 +189,35 @@ internal sealed partial class ForgeCodeEmitter
             var enumCastExpr = TryGenerateCompatibleEnumCast(sourceProp.Type, destProp.Type, $"{sourceParam}.{sourceProp.Name}");
             if (enumCastExpr != null)
                 return enumCastExpr;
+        }
+
+        // String→enum auto-conversion (convention path)
+        if (sourceProp != null && _config.StringToEnum != 2 && IsStringToEnumPair(sourceProp.Type, destProp.Type))
+        {
+            var enumExpr = TryGenerateStringToEnumConversion(
+                sourceProp.Type, destProp.Type, $"{sourceParam}.{sourceProp.Name}",
+                destProp.Name, destProp.ContainingType.Name,
+                nullPropertyHandlingOverrides,
+                context, method);
+            if (enumExpr != null)
+                return enumExpr;
+        }
+
+        // Enum→string auto-conversion (convention path)
+        if (sourceProp != null && IsEnumToStringPair(sourceProp.Type, destProp.Type))
+        {
+            var expr = GenerateEnumToStringExpression(sourceProp.Type, $"{sourceParam}.{sourceProp.Name}");
+            // Handle nullable enum → non-nullable string
+            if (GetNullableUnderlyingType(sourceProp.Type) != null
+                && destProp.Type.NullableAnnotation != NullableAnnotation.Annotated)
+            {
+                var strategy = ResolveNullPropertyHandling(destProp.Name, nullPropertyHandlingOverrides);
+                var handledExpr = ApplyNullPropertyHandlingExpression(
+                    expr, destProp.Type, destProp.Name,
+                    destProp.ContainingType.Name, strategy);
+                return handledExpr ?? $"{expr}!";
+            }
+            return expr;
         }
 
         // Try automatic flattening: destProp "CustomerName" → source.Customer.Name
@@ -397,6 +455,231 @@ internal sealed partial class ForgeCodeEmitter
                    ?? $"{sourceExpression}!"; // fallback if ApplyNullPropertyHandlingExpression returns null (SkipNull)
         }
 
+        // String→enum auto-conversion for constructor parameters
+        if (sourcePropertyType != null && _config.StringToEnum != 2 && IsStringToEnumPair(sourcePropertyType, destPropertyType))
+        {
+            return GenerateStringToEnumParseExpression(sourcePropertyType, destPropertyType, sourceExpression);
+        }
+
+        // Enum→string auto-conversion for constructor parameters
+        if (sourcePropertyType != null && IsEnumToStringPair(sourcePropertyType, destPropertyType))
+        {
+            return GenerateEnumToStringExpression(sourcePropertyType, sourceExpression);
+        }
+
         return sourceExpression;
+    }
+
+    /// <summary>
+    /// Tries to generate a string→enum conversion expression for a property assignment.
+    /// Handles string/string? source → enum/enum? destination with NullPropertyHandling integration.
+    /// Returns null if the types are not a string→enum pair.
+    /// </summary>
+    private string? TryGenerateStringToEnumConversion(
+        ITypeSymbol sourceType,
+        ITypeSymbol destType,
+        string sourceExpr,
+        string destPropertyName,
+        string destTypeName,
+        Dictionary<string, int> nullPropertyHandlingOverrides,
+        SourceProductionContext context,
+        IMethodSymbol method)
+    {
+        if (!IsStringToEnumPair(sourceType, destType))
+            return null;
+
+        // Report FM0033 (informational, disabled by default)
+        var destEnumUnderlying = GetNullableUnderlyingType(destType) ?? destType;
+        var strategyName = _config.StringToEnum == 1 ? "TryParse" : "Parse";
+        ReportDiagnosticIfNotSuppressed(context,
+            DiagnosticDescriptors.StringToEnumAutoConverted,
+            method.Locations.FirstOrDefault(),
+            destPropertyName,
+            destEnumUnderlying.ToDisplayString(),
+            strategyName);
+
+        var isSourceNullable = sourceType.NullableAnnotation == NullableAnnotation.Annotated;
+        var isDestNullable = GetNullableUnderlyingType(destType) != null;
+        var enumFqn = $"global::{destEnumUnderlying.ToDisplayString()}";
+
+        // TryParse strategy (1): generates multi-statement for non-nullable dest
+        if (_config.StringToEnum == 1) // TryParse
+        {
+            return GenerateStringToEnumTryParseExpression(
+                sourceExpr, enumFqn, isSourceNullable, isDestNullable,
+                destPropertyName, nullPropertyHandlingOverrides);
+        }
+
+        // Parse strategy (0): generates inline expression
+        return GenerateStringToEnumParseExpressionWithNullHandling(
+            sourceExpr, enumFqn, isSourceNullable, isDestNullable,
+            destPropertyName, destTypeName, nullPropertyHandlingOverrides);
+    }
+
+    /// <summary>
+    /// Generates a string→enum Parse expression (inline, no null handling; used for ctor params).
+    /// </summary>
+    private string GenerateStringToEnumParseExpression(
+        ITypeSymbol sourceType,
+        ITypeSymbol destType,
+        string sourceExpr)
+    {
+        var destEnumUnderlying = GetNullableUnderlyingType(destType) ?? destType;
+        var isDestNullable = GetNullableUnderlyingType(destType) != null;
+        var enumFqn = $"global::{destEnumUnderlying.ToDisplayString()}";
+        var isSourceNullable = sourceType.NullableAnnotation == NullableAnnotation.Annotated;
+
+        if (_config.StringToEnum == 1) // TryParse — for ctor params, use inline ternary
+        {
+            if (isSourceNullable)
+            {
+                if (isDestNullable)
+                    return $"({sourceExpr} is {{ }} __enumStr_{SanitizeVarName(sourceExpr)} && global::System.Enum.TryParse<{enumFqn}>(__enumStr_{SanitizeVarName(sourceExpr)}, true, out var __enumVal_{SanitizeVarName(sourceExpr)}) ? ({enumFqn}?)__enumVal_{SanitizeVarName(sourceExpr)} : null)";
+                else
+                    return $"(global::System.Enum.TryParse<{enumFqn}>({sourceExpr}!, true, out var __enumVal_{SanitizeVarName(sourceExpr)}) ? __enumVal_{SanitizeVarName(sourceExpr)} : default({enumFqn}))";
+            }
+            else
+            {
+                var parseExpr = $"(global::System.Enum.TryParse<{enumFqn}>({sourceExpr}, true, out var __enumVal_{SanitizeVarName(sourceExpr)}) ? __enumVal_{SanitizeVarName(sourceExpr)} : default({enumFqn}))";
+                return isDestNullable ? $"({enumFqn}?){parseExpr}" : parseExpr;
+            }
+        }
+
+        // Parse strategy
+        var parseBase = $"({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), {sourceExpr}{(isSourceNullable ? "!" : "")}, true)";
+        if (isDestNullable)
+            return $"({enumFqn}?)({parseBase})";
+        return parseBase;
+    }
+
+    /// <summary>
+    /// Generates a Parse-strategy expression with NullPropertyHandling integration.
+    /// </summary>
+    private string? GenerateStringToEnumParseExpressionWithNullHandling(
+        string sourceExpr,
+        string enumFqn,
+        bool isSourceNullable,
+        bool isDestNullable,
+        string destPropertyName,
+        string destTypeName,
+        Dictionary<string, int> nullPropertyHandlingOverrides)
+    {
+        if (!isSourceNullable)
+        {
+            // Non-nullable source: straightforward parse
+            var parseExpr = $"({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), {sourceExpr}, true)";
+            if (isDestNullable)
+                return $"({enumFqn}?)({parseExpr})";
+            return parseExpr;
+        }
+
+        // Nullable source: apply NullPropertyHandling
+        var strategy = ResolveNullPropertyHandling(destPropertyName, nullPropertyHandlingOverrides);
+
+        // When dest is nullable and source is nullable, null source should always map to null dest
+        // regardless of NullPropertyHandling strategy (the strategy only matters for nullable→non-nullable)
+        if (isDestNullable)
+        {
+            return $"{sourceExpr} is {{ }} __strVal_{SanitizeVarName(destPropertyName)} ? ({enumFqn}?)(({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), __strVal_{SanitizeVarName(destPropertyName)}, true)) : null";
+        }
+
+        switch (strategy)
+        {
+            case 0: // NullForgiving
+                return $"({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), {sourceExpr}!, true)";
+
+            case 1: // SkipNull
+                // Non-nullable dest + SkipNull + nullable source → fall back to NullForgiving
+                return $"({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), {sourceExpr}!, true)";
+
+            case 2: // CoalesceToDefault
+                return $"{sourceExpr} is null ? default({enumFqn}) : ({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), {sourceExpr}, true)";
+
+            case 3: // ThrowException
+                return $"({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), {sourceExpr} ?? throw new global::System.ArgumentNullException(\"{destPropertyName}\", \"Cannot assign null source property '{sourceExpr}' to non-nullable destination '{destTypeName}.{destPropertyName}'.\"), true)";
+
+            default:
+                return $"({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), {sourceExpr}!, true)";
+        }
+    }
+
+    /// <summary>
+    /// Generates a TryParse-strategy expression with NullPropertyHandling integration.
+    /// </summary>
+    private string? GenerateStringToEnumTryParseExpression(
+        string sourceExpr,
+        string enumFqn,
+        bool isSourceNullable,
+        bool isDestNullable,
+        string destPropertyName,
+        Dictionary<string, int> nullPropertyHandlingOverrides)
+    {
+        // TryParse uses generic Enum.TryParse<T>(string, bool, out T) available from netstandard2.0
+        // Result: parsed value on success, default(T) on failure
+        var varSuffix = SanitizeVarName(destPropertyName);
+
+        if (!isSourceNullable)
+        {
+            // Non-nullable source: simple TryParse
+            var tryExpr = $"(global::System.Enum.TryParse<{enumFqn}>({sourceExpr}, true, out var __enum_{varSuffix}) ? __enum_{varSuffix} : default({enumFqn}))";
+            if (isDestNullable)
+                return $"(global::System.Enum.TryParse<{enumFqn}>({sourceExpr}, true, out var __enum_{varSuffix}) ? ({enumFqn}?)__enum_{varSuffix} : null)";
+            return tryExpr;
+        }
+
+        // Nullable source
+        if (isDestNullable)
+        {
+            return $"({sourceExpr} is {{ }} __strVal_{varSuffix} && global::System.Enum.TryParse<{enumFqn}>(__strVal_{varSuffix}, true, out var __enum_{varSuffix}) ? ({enumFqn}?)__enum_{varSuffix} : null)";
+        }
+
+        // Nullable source → non-nullable dest: use NullPropertyHandling
+        var strategy = ResolveNullPropertyHandling(destPropertyName, nullPropertyHandlingOverrides);
+        switch (strategy)
+        {
+            case 0: // NullForgiving — try parse the potentially-null string
+                return $"(global::System.Enum.TryParse<{enumFqn}>({sourceExpr}!, true, out var __enum_{varSuffix}) ? __enum_{varSuffix} : default({enumFqn}))";
+
+            case 1: // SkipNull — fall back to NullForgiving for inline expression
+                return $"(global::System.Enum.TryParse<{enumFqn}>({sourceExpr}!, true, out var __enum_{varSuffix}) ? __enum_{varSuffix} : default({enumFqn}))";
+
+            case 2: // CoalesceToDefault
+                return $"({sourceExpr} is {{ }} __strVal_{varSuffix} && global::System.Enum.TryParse<{enumFqn}>(__strVal_{varSuffix}, true, out var __enum_{varSuffix}) ? __enum_{varSuffix} : default({enumFqn}))";
+
+            case 3: // ThrowException
+                return $"({sourceExpr} ?? throw new global::System.ArgumentNullException(\"{destPropertyName}\")) is {{ }} __strVal_{varSuffix} && global::System.Enum.TryParse<{enumFqn}>(__strVal_{varSuffix}, true, out var __enum_{varSuffix}) ? __enum_{varSuffix} : default({enumFqn})";
+
+            default:
+                return $"(global::System.Enum.TryParse<{enumFqn}>({sourceExpr}!, true, out var __enum_{varSuffix}) ? __enum_{varSuffix} : default({enumFqn}))";
+        }
+    }
+
+    /// <summary>
+    /// Generates an enum→string conversion expression (source.Prop.ToString()).
+    /// Handles Nullable&lt;enum&gt; source by using ?.ToString().
+    /// </summary>
+    private static string GenerateEnumToStringExpression(ITypeSymbol sourceType, string sourceExpr)
+    {
+        var srcUnderlying = GetNullableUnderlyingType(sourceType);
+        if (srcUnderlying != null)
+        {
+            // Nullable<Enum> → string: use ?.ToString()
+            return $"{sourceExpr}?.ToString()";
+        }
+        return $"{sourceExpr}.ToString()";
+    }
+
+    /// <summary>
+    /// Sanitizes an expression for use as a C# variable name suffix.
+    /// </summary>
+    private static string SanitizeVarName(string name)
+    {
+        var sb = new StringBuilder(name.Length);
+        foreach (var c in name)
+        {
+            if (char.IsLetterOrDigit(c) || c == '_')
+                sb.Append(c);
+        }
+        return sb.ToString();
     }
 }

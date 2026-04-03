@@ -55,6 +55,7 @@ internal sealed partial class ForgeCodeEmitter
             GenerateCollectionMappings = _assemblyDefaults.GenerateCollectionMappings,
             NullPropertyHandling = _assemblyDefaults.NullPropertyHandling,
             AutoWireNestedMappings = _assemblyDefaults.AutoWireNestedMappings,
+            StringToEnum = _assemblyDefaults.StringToEnum,
             SuppressDiagnostics = new HashSet<string>(_assemblyDefaults.SuppressDiagnostics, StringComparer.OrdinalIgnoreCase),
         };
 
@@ -84,6 +85,9 @@ internal sealed partial class ForgeCodeEmitter
                     break;
                 case "AutoWireNestedMappings":
                     config.AutoWireNestedMappings = (bool)named.Value.Value!;
+                    break;
+                case "StringToEnum":
+                    config.StringToEnum = (int)named.Value.Value!;
                     break;
             }
         }
