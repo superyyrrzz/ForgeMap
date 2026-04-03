@@ -495,17 +495,17 @@ internal sealed partial class ForgeCodeEmitter
                     case 3: // ThrowException — null-check then parse
                         var nullChecked = $"({sourceExpression} ?? throw new global::System.ArgumentNullException(\"{destPropertyName}\", \"Cannot assign null source property '{sourceExpression}' to non-nullable destination '{destTypeName}.{destPropertyName}'.\"))";
                         if (_config.StringToEnum == 1) // TryParse
-                            return $"(global::System.Enum.TryParse<{enumFqn}>({nullChecked}, true, out var __enumVal_{SanitizeVarName(sourceExpression)}) ? __enumVal_{SanitizeVarName(sourceExpression)} : default({enumFqn}))";
+                            return $"(global::System.Enum.TryParse<{enumFqn}>({nullChecked}, true, out var __enumVal_{SanitizeVarName(destPropertyName)}) ? __enumVal_{SanitizeVarName(destPropertyName)} : default({enumFqn}))";
                         return $"({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), {nullChecked}, true)";
                     case 2: // CoalesceToDefault — return default enum when source is null
                         if (_config.StringToEnum == 1) // TryParse
-                            return $"({sourceExpression} is {{ }} __enumStr_{SanitizeVarName(sourceExpression)} && global::System.Enum.TryParse<{enumFqn}>(__enumStr_{SanitizeVarName(sourceExpression)}, true, out var __enumVal_{SanitizeVarName(sourceExpression)}) ? __enumVal_{SanitizeVarName(sourceExpression)} : default({enumFqn}))";
-                        return $"({sourceExpression} is {{ }} __enumStr_{SanitizeVarName(sourceExpression)} ? ({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), __enumStr_{SanitizeVarName(sourceExpression)}, true) : default({enumFqn}))";
+                            return $"({sourceExpression} is {{ }} __enumStr_{SanitizeVarName(destPropertyName)} && global::System.Enum.TryParse<{enumFqn}>(__enumStr_{SanitizeVarName(destPropertyName)}, true, out var __enumVal_{SanitizeVarName(destPropertyName)}) ? __enumVal_{SanitizeVarName(destPropertyName)} : default({enumFqn}))";
+                        return $"({sourceExpression} is {{ }} __enumStr_{SanitizeVarName(destPropertyName)} ? ({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), __enumStr_{SanitizeVarName(destPropertyName)}, true) : default({enumFqn}))";
                     default: // NullForgiving (0) — fall through to default handler
                         break;
                 }
             }
-            return GenerateStringToEnumParseExpression(sourcePropertyType, destPropertyType, sourceExpression);
+            return GenerateStringToEnumParseExpression(sourcePropertyType, destPropertyType, sourceExpression, destPropertyName);
         }
 
         // Enum→string auto-conversion for constructor parameters
@@ -590,7 +590,11 @@ internal sealed partial class ForgeCodeEmitter
         if (result == null && skipNullAssignments != null && destProp != null)
         {
             if (destProp.SetMethod?.IsInitOnly == true)
+            {
+                if (_config.StringToEnum == 1) // TryParse
+                    return $"(global::System.Enum.TryParse<{enumFqn}>({sourceExpr}!, true, out var __enumVal_{SanitizeVarName(destPropertyName)}) ? __enumVal_{SanitizeVarName(destPropertyName)} : default({enumFqn}))";
                 return $"({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), {sourceExpr}!, true)"; // init-only: fall back to NullForgiving
+            }
             var localVar = "__strVal_" + SanitizeVarName(destPropertyName);
             string assignExpr;
             if (_config.StringToEnum == 1) // TryParse
@@ -609,25 +613,27 @@ internal sealed partial class ForgeCodeEmitter
     private string GenerateStringToEnumParseExpression(
         ITypeSymbol sourceType,
         ITypeSymbol destType,
-        string sourceExpr)
+        string sourceExpr,
+        string destPropertyName)
     {
         var destEnumUnderlying = GetNullableUnderlyingType(destType) ?? destType;
         var isDestNullable = GetNullableUnderlyingType(destType) != null;
         var enumFqn = $"global::{destEnumUnderlying.ToDisplayString()}";
         var isSourceNullable = sourceType.NullableAnnotation == NullableAnnotation.Annotated;
+        var varSuffix = SanitizeVarName(destPropertyName);
 
         if (_config.StringToEnum == 1) // TryParse — for ctor params, use inline ternary
         {
             if (isSourceNullable)
             {
                 if (isDestNullable)
-                    return $"({sourceExpr} is {{ }} __enumStr_{SanitizeVarName(sourceExpr)} && global::System.Enum.TryParse<{enumFqn}>(__enumStr_{SanitizeVarName(sourceExpr)}, true, out var __enumVal_{SanitizeVarName(sourceExpr)}) ? ({enumFqn}?)__enumVal_{SanitizeVarName(sourceExpr)} : null)";
+                    return $"({sourceExpr} is {{ }} __enumStr_{varSuffix} && global::System.Enum.TryParse<{enumFqn}>(__enumStr_{varSuffix}, true, out var __enumVal_{varSuffix}) ? ({enumFqn}?)__enumVal_{varSuffix} : null)";
                 else
-                    return $"(global::System.Enum.TryParse<{enumFqn}>({sourceExpr}!, true, out var __enumVal_{SanitizeVarName(sourceExpr)}) ? __enumVal_{SanitizeVarName(sourceExpr)} : default({enumFqn}))";
+                    return $"(global::System.Enum.TryParse<{enumFqn}>({sourceExpr}!, true, out var __enumVal_{varSuffix}) ? __enumVal_{varSuffix} : default({enumFqn}))";
             }
             else
             {
-                var parseExpr = $"(global::System.Enum.TryParse<{enumFqn}>({sourceExpr}, true, out var __enumVal_{SanitizeVarName(sourceExpr)}) ? __enumVal_{SanitizeVarName(sourceExpr)} : default({enumFqn}))";
+                var parseExpr = $"(global::System.Enum.TryParse<{enumFqn}>({sourceExpr}, true, out var __enumVal_{varSuffix}) ? __enumVal_{varSuffix} : default({enumFqn}))";
                 return isDestNullable ? $"({enumFqn}?){parseExpr}" : parseExpr;
             }
         }
