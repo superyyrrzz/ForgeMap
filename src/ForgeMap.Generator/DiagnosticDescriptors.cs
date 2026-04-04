@@ -291,8 +291,8 @@ internal static class DiagnosticDescriptors
 
     public static readonly DiagnosticDescriptor ConvertWithIgnoresPropertyAttributes = new(
         id: "FM0036",
-        title: "[ConvertWith] takes precedence over property-level attributes",
-        messageFormat: "[ConvertWith] on method '{0}' takes full precedence \u2014 [ForgeProperty]/[ForgeFrom] attributes are ignored",
+        title: "[ConvertWith] takes precedence over mapping attributes",
+        messageFormat: "[ConvertWith] on method '{0}' takes full precedence \u2014 [ForgeProperty], [ForgeFrom], and [ForgeWith] attributes are ignored",
         category: Category,
         defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true);

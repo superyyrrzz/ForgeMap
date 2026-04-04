@@ -762,8 +762,8 @@ internal sealed partial class ForgeCodeEmitter
         sb.AppendLine($"        {accessibility} partial {destDisplay} {method.Name}({sourceDisplay} {sourceParam})");
         sb.AppendLine("        {");
 
-        // Null check (only for reference types)
-        if (sourceType.IsReferenceType)
+        // Null check for nullable inputs (reference types and Nullable<T>)
+        if (sourceType.IsReferenceType || sourceType.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T)
         {
             var nullReturn = destinationType.IsValueType ? "default" : "null!";
             sb.AppendLine(GenerateNullCheck(sourceParam, nullReturn));
