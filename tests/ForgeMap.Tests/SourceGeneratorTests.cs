@@ -5525,7 +5525,7 @@ public partial class TestForger
         Assert.Empty(errors);
 
         var generatedCode = string.Join("\n", trees.Select(t => t.GetText().ToString()));
-        Assert.Contains("_converter.Convert(source)", generatedCode);
+        Assert.Contains("this._converter.Convert(source)", generatedCode);
     }
 
     [Fact]

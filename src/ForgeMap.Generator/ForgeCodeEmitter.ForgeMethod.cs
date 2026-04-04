@@ -867,7 +867,7 @@ internal sealed partial class ForgeCodeEmitter
                 return sb.ToString();
             }
 
-            sb.AppendLine($"            return {memberName}.Convert({sourceParam});");
+            sb.AppendLine($"            return this.{memberName}.Convert({sourceParam});");
         }
 
         sb.AppendLine("        }");
