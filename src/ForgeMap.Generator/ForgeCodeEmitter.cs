@@ -23,6 +23,9 @@ internal sealed partial class ForgeCodeEmitter
     private readonly INamedTypeSymbol? _forgeAllDerivedAttributeSymbol;
     private readonly INamedTypeSymbol? _convertWithAttributeSymbol;
     private readonly INamedTypeSymbol? _useExistingValueAttributeSymbol;
+    private readonly INamedTypeSymbol? _iTypeConverterOpenSymbol;
+    private readonly INamedTypeSymbol? _iServiceProviderSymbol;
+    private readonly INamedTypeSymbol? _iServiceScopeFactorySymbol;
     private readonly ForgerConfig _assemblyDefaults;
     private ForgerConfig _config = null!;
 
@@ -39,6 +42,9 @@ internal sealed partial class ForgeCodeEmitter
         _forgeAllDerivedAttributeSymbol = compilation.GetTypeByMetadataName("ForgeMap.ForgeAllDerivedAttribute");
         _convertWithAttributeSymbol = compilation.GetTypeByMetadataName("ForgeMap.ConvertWithAttribute");
         _useExistingValueAttributeSymbol = compilation.GetTypeByMetadataName("ForgeMap.UseExistingValueAttribute");
+        _iTypeConverterOpenSymbol = compilation.GetTypeByMetadataName("ForgeMap.ITypeConverter`2");
+        _iServiceProviderSymbol = compilation.GetTypeByMetadataName("System.IServiceProvider");
+        _iServiceScopeFactorySymbol = compilation.GetTypeByMetadataName("Microsoft.Extensions.DependencyInjection.IServiceScopeFactory");
         _assemblyDefaults = assemblyDefaults;
     }
 
@@ -204,6 +210,10 @@ internal sealed partial class ForgeCodeEmitter
             if (!HasReverseForgeAttribute(method))
                 continue;
 
+            // [ConvertWith] — reverse not auto-generated, per spec
+            if (HasConvertWithAttribute(method))
+                continue;
+
             // Guard: [ReverseForge] requires exactly one source parameter and a non-void return type
             if (method.Parameters.Length != 1 || method.ReturnsVoid)
                 continue;
@@ -261,6 +271,16 @@ internal sealed partial class ForgeCodeEmitter
 
             destinationType = useExistingParam.Type;
             return GenerateForgeIntoMethod(method, sourceType, destinationType as INamedTypeSymbol, forger, context);
+        }
+
+        // [ConvertWith] — converter takes full control of method body
+        // Skip if [ForgeAllDerived] is also present — let GenerateForgeMethod handle the FM0023 error
+        if (HasConvertWithAttribute(method) && !HasForgeAllDerivedAttribute(method))
+        {
+            ReportHooksNotSupportedIfPresent(method, context);
+            if (sourceType is INamedTypeSymbol srcNamed && destinationType is INamedTypeSymbol destNamed)
+                return GenerateConvertWithMethod(method, srcNamed, destNamed, forger, context);
+            return string.Empty;
         }
 
         // Check for enum forging scenarios

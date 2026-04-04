@@ -272,4 +272,36 @@ internal static class DiagnosticDescriptors
         category: Category,
         defaultSeverity: DiagnosticSeverity.Info,
         isEnabledByDefault: false);
+
+    public static readonly DiagnosticDescriptor ConvertWithTypeDoesNotImplementInterface = new(
+        id: "FM0034",
+        title: "[ConvertWith] type does not implement ITypeConverter",
+        messageFormat: "[ConvertWith] type '{0}' does not implement ITypeConverter<{1}, {2}>",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor ConvertWithNoParameterlessConstructor = new(
+        id: "FM0035",
+        title: "[ConvertWith] converter type has no accessible parameterless constructor",
+        messageFormat: "[ConvertWith] converter type '{0}' has no accessible parameterless constructor and forger has no DI (IServiceProvider/IServiceScopeFactory)",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor ConvertWithIgnoresPropertyAttributes = new(
+        id: "FM0036",
+        title: "[ConvertWith] takes precedence over mapping attributes",
+        messageFormat: "[ConvertWith] on method '{0}' takes full precedence \u2014 [ForgeProperty], [ForgeFrom], and [ForgeWith] attributes are ignored",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor ConvertWithMemberNotFound = new(
+        id: "FM0037",
+        title: "[ConvertWith] member not found or incompatible",
+        messageFormat: "[ConvertWith] member '{0}' not found on forger class, or is inaccessible, or its type does not implement ITypeConverter<{1}, {2}>",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
 }

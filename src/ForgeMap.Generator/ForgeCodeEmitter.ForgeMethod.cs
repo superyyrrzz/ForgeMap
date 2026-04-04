@@ -726,6 +726,154 @@ internal sealed partial class ForgeCodeEmitter
         return map;
     }
 
+    /// <summary>
+    /// Generates a forge method body that delegates to a [ConvertWith] converter.
+    /// </summary>
+    private string GenerateConvertWithMethod(
+        IMethodSymbol method,
+        INamedTypeSymbol sourceType,
+        INamedTypeSymbol destinationType,
+        ForgerInfo forger,
+        SourceProductionContext context)
+    {
+        var convertWithInfo = GetConvertWithInfo(method);
+        if (convertWithInfo == null)
+            return string.Empty;
+
+        var info = convertWithInfo.Value;
+        var sourceParam = method.Parameters[0].Name;
+        var accessibility = GetAccessibilityKeyword(method.DeclaredAccessibility);
+        var destDisplay = destinationType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+        var sourceDisplay = sourceType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+
+        // FM0036: warn if [ForgeProperty]/[ForgeFrom]/[ForgeWith] are also present
+        var hasPropertyAttrs = GetPropertyMappings(method).Count > 0 ||
+                               GetResolverMappings(method).Count > 0 ||
+                               GetForgeWithMappings(method).Count > 0;
+        if (hasPropertyAttrs)
+        {
+            ReportDiagnosticIfNotSuppressed(context,
+                DiagnosticDescriptors.ConvertWithIgnoresPropertyAttributes,
+                method.Locations.FirstOrDefault(),
+                method.Name);
+        }
+
+        var sb = new StringBuilder();
+        sb.AppendLine($"        {accessibility} partial {destDisplay} {method.Name}({sourceDisplay} {sourceParam})");
+        sb.AppendLine("        {");
+
+        // Null check for nullable inputs (reference types and Nullable<T>)
+        if (sourceType.IsReferenceType || sourceType.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T)
+        {
+            var nullReturn = destinationType.IsValueType ? "default" : "null!";
+            sb.AppendLine(GenerateNullCheck(sourceParam, nullReturn));
+            sb.AppendLine();
+        }
+
+        if (info.ConverterType != null)
+        {
+            // Type-based converter path
+            var converterType = info.ConverterType;
+            var converterDisplay = converterType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+
+            // Validate ITypeConverter<TSource, TDest>
+            if (!ImplementsITypeConverter(converterType, sourceType, destinationType))
+            {
+                ReportDiagnosticIfNotSuppressed(context,
+                    DiagnosticDescriptors.ConvertWithTypeDoesNotImplementInterface,
+                    method.Locations.FirstOrDefault(),
+                    converterDisplay,
+                    sourceDisplay,
+                    destDisplay);
+
+                sb.AppendLine($"            throw new global::System.NotSupportedException(\"[ConvertWith] type does not implement ITypeConverter.\");");
+                sb.AppendLine("        }");
+                return sb.ToString();
+            }
+
+            // Detect DI capability on the forger
+            string? scopeFactoryField = _iServiceScopeFactorySymbol != null
+                ? FindFieldByType(forger.Symbol, _iServiceScopeFactorySymbol)
+                : null;
+            string? serviceProviderField = _iServiceProviderSymbol != null
+                ? FindFieldByType(forger.Symbol, _iServiceProviderSymbol)
+                : null;
+
+            if (scopeFactoryField != null)
+            {
+                // IServiceScopeFactory DI — scoped resolution
+                sb.AppendLine($"            using var __scope = this.{scopeFactoryField}.CreateScope();");
+                sb.AppendLine($"            return (({converterDisplay})global::Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.GetRequiredService(__scope.ServiceProvider, typeof({converterDisplay}))).Convert({sourceParam});");
+            }
+            else if (serviceProviderField != null)
+            {
+                // IServiceProvider DI — direct resolution via IServiceProvider.GetService (BCL method, no DI package required)
+                sb.AppendLine($"            var __converter = ({converterDisplay})this.{serviceProviderField}.GetService(typeof({converterDisplay}));");
+                sb.AppendLine($"            if (__converter == null) throw new global::System.InvalidOperationException(\"No service for type '\" + typeof({converterDisplay}).FullName + \"' has been registered.\");");
+                sb.AppendLine($"            return __converter.Convert({sourceParam});");
+            }
+            else
+            {
+                // No DI — require public parameterless constructor (must be public for cross-assembly access)
+                var hasParameterlessCtor = converterType.InstanceConstructors.Any(c =>
+                    c.Parameters.Length == 0 && c.DeclaredAccessibility == Accessibility.Public);
+
+                if (!hasParameterlessCtor)
+                {
+                    ReportDiagnosticIfNotSuppressed(context,
+                        DiagnosticDescriptors.ConvertWithNoParameterlessConstructor,
+                        method.Locations.FirstOrDefault(),
+                        converterDisplay);
+
+                    sb.AppendLine($"            throw new global::System.NotSupportedException(\"[ConvertWith] converter has no accessible parameterless constructor.\");");
+                    sb.AppendLine("        }");
+                    return sb.ToString();
+                }
+
+                sb.AppendLine($"            return new {converterDisplay}().Convert({sourceParam});");
+            }
+        }
+        else if (info.MemberName != null)
+        {
+            // Member-based converter path — find field/property by name
+            var memberName = info.MemberName;
+            ITypeSymbol? memberType = null;
+
+            foreach (var member in forger.Symbol.GetMembers())
+            {
+                if (member is IFieldSymbol field && !field.IsStatic && field.Name == memberName)
+                {
+                    memberType = field.Type;
+                    break;
+                }
+                if (member is IPropertySymbol prop && !prop.IsStatic && prop.Name == memberName)
+                {
+                    memberType = prop.Type;
+                    break;
+                }
+            }
+
+            if (memberType == null || !ImplementsITypeConverter(memberType, sourceType, destinationType))
+            {
+                ReportDiagnosticIfNotSuppressed(context,
+                    DiagnosticDescriptors.ConvertWithMemberNotFound,
+                    method.Locations.FirstOrDefault(),
+                    memberName,
+                    sourceDisplay,
+                    destDisplay);
+
+                sb.AppendLine($"            throw new global::System.NotSupportedException(\"[ConvertWith] member not found or incompatible.\");");
+                sb.AppendLine("        }");
+                return sb.ToString();
+            }
+
+            sb.AppendLine($"            return this.{memberName}.Convert({sourceParam});");
+        }
+
+        sb.AppendLine("        }");
+        return sb.ToString();
+    }
+
     private sealed class CtorParamMapping
     {
         public CtorParamMapping(string ctorParamName, string destPropertyName, string sourceExpression, ITypeSymbol? sourcePropertyType, ITypeSymbol destPropertyType)

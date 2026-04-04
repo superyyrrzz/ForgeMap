@@ -11,4 +11,8 @@ FM0030 | ForgeMap | Warning | No matching ForgeInto method for nested existing-t
 FM0031 | ForgeMap | Error | CollectionUpdateStrategy.Sync requires KeyProperty
 FM0032 | ForgeMap | Error | KeyProperty not found on element type
 FM0033 | ForgeMap | Disabled | Property auto-converted from string to enum
+FM0034 | ForgeMap | Error | [ConvertWith] type does not implement ITypeConverter
+FM0035 | ForgeMap | Error | [ConvertWith] converter type has no accessible parameterless ctor and no DI
+FM0036 | ForgeMap | Warning | [ConvertWith] takes precedence over [ForgeProperty]/[ForgeFrom]/[ForgeWith]
+FM0037 | ForgeMap | Error | [ConvertWith] member not found or incompatible
 
