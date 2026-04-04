@@ -10,4 +10,5 @@ FM0029 | ForgeMap | Error | Property has no getter for in-place update
 FM0030 | ForgeMap | Warning | No matching ForgeInto method for nested existing-target
 FM0031 | ForgeMap | Error | CollectionUpdateStrategy.Sync requires KeyProperty
 FM0032 | ForgeMap | Error | KeyProperty not found on element type
+FM0033 | ForgeMap | Disabled | Property auto-converted from string to enum
 

@@ -248,7 +248,7 @@ internal sealed partial class ForgeCodeEmitter
                 .ToList();
 
             var initAssignments = new List<(string Name, string Expr)>();
-            var skipNullAssignmentsForCtor = new List<(string DestPropName, string SourceExpr, string LocalVarName)>();
+            var skipNullAssignmentsForCtor = new List<(string DestPropName, string SourceExpr, string LocalVarName, string? AssignExpr)>();
             var postConstructionCollectionsForCtor = new List<(string DestPropName, string Block)>();
             var preConstructionBlocksForCtor = new List<string>();
             foreach (var destProp in remainingDestProps)
@@ -297,11 +297,11 @@ internal sealed partial class ForgeCodeEmitter
             }
 
             // SkipNull properties — emit separate if-guard statements after the initializer
-            foreach (var (destName, srcExpr, localVar) in skipNullAssignmentsForCtor)
+            foreach (var (destName, srcExpr, localVar, assignExpr) in skipNullAssignmentsForCtor)
             {
                 sb.AppendLine($"            if ({srcExpr} is {{ }} {localVar})");
                 sb.AppendLine($"            {{");
-                sb.AppendLine($"                result.{destName} = {localVar};");
+                sb.AppendLine($"                result.{destName} = {assignExpr ?? localVar};");
                 sb.AppendLine($"            }}");
             }
 
@@ -320,7 +320,7 @@ internal sealed partial class ForgeCodeEmitter
         else if (hasAfterForge)
         {
             // When AfterForge hooks exist, we need a variable to pass to the hooks
-            var skipNullAssignmentsAfterForge = new List<(string DestPropName, string SourceExpr, string LocalVarName)>();
+            var skipNullAssignmentsAfterForge = new List<(string DestPropName, string SourceExpr, string LocalVarName, string? AssignExpr)>();
             var postConstructionCollectionsAfterForge = new List<(string DestPropName, string Block)>();
             var preConstructionBlocksAfterForge = new List<string>();
 
@@ -350,11 +350,11 @@ internal sealed partial class ForgeCodeEmitter
             sb.AppendLine("            };");
 
             // SkipNull properties — emit separate if-guard statements
-            foreach (var (destName, srcExpr, localVar) in skipNullAssignmentsAfterForge)
+            foreach (var (destName, srcExpr, localVar, assignExpr) in skipNullAssignmentsAfterForge)
             {
                 sb.AppendLine($"            if ({srcExpr} is {{ }} {localVar})");
                 sb.AppendLine($"            {{");
-                sb.AppendLine($"                result.{destName} = {localVar};");
+                sb.AppendLine($"                result.{destName} = {assignExpr ?? localVar};");
                 sb.AppendLine($"            }}");
             }
 
@@ -373,7 +373,7 @@ internal sealed partial class ForgeCodeEmitter
         else
         {
             // Object initializer pattern
-            var skipNullAssignmentsPlain = new List<(string DestPropName, string SourceExpr, string LocalVarName)>();
+            var skipNullAssignmentsPlain = new List<(string DestPropName, string SourceExpr, string LocalVarName, string? AssignExpr)>();
             var postConstructionCollectionsPlain = new List<(string DestPropName, string Block)>();
             var preConstructionBlocksPlain = new List<string>();
             var plainAssignments = new List<(string Name, string Expr)>();
@@ -406,11 +406,11 @@ internal sealed partial class ForgeCodeEmitter
                     sb.AppendLine($"                {name} = {expr},");
                 sb.AppendLine("            };");
 
-                foreach (var (destName, srcExpr, localVar) in skipNullAssignmentsPlain)
+                foreach (var (destName, srcExpr, localVar, assignExpr) in skipNullAssignmentsPlain)
                 {
                     sb.AppendLine($"            if ({srcExpr} is {{ }} {localVar})");
                     sb.AppendLine($"            {{");
-                    sb.AppendLine($"                result.{destName} = {localVar};");
+                    sb.AppendLine($"                result.{destName} = {assignExpr ?? localVar};");
                     sb.AppendLine($"            }}");
                 }
 
@@ -515,7 +515,9 @@ internal sealed partial class ForgeCodeEmitter
                 }
 
                 if (sourceExpr != null && sourcePropType != null &&
-                    (CanAssign(sourcePropType, param.Type) || IsCompatibleEnumPair(sourcePropType, param.Type)))
+                    (CanAssign(sourcePropType, param.Type) || IsCompatibleEnumPair(sourcePropType, param.Type)
+                     || (_config.StringToEnum != 2 && IsStringToEnumPair(sourcePropType, param.Type))
+                     || IsEnumToStringPair(sourcePropType, param.Type)))
                 {
                     mappings.Add(new CtorParamMapping(param.Name, matchedDestPropName!, sourceExpr, sourcePropType, param.Type));
                 }

@@ -374,4 +374,26 @@ internal static class TypeAnalysisHelper
         if (type.SpecialType != SpecialType.None) return true;
         return false;
     }
+
+    /// <summary>
+    /// Returns true when source is string (or string?) and dest is an enum (or Nullable&lt;enum&gt;).
+    /// </summary>
+    internal static bool IsStringToEnumPair(ITypeSymbol source, ITypeSymbol dest)
+    {
+        if (source.SpecialType != SpecialType.System_String)
+            return false;
+        var destUnderlying = GetNullableUnderlyingType(dest) ?? dest;
+        return destUnderlying.TypeKind == TypeKind.Enum;
+    }
+
+    /// <summary>
+    /// Returns true when source is an enum (or Nullable&lt;enum&gt;) and dest is string (or string?).
+    /// </summary>
+    internal static bool IsEnumToStringPair(ITypeSymbol source, ITypeSymbol dest)
+    {
+        if (dest.SpecialType != SpecialType.System_String)
+            return false;
+        var srcUnderlying = GetNullableUnderlyingType(source) ?? source;
+        return srcUnderlying.TypeKind == TypeKind.Enum;
+    }
 }
