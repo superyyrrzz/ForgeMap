@@ -802,13 +802,13 @@ internal sealed partial class ForgeCodeEmitter
             if (scopeFactoryField != null)
             {
                 // IServiceScopeFactory DI — scoped resolution
-                sb.AppendLine($"            using var __scope = {scopeFactoryField}.CreateScope();");
+                sb.AppendLine($"            using var __scope = this.{scopeFactoryField}.CreateScope();");
                 sb.AppendLine($"            return (({converterDisplay})global::Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.GetRequiredService(__scope.ServiceProvider, typeof({converterDisplay}))).Convert({sourceParam});");
             }
             else if (serviceProviderField != null)
             {
                 // IServiceProvider DI — direct resolution via IServiceProvider.GetService (BCL method, no DI package required)
-                sb.AppendLine($"            var __converter = ({converterDisplay}){serviceProviderField}.GetService(typeof({converterDisplay}));");
+                sb.AppendLine($"            var __converter = ({converterDisplay})this.{serviceProviderField}.GetService(typeof({converterDisplay}));");
                 sb.AppendLine($"            if (__converter == null) throw new global::System.InvalidOperationException(\"No service for type '\" + typeof({converterDisplay}).FullName + \"' has been registered.\");");
                 sb.AppendLine($"            return __converter.Convert({sourceParam});");
             }

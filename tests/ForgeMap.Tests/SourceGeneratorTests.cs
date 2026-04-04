@@ -5675,6 +5675,40 @@ public partial class TestForger
         Assert.Contains("new global::MyConverter().Convert(source)", generatedCode);
     }
 
+    [Fact]
+    public void Generator_ConvertWith_TypeBased_WithoutDi_UsesNewInstantiation()
+    {
+        // When no DI member exists, converter should be instantiated via new()
+        var source = @"
+using ForgeMap;
+
+public class SourceType { public int Id { get; set; } }
+public class DestType { public int Id { get; set; } }
+
+public class MyConverter : ITypeConverter<SourceType, DestType>
+{
+    public DestType Convert(SourceType source) => new DestType { Id = source.Id };
+}
+
+[ForgeMap]
+public partial class TestForger
+{
+    [ConvertWith(typeof(MyConverter))]
+    public partial DestType Forge(SourceType source);
+}";
+
+        var (diagnostics, trees) = RunGenerator(source);
+        var errors = diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error).ToList();
+        Assert.Empty(errors);
+
+        var generatedCode = string.Join("\n", trees.Select(t => t.GetText().ToString()));
+        // Without DI, new() instantiation is used
+        Assert.Contains("new global::MyConverter().Convert(source)", generatedCode);
+        // Should NOT contain DI resolution patterns
+        Assert.DoesNotContain("GetService", generatedCode);
+        Assert.DoesNotContain("GetRequiredService", generatedCode);
+    }
+
     private static (IReadOnlyList<Diagnostic> Diagnostics, IReadOnlyList<SyntaxTree> GeneratedTrees) RunGenerator(string source)
     {
         return SourceGeneratorTests.RunGenerator(source);

@@ -2386,7 +2386,7 @@ public class ConvertWithSourceToDestConverter : ITypeConverter<ConvertWithSource
         {
             Id = source.Id,
             DisplayName = $"[{source.Name}]",
-            FormattedPrice = $"${source.Price:F2}"
+            FormattedPrice = string.Format(System.Globalization.CultureInfo.InvariantCulture, "${0:F2}", source.Price)
         };
     }
 }
