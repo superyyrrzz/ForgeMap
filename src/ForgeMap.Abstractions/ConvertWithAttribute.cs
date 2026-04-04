@@ -10,7 +10,7 @@ namespace ForgeMap;
 public sealed class ConvertWithAttribute : Attribute
 {
     /// <summary>
-    /// Creates a new <see cref="ConvertWithAttribute"/>.
+    /// Creates a new <see cref="ConvertWithAttribute"/> with a converter type.
     /// </summary>
     /// <param name="converterType">The type of the converter class. Must implement <see cref="ITypeConverter{TSource, TDestination}"/>.</param>
     public ConvertWithAttribute(Type converterType)
@@ -19,7 +19,21 @@ public sealed class ConvertWithAttribute : Attribute
     }
 
     /// <summary>
-    /// Gets the type of the converter class.
+    /// Creates a new <see cref="ConvertWithAttribute"/> with a member reference.
     /// </summary>
-    public Type ConverterType { get; }
+    /// <param name="memberName">The name of a field or property on the forger class whose type implements <see cref="ITypeConverter{TSource, TDestination}"/>.</param>
+    public ConvertWithAttribute(string memberName)
+    {
+        MemberName = memberName ?? throw new ArgumentNullException(nameof(memberName));
+    }
+
+    /// <summary>
+    /// Gets the type of the converter class, or null if a member reference is used.
+    /// </summary>
+    public Type? ConverterType { get; }
+
+    /// <summary>
+    /// Gets the name of the field or property on the forger class, or null if a type reference is used.
+    /// </summary>
+    public string? MemberName { get; }
 }

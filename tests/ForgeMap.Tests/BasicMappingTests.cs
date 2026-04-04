@@ -2359,3 +2359,95 @@ public class StringToEnumSkipNullTests
 }
 
 #endregion
+
+#region v1.4 ConvertWith Tests
+
+// --- ConvertWith test models ---
+
+public class ConvertWithSource
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public decimal Price { get; set; }
+}
+
+public class ConvertWithDest
+{
+    public int Id { get; set; }
+    public string DisplayName { get; set; } = string.Empty;
+    public string FormattedPrice { get; set; } = string.Empty;
+}
+
+public class ConvertWithSourceToDestConverter : ITypeConverter<ConvertWithSource, ConvertWithDest>
+{
+    public ConvertWithDest Convert(ConvertWithSource source)
+    {
+        return new ConvertWithDest
+        {
+            Id = source.Id,
+            DisplayName = $"[{source.Name}]",
+            FormattedPrice = $"${source.Price:F2}"
+        };
+    }
+}
+
+// --- Forger with [ConvertWith] ---
+
+[ForgeMap]
+public partial class ConvertWithForger
+{
+    private readonly ConvertWithSourceToDestConverter _converter = new();
+
+    [ConvertWith(typeof(ConvertWithSourceToDestConverter))]
+    public partial ConvertWithDest ForgeTypeBased(ConvertWithSource source);
+
+    [ConvertWith(nameof(_converter))]
+    public partial ConvertWithDest ForgeMemberBased(ConvertWithSource source);
+}
+
+// --- Tests ---
+
+public class ConvertWithTests
+{
+    private readonly ConvertWithForger _forger = new();
+
+    [Fact]
+    public void ConvertWith_TypeBased_ShouldDelegateToConverter()
+    {
+        var source = new ConvertWithSource { Id = 1, Name = "Widget", Price = 9.99m };
+        var result = _forger.ForgeTypeBased(source);
+
+        result.Should().NotBeNull();
+        result.Id.Should().Be(1);
+        result.DisplayName.Should().Be("[Widget]");
+        result.FormattedPrice.Should().Be("$9.99");
+    }
+
+    [Fact]
+    public void ConvertWith_TypeBased_NullSource_ShouldReturnNull()
+    {
+        var result = _forger.ForgeTypeBased(null!);
+        result.Should().BeNull();
+    }
+
+    [Fact]
+    public void ConvertWith_MemberBased_ShouldDelegateToField()
+    {
+        var source = new ConvertWithSource { Id = 2, Name = "Gadget", Price = 19.50m };
+        var result = _forger.ForgeMemberBased(source);
+
+        result.Should().NotBeNull();
+        result.Id.Should().Be(2);
+        result.DisplayName.Should().Be("[Gadget]");
+        result.FormattedPrice.Should().Be("$19.50");
+    }
+
+    [Fact]
+    public void ConvertWith_MemberBased_NullSource_ShouldReturnNull()
+    {
+        var result = _forger.ForgeMemberBased(null!);
+        result.Should().BeNull();
+    }
+}
+
+#endregion

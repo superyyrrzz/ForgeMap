@@ -7,8 +7,8 @@ v1.4 delivers nested existing-target mapping plus two AutoMapper migration pain 
 | # | Feature | Issue | Status |
 |---|---------|-------|--------|
 | 1 | Nested existing-target mapping | [#77](https://github.com/superyyrrzz/ForgeMap/pull/77) | **Shipped** |
-| 2 | Auto-convert string→enum | [#80](https://github.com/superyyrrzz/ForgeMap/issues/80) | Planned |
-| 3 | `[ConvertWith]` code generation | [#81](https://github.com/superyyrrzz/ForgeMap/issues/81) | Planned |
+| 2 | Auto-convert string→enum | [#80](https://github.com/superyyrrzz/ForgeMap/issues/80) | **Shipped** |
+| 3 | `[ConvertWith]` code generation | [#81](https://github.com/superyyrrzz/ForgeMap/issues/81) | **Shipped** |
 
 ### Deferred to v1.5
 
@@ -624,6 +624,6 @@ v1.4 introduces no required source changes and no API-surface breaks. Three beha
 ---
 
 *Specification Version: 1.4 (revised 2026-04-03)*
-*Status: In Progress — Feature 1 shipped, Features 2-3 planned*
+*Status: Complete — all features shipped*
 *v1.5 deferred features: [SPEC-v1.5-advanced-mapping.md](SPEC-v1.5-advanced-mapping.md)*
 *License: MIT*
