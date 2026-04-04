@@ -814,9 +814,9 @@ internal sealed partial class ForgeCodeEmitter
             }
             else
             {
-                // No DI — require parameterless constructor
+                // No DI — require public parameterless constructor (must be public for cross-assembly access)
                 var hasParameterlessCtor = converterType.InstanceConstructors.Any(c =>
-                    c.Parameters.Length == 0 && c.DeclaredAccessibility >= Accessibility.Internal);
+                    c.Parameters.Length == 0 && c.DeclaredAccessibility == Accessibility.Public);
 
                 if (!hasParameterlessCtor)
                 {
