@@ -73,6 +73,7 @@ See [SPEC.md](docs/SPEC.md) for the full specification.
 | **v1.1** | Mapping inheritance, `[IncludeBaseForge]`, `[ForgeAllDerived]` polymorphic dispatch |
 | **v1.2** | Null-safe property assignment: `NullPropertyHandling` with 4 strategies, three-tier config |
 | **v1.3** | Auto-wiring nested & collection mappings, abstract destination dispatch for `[ForgeAllDerived]` |
+| **v1.4** | Nested existing-target mapping, automatic string↔enum conversion, `[ConvertWith]` custom type converters |
 
 ## License
 
