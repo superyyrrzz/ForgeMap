@@ -294,10 +294,38 @@ internal sealed partial class ForgeCodeEmitter
         // Check for collection mapping (List<T>, T[], IEnumerable<T>, etc.)
         var sourceElementType = GetCollectionElementType(sourceType);
         var destElementType = GetCollectionElementType(destinationType);
-        if (sourceElementType != null && destElementType != null && _config.GenerateCollectionMappings)
+        if (sourceElementType != null && destElementType != null)
         {
             ReportHooksNotSupportedIfPresent(method, context);
-            return GenerateCollectionForgeMethod(method, sourceType, destinationType, sourceElementType, destElementType, forger, context);
+
+            // Find element forge method by type (standalone collection methods — Feature 3)
+            var elementMethods = FindElementForgeMethodsByType(forger.Symbol, sourceElementType, destElementType);
+
+            if (elementMethods.Count == 1)
+            {
+                return GenerateCollectionForgeMethod(method, sourceType, destinationType,
+                    destElementType, elementMethods[0].Name);
+            }
+
+            if (elementMethods.Count > 1)
+            {
+                ReportDiagnosticIfNotSuppressed(context,
+                    DiagnosticDescriptors.CollectionMethodAmbiguous,
+                    method.Locations.FirstOrDefault(),
+                    method.Name,
+                    sourceElementType.ToDisplayString(),
+                    destElementType.ToDisplayString());
+                return string.Empty;
+            }
+
+            // No by-type match — report FM0041
+            ReportDiagnosticIfNotSuppressed(context,
+                DiagnosticDescriptors.CollectionMethodNoElementMethod,
+                method.Locations.FirstOrDefault(),
+                method.Name,
+                sourceElementType.ToDisplayString(),
+                destElementType.ToDisplayString());
+            return string.Empty;
         }
 
         if (destinationType is not INamedTypeSymbol destNamedType)

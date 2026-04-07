@@ -984,22 +984,9 @@ internal sealed partial class ForgeCodeEmitter
         IMethodSymbol method,
         ITypeSymbol sourceCollectionType,
         ITypeSymbol destCollectionType,
-        ITypeSymbol sourceElementType,
         ITypeSymbol destElementType,
-        ForgerInfo forger,
-        SourceProductionContext context)
+        string elementMethodName)
     {
-        // Validate that an element forging method exists
-        var elementForgeMethod = FindForgingMethod(forger.Symbol, method.Name, sourceElementType, destElementType);
-        if (elementForgeMethod == null)
-        {
-            ReportDiagnosticIfNotSuppressed(context,
-                DiagnosticDescriptors.ResolverMethodNotFound,
-                method.Locations.FirstOrDefault(),
-                $"{method.Name}({sourceElementType.ToDisplayString()})");
-            return string.Empty;
-        }
-
         var sb = new StringBuilder();
         var sourceParam = method.Parameters[0].Name;
 
@@ -1025,14 +1012,14 @@ internal sealed partial class ForgeCodeEmitter
                 sb.AppendLine($"            var i = 0;");
                 sb.AppendLine($"            foreach (var item in {sourceParam})");
                 sb.AppendLine("            {");
-                sb.AppendLine($"                result[i++] = {method.Name}(item);");
+                sb.AppendLine($"                result[i++] = {elementMethodName}(item);");
                 sb.AppendLine("            }");
                 sb.AppendLine("            return result;");
             }
             else
             {
                 // For general IEnumerable<T> sources, avoid double-enumeration by using a single-pass Select+ToArray.
-                sb.AppendLine($"            return {sourceParam}.Select(item => {method.Name}(item)).ToArray();");
+                sb.AppendLine($"            return {sourceParam}.Select(item => {elementMethodName}(item)).ToArray();");
             }
         }
         else if (destCollectionType is INamedTypeSymbol destNamedType)
@@ -1042,7 +1029,7 @@ internal sealed partial class ForgeCodeEmitter
             if (originalDef == "System.Collections.Generic.IEnumerable<T>")
             {
                 // IEnumerable<T> - lazy Select projection
-                sb.AppendLine($"            return {sourceParam}.Select(item => {method.Name}(item));");
+                sb.AppendLine($"            return {sourceParam}.Select(item => {elementMethodName}(item));");
             }
             else if (originalDef == "System.Collections.Generic.HashSet<T>")
             {
@@ -1051,7 +1038,7 @@ internal sealed partial class ForgeCodeEmitter
                 sb.AppendLine($"            var result = new global::System.Collections.Generic.HashSet<{destElemDisplay}>();");
                 sb.AppendLine($"            foreach (var item in {sourceParam})");
                 sb.AppendLine("            {");
-                sb.AppendLine($"                result.Add({method.Name}(item));");
+                sb.AppendLine($"                result.Add({elementMethodName}(item));");
                 sb.AppendLine("            }");
                 sb.AppendLine("            return result;");
             }
@@ -1070,7 +1057,7 @@ internal sealed partial class ForgeCodeEmitter
                 }
                 sb.AppendLine($"            foreach (var item in {sourceParam})");
                 sb.AppendLine("            {");
-                sb.AppendLine($"                list.Add({method.Name}(item));");
+                sb.AppendLine($"                list.Add({elementMethodName}(item));");
                 sb.AppendLine("            }");
                 sb.AppendLine("            return list.AsReadOnly();");
             }
@@ -1093,7 +1080,7 @@ internal sealed partial class ForgeCodeEmitter
 
                 sb.AppendLine($"            foreach (var item in {sourceParam})");
                 sb.AppendLine("            {");
-                sb.AppendLine($"                result.Add({method.Name}(item));");
+                sb.AppendLine($"                result.Add({elementMethodName}(item));");
                 sb.AppendLine("            }");
                 sb.AppendLine("            return result;");
             }

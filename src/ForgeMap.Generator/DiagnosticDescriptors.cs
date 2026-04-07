@@ -328,4 +328,20 @@ internal static class DiagnosticDescriptors
         category: Category,
         defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor CollectionMethodNoElementMethod = new(
+        id: "FM0041",
+        title: "Collection method has no matching element forge method",
+        messageFormat: "Collection method '{0}' declared but no matching element forge method found for '{1}' \u2192 '{2}'",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor CollectionMethodAmbiguous = new(
+        id: "FM0042",
+        title: "Ambiguous collection method",
+        messageFormat: "Collection method '{0}' is ambiguous: multiple element forge methods match '{1}' \u2192 '{2}'",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
 }
