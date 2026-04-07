@@ -18,7 +18,7 @@ The table below compares all three tools across reverse mapping, polymorphic dis
 | **Unflattening** | `.ReverseMap()` (runtime) | Manual `MapProperty` paths | ✅ Auto via `[ReverseForge]` *(planned v1.6)* |
 | **Polymorphic dispatch** | Runtime reflection | Manual `[MapDerivedType]` per type | ✅ Auto-discovered `[ForgeAllDerived]` |
 | **Abstract destination mapping** | Runtime `.As<T>()` | `[MapDerivedType]` dispatch | ✅ Auto-discovered dispatch via `[ForgeAllDerived]` |
-| **Null handling strategies** | `NullSubstitute`, `AllowNullCollections` | `AllowNullPropertyAssignment`, `ThrowOnPropertyMappingNullMismatch`, `ThrowOnMappingNullMismatch` | ✅ 4 strategies (`NullForgiving`, `SkipNull`, `CoalesceToDefault`, `ThrowException`), 3-tier config |
+| **Null handling strategies** | `NullSubstitute`, `AllowNullCollections` | `AllowNullPropertyAssignment`, `ThrowOnPropertyMappingNullMismatch`, `ThrowOnMappingNullMismatch` | ✅ 5 strategies (`NullForgiving`, `SkipNull`, `CoalesceToDefault`, `ThrowException`, `CoalesceToNew` in v1.5), 3-tier config |
 | **Per-property null control** | `NullSubstitute` per member | Per-property not configurable | ✅ `[ForgeProperty(..., NullPropertyHandling = ...)]` with type-aware defaults |
 | **Base config inheritance** | `.IncludeBase<TSourceBase, TDestinationBase>()` | `[IncludeMappingConfiguration]` | ✅ `[IncludeBaseForge]` |
 | **Auto-wire nested mappings** | Runtime registry | Same-mapper auto-discovery; `[UseMapper]` for external mappers | ✅ Compile-time auto-discovery within forger class |
@@ -80,7 +80,7 @@ Adding a new subtype? Add a forge method with the same name in the same forger c
 
 ### 3. Granular Null Handling
 
-Mapperly provides `AllowNullPropertyAssignment`, `ThrowOnPropertyMappingNullMismatch`, and `ThrowOnMappingNullMismatch` at the mapper level. ForgeMap offers **4 strategies** configurable at **3 levels** (assembly → forger → per-property):
+Mapperly provides `AllowNullPropertyAssignment`, `ThrowOnPropertyMappingNullMismatch`, and `ThrowOnMappingNullMismatch` at the mapper level. ForgeMap offers **5 strategies** (4 existing + `CoalesceToNew` in v1.5) configurable at **3 levels** (assembly → forger → per-property):
 
 | Strategy | Behavior | Example |
 |---|---|---|
@@ -237,11 +237,11 @@ Supports configurable key matching (case-sensitive/insensitive), missing key beh
 | Simple, flat DTO mapping | Comparable to Mapperly |
 | `Entity ↔ DTO` round-trips | `[ReverseForge]` auto-generates the inverse |
 | Deep inheritance hierarchies | `[ForgeAllDerived]` auto-discovers subtypes |
-| Mixed nullability across large codebases | 4 strategies, per-property control |
+| Mixed nullability across large codebases | 5 strategies (including `CoalesceToNew` in v1.5), per-property control |
 | Nested object flattening | Auto-flattening with `init`/`required` support *(planned v1.6)* |
 | EF Core in-place entity updates | `ExistingTarget = true` with collection sync *(planned v1.4)* |
 | Dynamic / dictionary data sources | `[ForgeDictionary]` with compile-time type safety *(planned v1.6)* |
 | Migrating from AutoMapper | 1:1 concept mapping, automated migration skill |
 | Declarative lifecycle hooks | `[BeforeForge]` / `[AfterForge]` with ordered execution |
 
-ForgeMap provides comparable performance to Mapperly with additional support for auto-discovered polymorphism, declarative hooks, granular null handling, and a direct migration path from AutoMapper, including v1.4 features like EF Core-friendly nested updates, string-to-enum auto-conversion, and `[ConvertWith]`, plus v1.5 features like `CoalesceToNew`, collection type coercion, standalone collection methods, and `[AfterForge]` callbacks, with v1.6 features like auto-flattening with `init`/`required` support and dictionary mapping planned.
+ForgeMap provides comparable performance to Mapperly with additional support for auto-discovered polymorphism, declarative hooks, granular null handling, and a direct migration path from AutoMapper, including v1.4 features like EF Core-friendly nested updates, string-to-enum auto-conversion, and `[ConvertWith]`, plus v1.5 features like `CoalesceToNew`, collection type coercion, and standalone collection methods, with v1.6 features like auto-flattening with `init`/`required` support and dictionary mapping planned.

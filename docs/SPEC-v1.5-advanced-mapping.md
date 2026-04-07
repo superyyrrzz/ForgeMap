@@ -9,7 +9,7 @@ v1.5 prioritizes four features driven by real-world AutoMapper → ForgeMap migr
 | 1 | `CoalesceToNew` null-property strategy | [#91](https://github.com/superyyrrzz/ForgeMap/issues/91) | Low | Planned |
 | 2 | Collection type coercion | [#90](https://github.com/superyyrrzz/ForgeMap/issues/90) | Medium | Planned |
 | 3 | Standalone collection mapping methods | [#89](https://github.com/superyyrrzz/ForgeMap/issues/89) | Medium | Planned |
-| 4 | `[AfterForge]` callback | [#93](https://github.com/superyyrrzz/ForgeMap/issues/93) | Low | Planned |
+| 4 | `[AfterForge]` migration pattern & diagnostics | [#93](https://github.com/superyyrrzz/ForgeMap/issues/93) | Low | Planned |
 
 ### Deferred to v1.6
 
@@ -514,13 +514,13 @@ return __result.ToArray();
 
 ---
 
-## Feature 4: `[AfterForge]` Callback
+## Feature 4: `[AfterForge]` Migration Pattern & Diagnostics
 
 > **Issue:** [#93](https://github.com/superyyrrzz/ForgeMap/issues/93)
 
 ### Problem
 
-When migrating from AutoMapper, many mappings have 1–2 properties (out of 15+) that need special handling while the rest map 1:1. Currently, the only options are:
+`[AfterForge]` already exists in ForgeMap (see [SPEC.md](SPEC.md)) but lacks dedicated diagnostics for common migration mistakes. When migrating from AutoMapper, many mappings have 1–2 properties (out of 15+) that need special handling while the rest map 1:1. Currently, the only options are:
 
 - Write the **entire** method manually, losing all auto-generation benefits
 - Use `[ConvertWith]`, which replaces the **entire** generated mapping with a custom converter
@@ -721,21 +721,19 @@ public partial void ForgeInto(OrderUpdateDto source, [UseExistingValue] Order ta
 
 ## API Changes Summary
 
-### New Attributes (v1.5)
-
-| Attribute | Target | Description |
-|-----------|--------|-------------|
-| `AfterForgeAttribute` | Method | Post-mapping callback for property fixups |
-
 ### New Enum Values (v1.5)
 
 | Enum | New Value | Description |
 |------|-----------|-------------|
 | `NullPropertyHandling` | `CoalesceToNew = 4` | `new T()` for null reference types, `default(T)` for value types |
 
-### No Other New Attributes
+### New Diagnostics (v1.5)
 
-Features 1–3 work within the existing attribute surface.
+Feature 4 adds three new diagnostics (FM0043–FM0045) that refine validation for the existing `[AfterForge]` attribute. No new attributes are introduced — `AfterForgeAttribute` already exists in the main spec.
+
+### No New Attributes
+
+All v1.5 features work within the existing attribute surface.
 
 ---
 
