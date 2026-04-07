@@ -33,19 +33,29 @@ if (-not $OutputFile) {
 
 # Pack ForgeMap as a local NuGet package so all three projects reference
 # pre-compiled packages — making build times directly comparable.
+# Use a unique pre-release version to avoid conflicts with published packages
+# or stale entries in the global NuGet cache.
 $localPkgDir = Join-Path $scriptDir 'LocalPackages'
 if (Test-Path $localPkgDir) {
     Remove-Item $localPkgDir -Recurse -Force
 }
 New-Item -ItemType Directory -Path $localPkgDir -Force | Out-Null
 
-Write-Host 'Packing ForgeMap as local NuGet package...'
+$benchVersion = "99.0.0-bench.$(Get-Date -Format 'yyyyMMddHHmmss')"
+Write-Host "Packing ForgeMap as local NuGet package (version $benchVersion)..."
 dotnet pack (Join-Path $repoRoot 'src' 'ForgeMap' 'ForgeMap.csproj') `
-    -c Release --verbosity quiet -o $localPkgDir
+    -c Release --verbosity quiet -o $localPkgDir -p:Version=$benchVersion
 if ($LASTEXITCODE -ne 0) {
     Write-Error 'Failed to pack ForgeMap'
     exit 1
 }
+
+# Update the ForgeMap benchmark project to pin this exact version
+$fmCsproj = Join-Path $scriptDir 'ForgeMap' 'ForgeMap.CompileBench.csproj'
+$csprojContent = Get-Content $fmCsproj -Raw
+$csprojContent = $csprojContent -replace 'VersionOverride="[^"]*"', "VersionOverride=""$benchVersion"""
+Set-Content $fmCsproj $csprojContent -Encoding utf8NoBOM
+
 Write-Host "  Package written to $localPkgDir"
 
 $projects = @(
@@ -77,7 +87,10 @@ foreach ($scenario in $Scenarios) {
             }
         }
 
-        foreach ($proj in $projects) {
+        # Randomize project order to avoid systematic cache-warming bias
+        $shuffled = $projects | Get-Random -Count $projects.Count
+
+        foreach ($proj in $shuffled) {
             Write-Host "  Benchmarking $($proj.Name) ($Iterations iterations)..."
             $timings = @()
 
@@ -104,7 +117,12 @@ foreach ($scenario in $Scenarios) {
             }
 
             $sorted = $timings | Sort-Object
-            $median = $sorted[[math]::Floor($sorted.Count / 2)]
+            $mid = [math]::Floor($sorted.Count / 2)
+            if ($sorted.Count % 2 -eq 0) {
+                $median = [math]::Round(($sorted[$mid - 1] + $sorted[$mid]) / 2)
+            } else {
+                $median = $sorted[$mid]
+            }
             $min = $sorted[0]
             $max = $sorted[-1]
 
