@@ -65,19 +65,11 @@ internal sealed partial class ForgeCodeEmitter
                 return $"{sourceExpr} ?? throw new global::System.ArgumentNullException(\"{destPropertyName}\", \"Cannot assign null source property '{sourceExpr}' to non-nullable destination '{destTypeName}.{destPropertyName}'.\")";
 
             case 4: // CoalesceToNew — assembly-aware expression generation
-                var newExpr = GenerateCoalesceDefault(destType);
+                var newExpr = method != null
+                    ? GenerateCoalesceNewExpression(destType, method)
+                    : GenerateCoalesceDefault(destType);
                 if (newExpr != null)
                     return $"{sourceExpr} ?? {newExpr}";
-                // GenerateCoalesceDefault uses Public-only; check if internal ctor is accessible (same assembly)
-                if (method != null && destType is INamedTypeSymbol newNamedType
-                    && !newNamedType.IsAbstract && newNamedType.TypeKind != TypeKind.Interface
-                    && SymbolEqualityComparer.Default.Equals(newNamedType.ContainingAssembly, method.ContainingAssembly))
-                {
-                    var hasInternalCtor = newNamedType.InstanceConstructors
-                        .Any(c => c.Parameters.Length == 0 && c.DeclaredAccessibility >= Accessibility.Internal);
-                    if (hasInternalCtor)
-                        return $"{sourceExpr} ?? new {newNamedType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}()";
-                }
                 // FM0038 should have already been reported; fall back to NullForgiving
                 return $"{sourceExpr}!";
 
@@ -145,6 +137,31 @@ internal sealed partial class ForgeCodeEmitter
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// Generates the CoalesceToNew fallback expression for a destination type.
+    /// Uses GenerateCoalesceDefault first (public ctor), then falls back to assembly-aware
+    /// internal ctor check. Returns null if no suitable expression can be generated.
+    /// </summary>
+    private static string? GenerateCoalesceNewExpression(ITypeSymbol destType, IMethodSymbol method)
+    {
+        var expr = GenerateCoalesceDefault(destType);
+        if (expr != null)
+            return expr;
+
+        // GenerateCoalesceDefault uses Public-only; check if internal ctor is accessible (same assembly)
+        if (destType is INamedTypeSymbol namedType
+            && !namedType.IsAbstract && namedType.TypeKind != TypeKind.Interface
+            && SymbolEqualityComparer.Default.Equals(namedType.ContainingAssembly, method.ContainingAssembly))
+        {
+            var hasInternalCtor = namedType.InstanceConstructors
+                .Any(c => c.Parameters.Length == 0 && c.DeclaredAccessibility >= Accessibility.Internal);
+            if (hasInternalCtor)
+                return $"new {namedType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}()";
+        }
+
+        return null;
     }
 
     /// <summary>

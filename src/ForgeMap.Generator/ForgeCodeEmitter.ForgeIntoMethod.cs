@@ -205,7 +205,7 @@ internal sealed partial class ForgeCodeEmitter
                                     if (strategy == 4) // CoalesceToNew
                                     {
                                         ValidateCoalesceToNew(destProp.Type, context, method);
-                                        var newExpr = GenerateCoalesceDefault(destProp.Type);
+                                        var newExpr = GenerateCoalesceNewExpression(destProp.Type, method);
                                         nullAssign = newExpr ?? "null!";
                                     }
                                     else
