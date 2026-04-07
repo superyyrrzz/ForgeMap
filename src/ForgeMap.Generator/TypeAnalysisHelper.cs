@@ -18,7 +18,8 @@ internal static class TypeAnalysisHelper
         "System.Collections.Generic.ICollection<T>",
         "System.Collections.Generic.IReadOnlyList<T>",
         "System.Collections.Generic.IReadOnlyCollection<T>",
-        "System.Collections.Generic.HashSet<T>"
+        "System.Collections.Generic.HashSet<T>",
+        "System.Collections.ObjectModel.ReadOnlyCollection<T>"
     };
 
     internal static readonly HashSet<string> SupportedCollectionTypes = new(StringComparer.Ordinal)
@@ -29,7 +30,16 @@ internal static class TypeAnalysisHelper
         "System.Collections.Generic.IEnumerable<T>",
         "System.Collections.Generic.IReadOnlyList<T>",
         "System.Collections.Generic.IReadOnlyCollection<T>",
-        "System.Collections.Generic.HashSet<T>"
+        "System.Collections.Generic.HashSet<T>",
+        "System.Collections.ObjectModel.ReadOnlyCollection<T>"
+    };
+
+    internal static readonly HashSet<string> SupportedDictionaryTypes = new(StringComparer.Ordinal)
+    {
+        "System.Collections.Generic.Dictionary<TKey, TValue>",
+        "System.Collections.Generic.IDictionary<TKey, TValue>",
+        "System.Collections.Generic.IReadOnlyDictionary<TKey, TValue>",
+        "System.Collections.ObjectModel.ReadOnlyDictionary<TKey, TValue>"
     };
 
     internal static bool CanAssign(ITypeSymbol source, ITypeSymbol dest)
@@ -280,6 +290,24 @@ internal static class TypeAnalysisHelper
             if (SupportedCollectionTypes.Contains(originalDef))
             {
                 return namedType.TypeArguments[0];
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Gets the key and value types if the given type is a supported dictionary type.
+    /// Returns null if the type is not a dictionary.
+    /// </summary>
+    internal static (ITypeSymbol KeyType, ITypeSymbol ValueType)? GetDictionaryKeyValueTypes(ITypeSymbol type)
+    {
+        if (type is INamedTypeSymbol namedType && namedType.IsGenericType && namedType.TypeArguments.Length == 2)
+        {
+            var originalDef = namedType.OriginalDefinition.ToDisplayString();
+            if (SupportedDictionaryTypes.Contains(originalDef))
+            {
+                return (namedType.TypeArguments[0], namedType.TypeArguments[1]);
             }
         }
 

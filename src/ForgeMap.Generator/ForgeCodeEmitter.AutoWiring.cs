@@ -155,6 +155,28 @@ internal sealed partial class ForgeCodeEmitter
                 return (CollectionInlineKind.MultiStatement, sb.ToString());
             }
 
+            // ReadOnlyCollection<U>: build list + AsReadOnly
+            if (originalDef == "System.Collections.ObjectModel.ReadOnlyCollection<T>")
+            {
+                var sb = new StringBuilder();
+                var listVar = $"__collList_{destPropName}";
+                if (HasCheapCount(sourceCollType))
+                {
+                    var countExpr = GetCollectionLengthExpression(sourceCollType, sourceLocalName);
+                    sb.AppendLine($"                var {listVar} = new global::System.Collections.Generic.List<{destElemDisplay}>({countExpr});");
+                }
+                else
+                {
+                    sb.AppendLine($"                var {listVar} = new global::System.Collections.Generic.List<{destElemDisplay}>();");
+                }
+                sb.AppendLine($"                foreach (var __collItem in {sourceLocalName})");
+                sb.AppendLine("                {");
+                sb.AppendLine($"                    {listVar}.Add({methodName}(__collItem));");
+                sb.AppendLine("                }");
+                sb.AppendLine($"                var {resultVar} = {listVar}.AsReadOnly();");
+                return (CollectionInlineKind.MultiStatement, sb.ToString());
+            }
+
             // List<U>, IList<U>, ICollection<U>, IReadOnlyList<U>, IReadOnlyCollection<U>: pre-sized List + foreach
             var sb2 = new StringBuilder();
             if (HasCheapCount(sourceCollType))
@@ -197,8 +219,66 @@ internal sealed partial class ForgeCodeEmitter
         // Both source and dest must be collection types
         var srcElemType = GetCollectionElementType(sourcePropertyType);
         var destElemType = GetCollectionElementType(destProp.Type);
+
+        // Check for dictionary coercion (dictionaries have 2 type args and aren't in SupportedCollectionTypes)
         if (srcElemType == null || destElemType == null)
+        {
+            var srcDict = GetDictionaryKeyValueTypes(sourcePropertyType);
+            var destDict = GetDictionaryKeyValueTypes(destProp.Type);
+            if (srcDict != null && destDict != null)
+            {
+                if (CanAssign(sourcePropertyType, destProp.Type))
+                    return null; // already assignable
+
+                if (!SymbolEqualityComparer.Default.Equals(srcDict.Value.KeyType, destDict.Value.KeyType))
+                {
+                    ReportDiagnosticIfNotSuppressed(context,
+                        DiagnosticDescriptors.CollectionCoercionNotSupported,
+                        method.Locations.FirstOrDefault(),
+                        destProp.Name,
+                        sourcePropertyType.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat),
+                        destProp.Type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat));
+                    return null;
+                }
+
+                if (!SymbolEqualityComparer.Default.Equals(srcDict.Value.ValueType, destDict.Value.ValueType)
+                    && !CanAssign(srcDict.Value.ValueType, destDict.Value.ValueType))
+                {
+                    ReportDiagnosticIfNotSuppressed(context,
+                        DiagnosticDescriptors.CollectionCoercionNotSupported,
+                        method.Locations.FirstOrDefault(),
+                        destProp.Name,
+                        sourcePropertyType.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat),
+                        destProp.Type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat));
+                    return null;
+                }
+
+                var dictCollLocal = $"__coll_{destProp.Name}";
+                var dictExpr = TryGenerateDictionaryCoercion(sourcePropertyType, destProp.Type,
+                    srcDict.Value.KeyType, srcDict.Value.ValueType, dictCollLocal, destProp.Name);
+                if (dictExpr != null)
+                {
+                    ReportDiagnosticIfNotSuppressed(context,
+                        DiagnosticDescriptors.CollectionTypeCoerced,
+                        method.Locations.FirstOrDefault(),
+                        destProp.Name,
+                        sourcePropertyType.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat),
+                        destProp.Type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat));
+
+                    return ApplyCoercionNullHandling(destProp, sourceExpr, dictCollLocal,
+                        dictExpr,
+                        nullPropertyHandlingOverrides, postConstructionCollections);
+                }
+
+                ReportDiagnosticIfNotSuppressed(context,
+                    DiagnosticDescriptors.CollectionCoercionNotSupported,
+                    method.Locations.FirstOrDefault(),
+                    destProp.Name,
+                    sourcePropertyType.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat),
+                    destProp.Type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat));
+            }
             return null;
+        }
 
         // If there is an explicit collection-level forge method, let the existing auto-wire handle it
         var collectionLevelCandidates = FindAutoWireForgeMethodCandidates(forger.Symbol, sourcePropertyType, destProp.Type);
@@ -208,7 +288,79 @@ internal sealed partial class ForgeCodeEmitter
         // Find element-level forge method candidates
         var elemCandidates = FindAutoWireForgeMethodCandidates(forger.Symbol, srcElemType, destElemType);
         if (elemCandidates.Count == 0)
+        {
+            // No element forge method. Check for pure container coercion (same/assignable element types).
+            if (!SymbolEqualityComparer.Default.Equals(srcElemType, destElemType) && !CanAssign(srcElemType, destElemType))
+                return null;
+
+            // Already assignable containers → no coercion needed (CanAssign already handled this upstream)
+            if (CanAssign(sourcePropertyType, destProp.Type))
+                return null;
+
+            // Try dictionary coercion
+            var srcDict = GetDictionaryKeyValueTypes(sourcePropertyType);
+            var destDict = GetDictionaryKeyValueTypes(destProp.Type);
+            if (srcDict != null && destDict != null)
+            {
+                if (!SymbolEqualityComparer.Default.Equals(srcDict.Value.KeyType, destDict.Value.KeyType))
+                {
+                    // Key type mismatch — FM0040
+                    ReportDiagnosticIfNotSuppressed(context,
+                        DiagnosticDescriptors.CollectionCoercionNotSupported,
+                        method.Locations.FirstOrDefault(),
+                        destProp.Name,
+                        sourcePropertyType.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat),
+                        destProp.Type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat));
+                    return null;
+                }
+
+                var dictExpr = TryGenerateDictionaryCoercion(sourcePropertyType, destProp.Type,
+                    srcDict.Value.KeyType, srcDict.Value.ValueType, $"__coll_{destProp.Name}", destProp.Name);
+                if (dictExpr != null)
+                {
+                    ReportDiagnosticIfNotSuppressed(context,
+                        DiagnosticDescriptors.CollectionTypeCoerced,
+                        method.Locations.FirstOrDefault(),
+                        destProp.Name,
+                        sourcePropertyType.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat),
+                        destProp.Type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat));
+
+                    return ApplyCoercionNullHandling(destProp, sourceExpr, $"__coll_{destProp.Name}",
+                        dictExpr,
+                        nullPropertyHandlingOverrides, postConstructionCollections);
+                }
+            }
+
+            // Try sequence coercion
+            var seqCollLocal = $"__coll_{destProp.Name}";
+            var coercionExpr = TryGenerateSequenceCoercion(sourcePropertyType, destProp.Type, srcElemType, seqCollLocal);
+            if (coercionExpr != null)
+            {
+                ReportDiagnosticIfNotSuppressed(context,
+                    DiagnosticDescriptors.CollectionTypeCoerced,
+                    method.Locations.FirstOrDefault(),
+                    destProp.Name,
+                    sourcePropertyType.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat),
+                    destProp.Type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat));
+
+                return ApplyCoercionNullHandling(destProp, sourceExpr, seqCollLocal,
+                    coercionExpr,
+                    nullPropertyHandlingOverrides, postConstructionCollections);
+            }
+
+            // Both are collections but no known coercion — FM0040
+            if (srcDict != null || destDict != null ||
+                GetCollectionElementType(sourcePropertyType) != null)
+            {
+                ReportDiagnosticIfNotSuppressed(context,
+                    DiagnosticDescriptors.CollectionCoercionNotSupported,
+                    method.Locations.FirstOrDefault(),
+                    destProp.Name,
+                    sourcePropertyType.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat),
+                    destProp.Type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat));
+            }
             return null;
+        }
 
         if (elemCandidates.Count > 1)
         {
@@ -236,7 +388,25 @@ internal sealed partial class ForgeCodeEmitter
             collLocal, destProp.Name, elementMethod);
 
         if (inlineResult == null)
+        {
+            // Fallback: coercion with element mapping (e.g., List<Src> → HashSet<Dest>)
+            var coercionExpr = TryGenerateCoercionWithElementMapping(
+                destProp.Type, destElemType, collLocal, elementMethod.Name);
+            if (coercionExpr != null)
+            {
+                ReportDiagnosticIfNotSuppressed(context,
+                    DiagnosticDescriptors.CollectionTypeCoerced,
+                    method.Locations.FirstOrDefault(),
+                    destProp.Name,
+                    sourcePropertyType.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat),
+                    destProp.Type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat));
+
+                return ApplyCoercionNullHandling(destProp, sourceExpr, collLocal,
+                    coercionExpr,
+                    nullPropertyHandlingOverrides, postConstructionCollections);
+            }
             return null;
+        }
 
         var (kind, code) = inlineResult.Value;
         var isInitOnly = destProp.SetMethod?.IsInitOnly == true;
@@ -435,25 +605,44 @@ internal sealed partial class ForgeCodeEmitter
             return $"global::System.Array.Empty<{elemDisplay}>()";
         }
 
-        if (destType is INamedTypeSymbol namedType && namedType.IsGenericType && namedType.TypeArguments.Length == 1)
+        if (destType is INamedTypeSymbol namedType && namedType.IsGenericType)
         {
-            var elemDisplay = namedType.TypeArguments[0].ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
             var originalDef = namedType.OriginalDefinition.ToDisplayString();
 
-            if (originalDef == "System.Collections.Generic.HashSet<T>")
-                return $"new global::System.Collections.Generic.HashSet<{elemDisplay}>()";
+            if (namedType.TypeArguments.Length == 1)
+            {
+                var elemDisplay = namedType.TypeArguments[0].ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
 
-            // IEnumerable<T> → Enumerable.Empty
-            if (originalDef == "System.Collections.Generic.IEnumerable<T>")
-                return $"global::System.Linq.Enumerable.Empty<{elemDisplay}>()";
+                if (originalDef == "System.Collections.Generic.HashSet<T>")
+                    return $"new global::System.Collections.Generic.HashSet<{elemDisplay}>()";
 
-            // All other supported collection interfaces/types → new List<T>()
-            if (originalDef == "System.Collections.Generic.List<T>" ||
-                originalDef == "System.Collections.Generic.IList<T>" ||
-                originalDef == "System.Collections.Generic.ICollection<T>" ||
-                originalDef == "System.Collections.Generic.IReadOnlyList<T>" ||
-                originalDef == "System.Collections.Generic.IReadOnlyCollection<T>")
-                return $"new global::System.Collections.Generic.List<{elemDisplay}>()";
+                if (originalDef == "System.Collections.Generic.IEnumerable<T>")
+                    return $"global::System.Linq.Enumerable.Empty<{elemDisplay}>()";
+
+                if (originalDef == "System.Collections.ObjectModel.ReadOnlyCollection<T>")
+                    return $"new global::System.Collections.ObjectModel.ReadOnlyCollection<{elemDisplay}>(global::System.Array.Empty<{elemDisplay}>())";
+
+                if (originalDef == "System.Collections.Generic.List<T>" ||
+                    originalDef == "System.Collections.Generic.IList<T>" ||
+                    originalDef == "System.Collections.Generic.ICollection<T>" ||
+                    originalDef == "System.Collections.Generic.IReadOnlyList<T>" ||
+                    originalDef == "System.Collections.Generic.IReadOnlyCollection<T>")
+                    return $"new global::System.Collections.Generic.List<{elemDisplay}>()";
+            }
+
+            if (namedType.TypeArguments.Length == 2)
+            {
+                var keyDisplay = namedType.TypeArguments[0].ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+                var valueDisplay = namedType.TypeArguments[1].ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+
+                if (originalDef == "System.Collections.Generic.Dictionary<TKey, TValue>" ||
+                    originalDef == "System.Collections.Generic.IDictionary<TKey, TValue>")
+                    return $"new global::System.Collections.Generic.Dictionary<{keyDisplay}, {valueDisplay}>()";
+
+                if (originalDef == "System.Collections.ObjectModel.ReadOnlyDictionary<TKey, TValue>" ||
+                    originalDef == "System.Collections.Generic.IReadOnlyDictionary<TKey, TValue>")
+                    return $"new global::System.Collections.ObjectModel.ReadOnlyDictionary<{keyDisplay}, {valueDisplay}>(new global::System.Collections.Generic.Dictionary<{keyDisplay}, {valueDisplay}>())";
+            }
         }
 
         return null;
@@ -475,8 +664,48 @@ internal sealed partial class ForgeCodeEmitter
     {
         var srcElemType = GetCollectionElementType(sourcePropertyType);
         var destElemType = GetCollectionElementType(destProp.Type);
+
+        // Dictionary coercion entry path
         if (srcElemType == null || destElemType == null)
+        {
+            var srcDict = GetDictionaryKeyValueTypes(sourcePropertyType);
+            var destDict = GetDictionaryKeyValueTypes(destProp.Type);
+            if (srcDict != null && destDict != null)
+            {
+                if (CanAssign(sourcePropertyType, destProp.Type))
+                    return null;
+
+                if (!SymbolEqualityComparer.Default.Equals(srcDict.Value.KeyType, destDict.Value.KeyType) ||
+                    (!SymbolEqualityComparer.Default.Equals(srcDict.Value.ValueType, destDict.Value.ValueType)
+                     && !CanAssign(srcDict.Value.ValueType, destDict.Value.ValueType)))
+                {
+                    ReportDiagnosticIfNotSuppressed(context,
+                        DiagnosticDescriptors.CollectionCoercionNotSupported,
+                        method.Locations.FirstOrDefault(),
+                        destProp.Name,
+                        sourcePropertyType.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat),
+                        destProp.Type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat));
+                    return null;
+                }
+
+                var dictCollLocal2 = $"__coll_{destProp.Name}";
+                var dictExpr = TryGenerateDictionaryCoercion(sourcePropertyType, destProp.Type,
+                    srcDict.Value.KeyType, srcDict.Value.ValueType, dictCollLocal2, destProp.Name);
+                if (dictExpr != null)
+                {
+                    ReportDiagnosticIfNotSuppressed(context,
+                        DiagnosticDescriptors.CollectionTypeCoerced,
+                        method.Locations.FirstOrDefault(),
+                        destProp.Name,
+                        sourcePropertyType.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat),
+                        destProp.Type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat));
+
+                    return ApplyCoercionNullHandlingStatements(destProp, sourceExpr, dictCollLocal2,
+                        dictExpr, destVarName, nullPropertyHandlingOverrides);
+                }
+            }
             return null;
+        }
 
         var collectionLevelCandidates = FindAutoWireForgeMethodCandidates(forger.Symbol, sourcePropertyType, destProp.Type);
         if (collectionLevelCandidates.Count > 0)
@@ -484,7 +713,75 @@ internal sealed partial class ForgeCodeEmitter
 
         var elemCandidates = FindAutoWireForgeMethodCandidates(forger.Symbol, srcElemType, destElemType);
         if (elemCandidates.Count == 0)
+        {
+            // No element forge method. Check for pure container coercion (same/assignable element types).
+            if (!SymbolEqualityComparer.Default.Equals(srcElemType, destElemType) && !CanAssign(srcElemType, destElemType))
+                return null;
+
+            if (CanAssign(sourcePropertyType, destProp.Type))
+                return null;
+
+            // Try dictionary coercion
+            var srcDict = GetDictionaryKeyValueTypes(sourcePropertyType);
+            var destDict = GetDictionaryKeyValueTypes(destProp.Type);
+            if (srcDict != null && destDict != null)
+            {
+                if (!SymbolEqualityComparer.Default.Equals(srcDict.Value.KeyType, destDict.Value.KeyType))
+                {
+                    ReportDiagnosticIfNotSuppressed(context,
+                        DiagnosticDescriptors.CollectionCoercionNotSupported,
+                        method.Locations.FirstOrDefault(),
+                        destProp.Name,
+                        sourcePropertyType.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat),
+                        destProp.Type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat));
+                    return null;
+                }
+
+                var dictExpr = TryGenerateDictionaryCoercion(sourcePropertyType, destProp.Type,
+                    srcDict.Value.KeyType, srcDict.Value.ValueType, $"__coll_{destProp.Name}", destProp.Name);
+                if (dictExpr != null)
+                {
+                    ReportDiagnosticIfNotSuppressed(context,
+                        DiagnosticDescriptors.CollectionTypeCoerced,
+                        method.Locations.FirstOrDefault(),
+                        destProp.Name,
+                        sourcePropertyType.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat),
+                        destProp.Type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat));
+
+                    return ApplyCoercionNullHandlingStatements(destProp, sourceExpr, $"__coll_{destProp.Name}",
+                        dictExpr, destVarName, nullPropertyHandlingOverrides);
+                }
+            }
+
+            // Try sequence coercion
+            var seqCollLocal2 = $"__coll_{destProp.Name}";
+            var coercionExpr = TryGenerateSequenceCoercion(sourcePropertyType, destProp.Type, srcElemType, seqCollLocal2);
+            if (coercionExpr != null)
+            {
+                ReportDiagnosticIfNotSuppressed(context,
+                    DiagnosticDescriptors.CollectionTypeCoerced,
+                    method.Locations.FirstOrDefault(),
+                    destProp.Name,
+                    sourcePropertyType.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat),
+                    destProp.Type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat));
+
+                return ApplyCoercionNullHandlingStatements(destProp, sourceExpr, seqCollLocal2,
+                    coercionExpr, destVarName, nullPropertyHandlingOverrides);
+            }
+
+            // FM0040 for unrecognized collection pair
+            if (srcDict != null || destDict != null ||
+                GetCollectionElementType(sourcePropertyType) != null)
+            {
+                ReportDiagnosticIfNotSuppressed(context,
+                    DiagnosticDescriptors.CollectionCoercionNotSupported,
+                    method.Locations.FirstOrDefault(),
+                    destProp.Name,
+                    sourcePropertyType.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat),
+                    destProp.Type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat));
+            }
             return null;
+        }
 
         if (elemCandidates.Count > 1)
         {
@@ -510,7 +807,24 @@ internal sealed partial class ForgeCodeEmitter
             collLocal, destProp.Name, elementMethod);
 
         if (inlineResult == null)
+        {
+            // Fallback: coercion with element mapping for ForgeInto context
+            var coercionExpr = TryGenerateCoercionWithElementMapping(
+                destProp.Type, destElemType, collLocal, elementMethod.Name);
+            if (coercionExpr != null)
+            {
+                ReportDiagnosticIfNotSuppressed(context,
+                    DiagnosticDescriptors.CollectionTypeCoerced,
+                    method.Locations.FirstOrDefault(),
+                    destProp.Name,
+                    sourcePropertyType.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat),
+                    destProp.Type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat));
+
+                return ApplyCoercionNullHandlingStatements(destProp, sourceExpr, collLocal,
+                    coercionExpr, destVarName, nullPropertyHandlingOverrides);
+            }
             return null;
+        }
 
         var (kind, code) = inlineResult.Value;
         var resultVar = $"__collResult_{destProp.Name}";
@@ -567,5 +881,217 @@ internal sealed partial class ForgeCodeEmitter
 
             return sb.ToString();
         }
+    }
+
+    /// <summary>
+    /// Generates a sequence collection coercion expression (same element type, different container).
+    /// Returns null if no known coercion path exists.
+    /// </summary>
+    private static string? TryGenerateSequenceCoercion(
+        ITypeSymbol sourceCollType, ITypeSymbol destCollType,
+        ITypeSymbol elementType, string sourceExpr)
+    {
+        var elemDisplay = elementType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+
+        // Destination: Array
+        if (destCollType is IArrayTypeSymbol)
+        {
+            if (sourceCollType is IArrayTypeSymbol)
+                return sourceExpr; // same type — should have been CanAssign
+            return $"global::System.Linq.Enumerable.ToArray({sourceExpr})";
+        }
+
+        if (destCollType is INamedTypeSymbol destNamed)
+        {
+            var destDef = destNamed.OriginalDefinition.ToDisplayString();
+
+            // Destination: HashSet<T>
+            if (destDef == "System.Collections.Generic.HashSet<T>")
+                return $"new global::System.Collections.Generic.HashSet<{elemDisplay}>({sourceExpr})";
+
+            // Destination: ReadOnlyCollection<T>
+            if (destDef == "System.Collections.ObjectModel.ReadOnlyCollection<T>")
+                return $"new global::System.Collections.Generic.List<{elemDisplay}>({sourceExpr}).AsReadOnly()";
+
+            // Destination: List<T> / IList<T> / ICollection<T>
+            if (destDef == "System.Collections.Generic.List<T>" ||
+                destDef == "System.Collections.Generic.IList<T>" ||
+                destDef == "System.Collections.Generic.ICollection<T>")
+            {
+                if (sourceCollType is IArrayTypeSymbol || (sourceCollType is INamedTypeSymbol srcN &&
+                    srcN.OriginalDefinition.ToDisplayString() != destDef))
+                    return $"new global::System.Collections.Generic.List<{elemDisplay}>({sourceExpr})";
+                return sourceExpr; // same type
+            }
+
+            // Destination: IReadOnlyList<T> / IReadOnlyCollection<T>
+            if (destDef == "System.Collections.Generic.IReadOnlyList<T>" ||
+                destDef == "System.Collections.Generic.IReadOnlyCollection<T>")
+            {
+                // List<T> implements IReadOnlyList<T> — but CanAssign should already handle this.
+                // For T[], IEnumerable<T>, HashSet<T>→IReadOnlyList/IReadOnlyCollection, materialize via new List.
+                return $"new global::System.Collections.Generic.List<{elemDisplay}>({sourceExpr})";
+            }
+
+            // Destination: IEnumerable<T> — CanAssign covers most cases, fallback:
+            if (destDef == "System.Collections.Generic.IEnumerable<T>")
+                return sourceExpr;
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Generates a dictionary coercion expression. Returns null if no known coercion path exists.
+    /// Always copies to avoid aliasing. Preserves comparer when available via pattern-matching.
+    /// </summary>
+    private static string? TryGenerateDictionaryCoercion(
+        ITypeSymbol sourceCollType, ITypeSymbol destCollType,
+        ITypeSymbol keyType, ITypeSymbol valueType,
+        string sourceExpr, string destPropName)
+    {
+        if (sourceCollType is not INamedTypeSymbol srcNamed || destCollType is not INamedTypeSymbol destNamed)
+            return null;
+
+        var srcDef = srcNamed.OriginalDefinition.ToDisplayString();
+        var destDef = destNamed.OriginalDefinition.ToDisplayString();
+
+        var keyDisplay = keyType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+        var valueDisplay = valueType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+        var dictType = $"global::System.Collections.Generic.Dictionary<{keyDisplay}, {valueDisplay}>";
+        var rodType = $"global::System.Collections.ObjectModel.ReadOnlyDictionary<{keyDisplay}, {valueDisplay}>";
+        var dictLocal = $"__dict_{destPropName}";
+
+        var srcIsConcreteDictionary = srcDef == "System.Collections.Generic.Dictionary<TKey, TValue>";
+        var destIsReadOnlyDictionary = destDef == "System.Collections.ObjectModel.ReadOnlyDictionary<TKey, TValue>" ||
+            destDef == "System.Collections.Generic.IReadOnlyDictionary<TKey, TValue>";
+        var destIsConcreteDictionary = destDef == "System.Collections.Generic.Dictionary<TKey, TValue>";
+
+        // Dictionary/IDictionary → ReadOnlyDictionary/IReadOnlyDictionary
+        if (destIsReadOnlyDictionary &&
+            (srcDef == "System.Collections.Generic.Dictionary<TKey, TValue>" ||
+             srcDef == "System.Collections.Generic.IDictionary<TKey, TValue>"))
+        {
+            if (srcIsConcreteDictionary)
+            {
+                // Concrete Dictionary — access .Comparer directly
+                return $"new {rodType}(new {dictType}({sourceExpr}, {sourceExpr}.Comparer))";
+            }
+            // IDictionary — pattern-match to preserve comparer when available
+            return $"{sourceExpr} is {dictType} {dictLocal} ? new {rodType}(new {dictType}({dictLocal}, {dictLocal}.Comparer)) : new {rodType}(new {dictType}({sourceExpr}))";
+        }
+
+        // IReadOnlyDictionary → Dictionary
+        if (destIsConcreteDictionary &&
+            (srcDef == "System.Collections.Generic.IReadOnlyDictionary<TKey, TValue>" ||
+             srcDef == "System.Collections.ObjectModel.ReadOnlyDictionary<TKey, TValue>"))
+        {
+            return $"{sourceExpr} is {dictType} {dictLocal} ? new {dictType}({dictLocal}, {dictLocal}.Comparer) : new {dictType}({sourceExpr})";
+        }
+
+        // IDictionary → Dictionary (mutable to mutable, copy)
+        if (destIsConcreteDictionary &&
+            srcDef == "System.Collections.Generic.IDictionary<TKey, TValue>")
+        {
+            return $"{sourceExpr} is {dictType} {dictLocal} ? new {dictType}({dictLocal}, {dictLocal}.Comparer) : new {dictType}({sourceExpr})";
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Generates coercion expression with element-level mapping (different elem types + different container types).
+    /// </summary>
+    private static string? TryGenerateCoercionWithElementMapping(
+        ITypeSymbol destCollType, ITypeSymbol destElemType,
+        string sourceExpr, string elementMethodName)
+    {
+        var destElemDisplay = destElemType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+        var selectExpr = $"global::System.Linq.Enumerable.Select({sourceExpr}, __item => {elementMethodName}(__item))";
+
+        // Array destination
+        if (destCollType is IArrayTypeSymbol)
+            return $"global::System.Linq.Enumerable.ToArray({selectExpr})";
+
+        if (destCollType is INamedTypeSymbol destNamed)
+        {
+            var destDef = destNamed.OriginalDefinition.ToDisplayString();
+
+            if (destDef == "System.Collections.Generic.HashSet<T>")
+                return $"new global::System.Collections.Generic.HashSet<{destElemDisplay}>({selectExpr})";
+
+            if (destDef == "System.Collections.ObjectModel.ReadOnlyCollection<T>")
+                return $"new global::System.Collections.Generic.List<{destElemDisplay}>({selectExpr}).AsReadOnly()";
+
+            if (destDef == "System.Collections.Generic.List<T>" ||
+                destDef == "System.Collections.Generic.IList<T>" ||
+                destDef == "System.Collections.Generic.ICollection<T>" ||
+                destDef == "System.Collections.Generic.IReadOnlyList<T>" ||
+                destDef == "System.Collections.Generic.IReadOnlyCollection<T>")
+                return $"new global::System.Collections.Generic.List<{destElemDisplay}>({selectExpr})";
+
+            if (destDef == "System.Collections.Generic.IEnumerable<T>")
+                return selectExpr;
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Applies null handling to a coercion expression in the object initializer context.
+    /// Reuses the same pattern as the element-mapping auto-wire path.
+    /// </summary>
+    private string? ApplyCoercionNullHandling(
+        IPropertySymbol destProp, string sourceExpr, string collLocal,
+        string coercionExpr,
+        Dictionary<string, int> nullPropertyHandlingOverrides,
+        List<(string DestPropName, string Block)>? postConstructionCollections)
+    {
+        var strategy = ResolveNullPropertyHandling(destProp.Name, nullPropertyHandlingOverrides);
+        var isInitOnly = destProp.SetMethod?.IsInitOnly == true;
+
+        // coercion expressions are always single-expression
+        var nullFallback = GenerateCollectionNullFallback(destProp, strategy, sourceExpr);
+        if (strategy == 1 && !isInitOnly && postConstructionCollections != null)
+        {
+            // SkipNull: post-construction if-guard
+            var block = new StringBuilder();
+            block.AppendLine($"            if ({sourceExpr} is {{ }} {collLocal})");
+            block.AppendLine($"            {{");
+            block.AppendLine($"                result.{destProp.Name} = {coercionExpr};");
+            block.Append($"            }}");
+            postConstructionCollections.Add((destProp.Name, block.ToString()));
+            return null;
+        }
+
+        if (isInitOnly && (strategy == 1))
+        {
+            // Init-only + SkipNull — must provide value, fall back to NullForgiving
+            return $"{sourceExpr} is {{ }} {collLocal} ? {coercionExpr} : null!";
+        }
+
+        return $"{sourceExpr} is {{ }} {collLocal} ? {coercionExpr} : {nullFallback}";
+    }
+
+    /// <summary>
+    /// Applies null handling to a coercion expression in the ForgeInto (statement) context.
+    /// </summary>
+    private string ApplyCoercionNullHandlingStatements(
+        IPropertySymbol destProp, string sourceExpr, string collLocal,
+        string coercionExpr, string destVarName,
+        Dictionary<string, int> nullPropertyHandlingOverrides)
+    {
+        var strategy = ResolveNullPropertyHandling(destProp.Name, nullPropertyHandlingOverrides);
+        var nullFallback = GenerateCollectionNullFallback(destProp, strategy, sourceExpr);
+
+        if (strategy == 1) // SkipNull
+        {
+            return $"            if ({sourceExpr} is {{ }} {collLocal})\n" +
+                   $"            {{\n" +
+                   $"                {destVarName}.{destProp.Name} = {coercionExpr};\n" +
+                   $"            }}";
+        }
+
+        return $"            {destVarName}.{destProp.Name} = {sourceExpr} is {{ }} {collLocal} ? {coercionExpr} : {nullFallback};";
     }
 }

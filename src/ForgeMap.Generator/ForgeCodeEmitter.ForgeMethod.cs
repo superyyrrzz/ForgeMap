@@ -578,6 +578,20 @@ internal sealed partial class ForgeCodeEmitter
                                     continue;
                                 }
                             }
+                            else if (elemCandidates.Count == 0 &&
+                                (SymbolEqualityComparer.Default.Equals(srcElemType, destElemType) || CanAssign(srcElemType, destElemType)))
+                            {
+                                // Pure container coercion for ctor parameters (same element types)
+                                var collLocal = $"__coll_{param.Name}";
+                                var coercionExpr = TryGenerateSequenceCoercion(sourcePropType, param.Type, srcElemType, collLocal);
+                                if (coercionExpr != null)
+                                {
+                                    var nullFallback = param.Type.IsValueType ? "default" : "null!";
+                                    var ctorCollExpr = $"{sourceExpr} is {{ }} {collLocal} ? {coercionExpr} : {nullFallback}";
+                                    mappings.Add(new CtorParamMapping(param.Name, matchedDestPropName!, ctorCollExpr, param.Type, param.Type));
+                                    continue;
+                                }
+                            }
                             else if (elemCandidates.Count > 1)
                             {
                                 var capturedDestPropName2 = matchedDestPropName!;
