@@ -269,7 +269,7 @@ internal sealed partial class ForgeCodeEmitter
                     {
                         var handledExpr = ApplyNullPropertyHandlingExpression(
                             sourceExpr, destProp.Type, destProp.Name,
-                            destProp.ContainingType.Name, strategy);
+                            destProp.ContainingType.Name, strategy, method);
                         sb.AppendLine($"            {destParam}.{destProp.Name} = {handledExpr ?? $"{sourceExpr}!"};");
                     }
                 }
@@ -362,7 +362,7 @@ internal sealed partial class ForgeCodeEmitter
                                 {
                                     var handledExpr = ApplyNullPropertyHandlingExpression(
                                         enumStrExpr, destProp.Type, destProp.Name,
-                                        destProp.ContainingType.Name, strategy2);
+                                        destProp.ContainingType.Name, strategy2, method);
                                     sb.AppendLine($"            {destParam}.{destProp.Name} = {handledExpr ?? $"{enumStrExpr}!"};");
                                 }
                             }
@@ -409,7 +409,7 @@ internal sealed partial class ForgeCodeEmitter
                     {
                         var handledExpr = ApplyNullPropertyHandlingExpression(
                             sourceExprConv, destProp.Type, destProp.Name,
-                            destProp.ContainingType.Name, strategy);
+                            destProp.ContainingType.Name, strategy, method);
                         sb.AppendLine($"            {destParam}.{destProp.Name} = {handledExpr ?? $"{sourceExprConv}!"};");
                     }
                 }
@@ -638,7 +638,8 @@ internal sealed partial class ForgeCodeEmitter
             else if (destProp.Type is INamedTypeSymbol destNamed
                      && destNamed.TypeKind == TypeKind.Class
                      && !destNamed.IsAbstract
-                     && destNamed.InstanceConstructors.Any(c => c.Parameters.Length == 0 && c.DeclaredAccessibility >= Accessibility.Internal))
+                     && destNamed.InstanceConstructors.Any(c => c.Parameters.Length == 0
+                         && c.DeclaredAccessibility >= (SymbolEqualityComparer.Default.Equals(destNamed.ContainingAssembly, method.ContainingAssembly) ? Accessibility.Internal : Accessibility.Public)))
             {
                 sb.AppendLine($"                {destParam}.{destProp.Name} = new {destProp.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}();");
                 sb.AppendLine($"                {forgeIntoMethod.Name}({srcLocal}_new, {destParam}.{destProp.Name});");

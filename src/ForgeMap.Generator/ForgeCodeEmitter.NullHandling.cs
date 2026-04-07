@@ -43,7 +43,8 @@ internal sealed partial class ForgeCodeEmitter
         ITypeSymbol destType,
         string destPropertyName,
         string destTypeName,
-        int strategy)
+        int strategy,
+        IMethodSymbol? method = null)
     {
         switch (strategy)
         {
@@ -63,10 +64,20 @@ internal sealed partial class ForgeCodeEmitter
             case 3: // ThrowException
                 return $"{sourceExpr} ?? throw new global::System.ArgumentNullException(\"{destPropertyName}\", \"Cannot assign null source property '{sourceExpr}' to non-nullable destination '{destTypeName}.{destPropertyName}'.\")";
 
-            case 4: // CoalesceToNew — same expression as CoalesceToDefault, but FM0038 validation done by caller
+            case 4: // CoalesceToNew — assembly-aware expression generation
                 var newExpr = GenerateCoalesceDefault(destType);
                 if (newExpr != null)
                     return $"{sourceExpr} ?? {newExpr}";
+                // GenerateCoalesceDefault uses Public-only; check if internal ctor is accessible (same assembly)
+                if (method != null && destType is INamedTypeSymbol newNamedType
+                    && !newNamedType.IsAbstract && newNamedType.TypeKind != TypeKind.Interface
+                    && SymbolEqualityComparer.Default.Equals(newNamedType.ContainingAssembly, method.ContainingAssembly))
+                {
+                    var hasInternalCtor = newNamedType.InstanceConstructors
+                        .Any(c => c.Parameters.Length == 0 && c.DeclaredAccessibility >= Accessibility.Internal);
+                    if (hasInternalCtor)
+                        return $"{sourceExpr} ?? new {newNamedType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}()";
+                }
                 // FM0038 should have already been reported; fall back to NullForgiving
                 return $"{sourceExpr}!";
 

@@ -86,7 +86,7 @@ internal sealed partial class ForgeCodeEmitter
                 }
                 var handledExpr = ApplyNullPropertyHandlingExpression(
                     sourceExpr, destProp.Type, destProp.Name,
-                    destProp.ContainingType.Name, strategy);
+                    destProp.ContainingType.Name, strategy, method);
                 if (handledExpr != null) return handledExpr;
                 return $"{sourceExpr}!"; // Final fallback
             }
@@ -132,7 +132,7 @@ internal sealed partial class ForgeCodeEmitter
                         }
                         var handledExpr = ApplyNullPropertyHandlingExpression(
                             expr, destProp.Type, destProp.Name,
-                            destProp.ContainingType.Name, strategy);
+                            destProp.ContainingType.Name, strategy, method);
                         return handledExpr ?? $"{expr}!";
                     }
                     return expr;
@@ -189,7 +189,7 @@ internal sealed partial class ForgeCodeEmitter
                 }
                 var handledExpr = ApplyNullPropertyHandlingExpression(
                     sourceExprConv, destProp.Type, destProp.Name,
-                    destProp.ContainingType.Name, strategy);
+                    destProp.ContainingType.Name, strategy, method);
                 if (handledExpr != null) return handledExpr;
                 return $"{sourceExprConv}!"; // Final fallback
             }
@@ -239,7 +239,7 @@ internal sealed partial class ForgeCodeEmitter
                 }
                 var handledExpr = ApplyNullPropertyHandlingExpression(
                     expr, destProp.Type, destProp.Name,
-                    destProp.ContainingType.Name, strategy);
+                    destProp.ContainingType.Name, strategy, method);
                 return handledExpr ?? $"{expr}!";
             }
             return expr;
@@ -271,7 +271,7 @@ internal sealed partial class ForgeCodeEmitter
                 }
                 var handledExpr = ApplyNullPropertyHandlingExpression(
                     flattenResult, destProp.Type, destProp.Name,
-                    destProp.ContainingType.Name, strategy);
+                    destProp.ContainingType.Name, strategy, method);
                 if (handledExpr != null) return handledExpr;
                 return $"{flattenResult}!";
             }
@@ -499,7 +499,7 @@ internal sealed partial class ForgeCodeEmitter
             if (strategy == 1)
                 strategy = 0;
             if (strategy == 4) ValidateCoalesceToNew(destPropertyType, context, method);
-            return ApplyNullPropertyHandlingExpression(sourceExpression, destPropertyType, destPropertyName, destTypeName, strategy)
+            return ApplyNullPropertyHandlingExpression(sourceExpression, destPropertyType, destPropertyName, destTypeName, strategy, method)
                    ?? $"{sourceExpression}!"; // fallback if ApplyNullPropertyHandlingExpression returns null (SkipNull)
         }
 
