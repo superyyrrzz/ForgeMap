@@ -373,7 +373,7 @@ public partial UserDto Forge(Dictionary<string, object?> source)
 
 **Case-insensitive key matching:**
 
-When `KeyMatching = PropertyMatching.ByNameCaseInsensitive`, the generator uses ordinal-ignore-case comparisons to match ForgeMap's existing `ByNameCaseInsensitive` semantics:
+When `KeyMatching = PropertyMatching.ByNameCaseInsensitive`, the generator normalizes the source dictionary into an `OrdinalIgnoreCase` dictionary once, then uses `TryGetValue` for each property — the same O(properties) complexity as case-sensitive mode:
 
 ```csharp
 public partial ConfigSettings Forge(IDictionary<string, object?> source)
@@ -382,26 +382,18 @@ public partial ConfigSettings Forge(IDictionary<string, object?> source)
 
     var __result = new ConfigSettings();
 
-    foreach (var __kvp in source)
-    {
-        var __key = __kvp.Key;
+    // Normalize once — O(keys)
+    var __dict = new global::System.Collections.Generic.Dictionary<string, object?>(
+        source, global::System.StringComparer.OrdinalIgnoreCase);
 
-        if (string.Equals(__key, "HostName", global::System.StringComparison.OrdinalIgnoreCase))
-        {
-            if (__kvp.Value is string __cast_HostName)
-                __result.HostName = __cast_HostName;
-        }
-        else if (string.Equals(__key, "Port", global::System.StringComparison.OrdinalIgnoreCase))
-        {
-            if (__kvp.Value is int __cast_Port)
-                __result.Port = __cast_Port;
-        }
-        else if (string.Equals(__key, "UsesSsl", global::System.StringComparison.OrdinalIgnoreCase))
-        {
-            if (__kvp.Value is bool __cast_UsesSsl)
-                __result.UsesSsl = __cast_UsesSsl;
-        }
-    }
+    if (__dict.TryGetValue("HostName", out var __v_HostName) && __v_HostName is string __cast_HostName)
+        __result.HostName = __cast_HostName;
+
+    if (__dict.TryGetValue("Port", out var __v_Port) && __v_Port is int __cast_Port)
+        __result.Port = __cast_Port;
+
+    if (__dict.TryGetValue("UsesSsl", out var __v_UsesSsl) && __v_UsesSsl is bool __cast_UsesSsl)
+        __result.UsesSsl = __cast_UsesSsl;
 
     return __result;
 }
@@ -409,7 +401,7 @@ public partial ConfigSettings Forge(IDictionary<string, object?> source)
 
 **Strict mode (throw on missing key):**
 
-Strict mode separates missing-key, null-value, and wrong-type cases. Missing keys throw `KeyNotFoundException`. Null values follow `NullPropertyHandling`. Wrong types throw `InvalidCastException`.
+Strict mode separates missing-key, null-value, and wrong-type cases. Missing keys throw `KeyNotFoundException`. Null values follow `NullPropertyHandling`. Wrong types throw `InvalidCastException` — but only when no applicable conversion from the type conversion hierarchy (including the `ToString()` fallback for string destinations) exists.
 
 ```csharp
 public partial StrictDto ForgeStrict(Dictionary<string, object?> source)
@@ -426,8 +418,7 @@ public partial StrictDto ForgeStrict(Dictionary<string, object?> source)
     else if (__v_Name is string __cast_Name)
         __result.Name = __cast_Name;
     else
-        throw new global::System.InvalidCastException(
-            $"Value for key 'Name' is not convertible to 'System.String'.");
+        __result.Name = __v_Name.ToString()!; // ToString() fallback (priority 7) — always applicable for string destinations
 
     if (!source.TryGetValue("Age", out var __v_Age))
         throw new global::System.Collections.Generic.KeyNotFoundException(
@@ -437,8 +428,7 @@ public partial StrictDto ForgeStrict(Dictionary<string, object?> source)
     else if (__v_Age is int __cast_Age)
         __result.Age = __cast_Age;
     else
-        throw new global::System.InvalidCastException(
-            $"Value for key 'Age' is not convertible to 'System.Int32'.");
+        __result.Age = global::System.Convert.ToInt32(__v_Age); // Convert.ToXxx fallback (priority 3) — may throw FormatException/OverflowException
 
     return __result;
 }

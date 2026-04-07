@@ -294,6 +294,8 @@ Collection type coercion respects `NullPropertyHandling`:
 
 AutoMapper auto-maps collections from a single `CreateMap<A, B>()` declaration — calling `mapper.Map<IReadOnlyList<B>>(listOfA)` just works. ForgeMap generates element-level forge methods and handles collections as *properties* inside parent objects (inline iteration), but does **not** generate standalone collection mapping methods.
 
+> **Note:** The existing `GenerateCollectionMappings` setting on `[ForgeMapDefaults]` (see [SPEC.md](SPEC.md)) controls whether the generator auto-generates `IEnumerable<T>`, `List<T>`, and `T[]` overloads for *inline collection property* iteration code. Feature 3 is a separate concept: it lets users declare *arbitrary partial methods* with collection-typed parameters/returns. The generator then discovers the matching element forge method and implements the body. `GenerateCollectionMappings` remains unchanged and continues to control inline property-level collection code generation independently of standalone collection methods.
+
 In the LCS migration, this forced ~78 lines of hand-written collection dispatch:
 
 ```csharp
