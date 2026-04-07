@@ -277,9 +277,11 @@ internal sealed partial class ForgeCodeEmitter
         // Skip if [ForgeAllDerived] is also present — let GenerateForgeMethod handle the FM0023 error
         if (HasConvertWithAttribute(method) && !HasForgeAllDerivedAttribute(method))
         {
-            // FM0044: [AfterForge] and [ConvertWith] are mutually exclusive
-            var afterForgeHooks = GetAfterForgeHooks(method);
-            if (afterForgeHooks.Count > 0)
+            // FM0044: [AfterForge] and [ConvertWith] are mutually exclusive — check attribute presence,
+            // not resolved hooks, so misspelled/invalid targets still trigger the conflict error.
+            var hasAfterForgeAttr = _afterForgeAttributeSymbol != null && method.GetAttributes().Any(a =>
+                SymbolEqualityComparer.Default.Equals(a.AttributeClass, _afterForgeAttributeSymbol));
+            if (hasAfterForgeAttr)
             {
                 ReportDiagnosticIfNotSuppressed(context,
                     DiagnosticDescriptors.AfterForgeWithConvertWith,
