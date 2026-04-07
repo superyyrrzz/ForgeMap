@@ -458,10 +458,6 @@ foreach (var __item in source)
 return __result.ToArray();
 ```
 
-```csharp
-var __result = new List<T>();
-```
-
 ### Interaction with Existing Features
 
 | Feature | Interaction |
