@@ -64,6 +64,21 @@ $projects = @(
     @{ Name = 'AutoMapper'; Path = Join-Path $scriptDir 'AutoMapper' 'AutoMapper.CompileBench.csproj' }
 )
 
+# Generate a minimal set of models so restore can resolve all projects (source files
+# referenced via Compile Include must exist at restore time for MSBuild evaluation).
+& (Join-Path $scriptDir 'Generate-Models.ps1') -Count 1 -Scenario 'Flat'
+
+# Restore all projects once — dependencies don't change between scenarios/scales,
+# so there's no need to restore again inside the benchmark loop.
+foreach ($proj in $projects) {
+    Write-Host "Restoring $($proj.Name)..."
+    dotnet restore $proj.Path --verbosity quiet
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "Restore failed for $($proj.Name)"
+        exit 1
+    }
+}
+
 # Shut down build servers to ensure clean measurements
 Write-Host 'Shutting down build servers...'
 dotnet build-server shutdown 2>$null
@@ -76,16 +91,6 @@ foreach ($scenario in $Scenarios) {
 
         # Generate models for this scale and scenario
         & (Join-Path $scriptDir 'Generate-Models.ps1') -Count $scale -Scenario $scenario
-
-        # Restore all projects once
-        foreach ($proj in $projects) {
-            Write-Host "  Restoring $($proj.Name)..."
-            dotnet restore $proj.Path --verbosity quiet
-            if ($LASTEXITCODE -ne 0) {
-                Write-Error "Restore failed for $($proj.Name)"
-                exit 1
-            }
-        }
 
         # Randomize project order to avoid systematic cache-warming bias
         $shuffled = $projects | Get-Random -Count $projects.Count
