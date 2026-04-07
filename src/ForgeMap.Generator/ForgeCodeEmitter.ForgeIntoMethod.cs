@@ -641,6 +641,9 @@ internal sealed partial class ForgeCodeEmitter
                      && destNamed.InstanceConstructors.Any(c => c.Parameters.Length == 0
                          && c.DeclaredAccessibility >= (SymbolEqualityComparer.Default.Equals(destNamed.ContainingAssembly, method.ContainingAssembly) ? Accessibility.Internal : Accessibility.Public)))
             {
+                // For CoalesceToNew, validate required members before emitting new T()
+                if (strategy == 4)
+                    ValidateCoalesceToNew(destProp.Type, context, method);
                 sb.AppendLine($"                {destParam}.{destProp.Name} = new {destProp.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}();");
                 sb.AppendLine($"                {forgeIntoMethod.Name}({srcLocal}_new, {destParam}.{destProp.Name});");
             }
