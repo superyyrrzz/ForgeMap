@@ -108,6 +108,28 @@ internal sealed partial class ForgeCodeEmitter
                     DiagnosticDescriptors.CoalesceToNewNoConstructor,
                     method.Locations.FirstOrDefault(),
                     namedType.ToDisplayString());
+                return;
+            }
+
+            // Check for uninitialized required members (C# 11+)
+            var hasUninitializedRequired = namedType.GetMembers()
+                .Any(m => m is IPropertySymbol prop && prop.IsRequired
+                    || m is IFieldSymbol field && field.IsRequired);
+            if (hasUninitializedRequired)
+            {
+                // Check if the parameterless constructor has [SetsRequiredMembers]
+                var ctor = namedType.InstanceConstructors
+                    .First(c => c.Parameters.Length == 0 && c.DeclaredAccessibility >= Accessibility.Internal);
+                var hasSetsRequired = ctor.GetAttributes()
+                    .Any(a => a.AttributeClass?.Name == "SetsRequiredMembersAttribute"
+                        || a.AttributeClass?.ToDisplayString() == "System.Diagnostics.CodeAnalysis.SetsRequiredMembersAttribute");
+                if (!hasSetsRequired)
+                {
+                    ReportDiagnosticIfNotSuppressed(context,
+                        DiagnosticDescriptors.CoalesceToNewNoConstructor,
+                        method.Locations.FirstOrDefault(),
+                        namedType.ToDisplayString());
+                }
             }
         }
     }

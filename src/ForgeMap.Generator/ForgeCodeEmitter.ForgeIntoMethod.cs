@@ -204,6 +204,7 @@ internal sealed partial class ForgeCodeEmitter
                                     var strategy = ResolveNullPropertyHandling(destProp.Name, nullPropertyHandlingOverrides);
                                     if (strategy == 4) // CoalesceToNew
                                     {
+                                        ValidateCoalesceToNew(destProp.Type, context, method);
                                         var newExpr = GenerateCoalesceDefault(destProp.Type);
                                         nullAssign = newExpr ?? "null!";
                                     }
@@ -645,6 +646,8 @@ internal sealed partial class ForgeCodeEmitter
             else
             {
                 // Non-constructible type (interface, abstract, no parameterless ctor) — skip coalesce
+                if (strategy == 4) // CoalesceToNew — emit FM0038 instead of silently skipping
+                    ValidateCoalesceToNew(destProp.Type, context, method);
                 sb.AppendLine($"                // Cannot coalesce: {destProp.Type.ToDisplayString()} has no accessible parameterless constructor");
             }
             sb.Append($"            }}");

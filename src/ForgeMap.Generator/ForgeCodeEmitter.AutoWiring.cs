@@ -57,8 +57,9 @@ internal sealed partial class ForgeCodeEmitter
                     var strategy = ResolveNullPropertyHandling(destProp.Name, nullPropertyHandlingOverrides);
                     if (strategy == 4) // CoalesceToNew
                     {
+                        ValidateCoalesceToNew(destProp.Type, context, method);
                         var newExpr = GenerateCoalesceDefault(destProp.Type);
-                        nullFallback = newExpr ?? "null!"; // FM0038 already emitted by caller
+                        nullFallback = newExpr ?? "null!";
                     }
                     else
                     {
