@@ -28,7 +28,7 @@ The following features were originally planned for v1.5 but have been moved to v
 
 ### Problem
 
-During AutoMapper → ForgeMap migration, a common pattern is null-coalescing a nested object to an empty instance. AutoMapper does this implicitly — when a source member is `null`, it creates a new destination instance with default values (not `null`). ForgeMap's existing `CoalesceToDefault` strategy produces `default(T)`, which is `null` for reference types — the same as not handling the null at all.
+During AutoMapper → ForgeMap migration, a common pattern is null-coalescing a nested object to an empty instance. AutoMapper does this implicitly — when a source member is `null`, it creates a new destination instance with default values (not `null`). ForgeMap's existing `CoalesceToDefault` strategy already handles many cases — it uses type-aware defaults (`""` for strings, empty collections, `new T()` for types with parameterless constructors) — but it **silently falls back to `NullForgiving`** (with FM0007 warning) when the destination type has no parameterless constructor. Additionally, when a property is mapped via an auto-wired forge method, `CoalesceToDefault` does not produce `new TDestination()` — the forge method is simply not called for null source values.
 
 ```csharp
 // Manual code required today — ForgeMap can't express this
@@ -44,7 +44,11 @@ This is especially common for:
 
 ### Design
 
-Add a new value to the existing `NullPropertyHandling` enum. The generator emits `new T()` for reference types when the source property is null, and `default(T)` for value types (identical to `CoalesceToDefault` for value types).
+Add a new value to the existing `NullPropertyHandling` enum. Key differences from `CoalesceToDefault`:
+
+1. **Forge method properties**: When a matching forge method exists, `CoalesceToNew` emits `new TDestination()` for null source values. `CoalesceToDefault` does not — it relies on the forge method which is not called when source is null.
+2. **Strict validation**: `CoalesceToNew` emits FM0038 error when the destination type has no accessible parameterless constructor. `CoalesceToDefault` silently falls back to `NullForgiving` with FM0007 warning.
+3. **Value types**: Both behave identically — `default(T)` for value types.
 
 ### API Surface
 
@@ -53,7 +57,7 @@ public enum NullPropertyHandling
 {
     NullForgiving,      // existing (0): assign with !
     SkipNull,           // existing (1): skip assignment
-    CoalesceToDefault,  // existing (2): default(T) — null for reference types
+    CoalesceToDefault,  // existing (2): type-aware default ("", empty collection, new T() if ctor exists; falls back to ! if not)
     ThrowException,     // existing (3): throw
     CoalesceToNew,      // NEW (4): new T() for reference types, default(T) for value types
 }
@@ -80,8 +84,9 @@ No new attributes required. Works at all three existing configuration tiers:
 // NullPropertyHandling.CoalesceToNew on a reference-type property
 __result.Address = source.Address ?? new global::MyApp.Address();
 
-// NullPropertyHandling.CoalesceToNew on a value-type property (same as CoalesceToDefault)
-__result.Count = source.Count;  // value types can't be null
+// NullPropertyHandling.CoalesceToNew on a nullable value-type source
+// mapped to a non-nullable destination (same as CoalesceToDefault)
+__result.Count = source.Count ?? default(int);
 ```
 
 **With auto-wired forge method:**
@@ -128,7 +133,7 @@ The generator must validate that the destination type is constructible when `Coa
 
 | Feature | Interaction |
 |---------|-------------|
-| `CoalesceToDefault` | `CoalesceToNew` differs only for reference types: `new T()` vs `null` |
+| `CoalesceToDefault` | `CoalesceToNew` differs for forge-method properties: `new TDest()` vs relying on the forge method (which isn't called). For simple properties with parameterless ctor, both produce `new T()`. `CoalesceToNew` also hard-errors (FM0038) instead of falling back to `NullForgiving` |
 | Auto-wired forge methods | Non-null → forge method; null → `new TDest()` |
 | `[ConvertWith]` | `NullHandling` (method-level) controls null source before converter is called; `CoalesceToNew` applies to individual properties, not converter methods |
 | `[ForgeFrom]` resolver | Resolver is called when source is non-null; `CoalesceToNew` produces `new T()` when source property is null |
@@ -234,7 +239,7 @@ Collection type coercion respects `NullPropertyHandling`:
 |-------------------------|----------|
 | `NullForgiving` | `source.Prop is { } __v ? <coerce>(__v) : null!` |
 | `SkipNull` | `if (source.Prop is { } __v) __result.Prop = <coerce>(__v);` |
-| `CoalesceToDefault` | `source.Prop is { } __v ? <coerce>(__v) : default` |
+| `CoalesceToDefault` | `source.Prop is { } __v ? <coerce>(__v) : <empty destination collection/dictionary>` (type-aware, same as non-coercion) |
 | `CoalesceToNew` | `source.Prop is { } __v ? <coerce>(__v) : new HashSet<T>()` (empty target collection) |
 | `ThrowException` | `source.Prop is { } __v ? <coerce>(__v) : throw new ArgumentNullException(...)` |
 

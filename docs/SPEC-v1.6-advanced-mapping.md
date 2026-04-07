@@ -357,6 +357,10 @@ public partial UserDto Forge(Dictionary<string, object?> source)
             // ThrowException: throw
             __result.Score = default!;
         }
+        else if (__v_Score is double __cast_Score)
+        {
+            __result.Score = __cast_Score;
+        }
         else
         {
             __result.Score = global::System.Convert.ToDouble(__v_Score);
