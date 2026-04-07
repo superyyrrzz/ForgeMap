@@ -200,7 +200,7 @@ Controls how nullable-to-non-nullable **reference type** property assignments an
 |---|---|---|
 | Auto enum-to-enum by name | Auto by name | Forge method: `partial DEnum Forge(SEnum source)` |
 | Enum-to-string | Auto string conversion | Forge method: `partial string Forge(SEnum source)` |
-| String-to-enum (`.ConvertUsing()`) | Auto-converted at property level (v1.4+, default on) | `Enum.Parse` by default; `StringToEnumConversion.TryParse` falls back to `default(T)`; `StringToEnumConversion.None` disables. Set per-forger on `[ForgeMap]` or assembly-wide on `[ForgeMapDefaults]`. Applies to property-level string→enum conversions only — dedicated forge methods (`partial TEnum Forge(string)`) always use `Enum.Parse`. Nullable combinations supported; respects `NullPropertyHandling`. Reverse via `[ReverseForge]` emits `.ToString()` |
+| String-to-enum (`.ConvertUsing()`) | Auto-converted at property and constructor-parameter level (v1.4+, default on) | `Enum.Parse` by default; `StringToEnumConversion.TryParse` falls back to `default(T)`; `StringToEnumConversion.None` disables. Set per-forger on `[ForgeMap]` or assembly-wide on `[ForgeMapDefaults]`. Applies to property assignments and constructor parameters — dedicated forge methods (`partial TEnum Forge(string)`) always use `Enum.Parse`. Nullable combinations supported; respects `NullPropertyHandling`. Reverse via `[ReverseForge]` emits `.ToString()` |
 | Compatible enum mapping | Auto-converted when compatible | Distinct enum types with identical members, values, declaration order, and the same underlying integral type are cast automatically via their underlying type — including nullable variants; commonly cross-namespace but namespace difference is not required |
 
 ## Configuration Validation
