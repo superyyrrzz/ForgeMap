@@ -287,6 +287,22 @@ internal sealed partial class ForgeCodeEmitter
                     DiagnosticDescriptors.AfterForgeWithConvertWith,
                     method.Locations.FirstOrDefault(),
                     method.Name);
+
+                // Also report FM0018 for [BeforeForge] if present, so it isn't silently dropped
+                ReportHooksNotSupportedIfPresent(method, context);
+
+                // Emit a minimal throwing body so the partial method still compiles
+                if (!method.ReturnsVoid && destinationType != null)
+                {
+                    var errAccessibility = GetAccessibilityKeyword(method.DeclaredAccessibility);
+                    var errSb = new StringBuilder();
+                    errSb.AppendLine($"        {errAccessibility} partial {destinationType.ToDisplayString()} {method.Name}({sourceType.ToDisplayString()} {method.Parameters[0].Name})");
+                    errSb.AppendLine("        {");
+                    errSb.AppendLine("            throw new global::System.NotSupportedException(\"[AfterForge] and [ConvertWith] are mutually exclusive.\");");
+                    errSb.AppendLine("        }");
+                    return errSb.ToString();
+                }
+
                 return string.Empty;
             }
 
