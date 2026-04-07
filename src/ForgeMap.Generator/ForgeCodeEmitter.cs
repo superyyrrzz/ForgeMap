@@ -277,6 +277,43 @@ internal sealed partial class ForgeCodeEmitter
         // Skip if [ForgeAllDerived] is also present — let GenerateForgeMethod handle the FM0023 error
         if (HasConvertWithAttribute(method) && !HasForgeAllDerivedAttribute(method))
         {
+            // FM0044: [AfterForge] and [ConvertWith] are mutually exclusive — check attribute presence,
+            // not resolved hooks, so misspelled/invalid targets still trigger the conflict error.
+            var hasAfterForgeAttr = _afterForgeAttributeSymbol != null && method.GetAttributes().Any(a =>
+                SymbolEqualityComparer.Default.Equals(a.AttributeClass, _afterForgeAttributeSymbol));
+            if (hasAfterForgeAttr)
+            {
+                ReportDiagnosticIfNotSuppressed(context,
+                    DiagnosticDescriptors.AfterForgeWithConvertWith,
+                    method.Locations.FirstOrDefault(),
+                    method.Name);
+
+                // Also report FM0018 for [BeforeForge] if present, so it isn't silently dropped.
+                // Don't call ReportHooksNotSupportedIfPresent here — it would re-report AfterForge as FM0018.
+                var hasBeforeForgeAttr = _beforeForgeAttributeSymbol != null && method.GetAttributes().Any(a =>
+                    SymbolEqualityComparer.Default.Equals(a.AttributeClass, _beforeForgeAttributeSymbol));
+                if (hasBeforeForgeAttr)
+                {
+                    ReportDiagnosticIfNotSuppressed(context,
+                        DiagnosticDescriptors.HooksNotSupportedOnMethodKind,
+                        method.Locations.FirstOrDefault());
+                }
+
+                // Emit a minimal throwing body so the partial method still compiles
+                if (!method.ReturnsVoid && destinationType != null)
+                {
+                    var errAccessibility = GetAccessibilityKeyword(method.DeclaredAccessibility);
+                    var errSb = new StringBuilder();
+                    errSb.AppendLine($"        {errAccessibility} partial {destinationType.ToDisplayString()} {method.Name}({sourceType.ToDisplayString()} {method.Parameters[0].Name})");
+                    errSb.AppendLine("        {");
+                    errSb.AppendLine("            throw new global::System.NotSupportedException(\"[AfterForge] and [ConvertWith] are mutually exclusive.\");");
+                    errSb.AppendLine("        }");
+                    return errSb.ToString();
+                }
+
+                return string.Empty;
+            }
+
             ReportHooksNotSupportedIfPresent(method, context);
             if (sourceType is INamedTypeSymbol srcNamed && destinationType is INamedTypeSymbol destNamed)
                 return GenerateConvertWithMethod(method, srcNamed, destNamed, forger, context);
@@ -296,7 +333,7 @@ internal sealed partial class ForgeCodeEmitter
         var destElementType = GetCollectionElementType(destinationType);
         if (sourceElementType != null && destElementType != null)
         {
-            ReportHooksNotSupportedIfPresent(method, context);
+            ReportHooksNotSupportedIfPresent(method, context, isCollectionMethod: true);
 
             // Find element forge method by type (standalone collection methods — Feature 3)
             var elementMethods = FindElementForgeMethodsByType(forger.Symbol, sourceElementType, destElementType);

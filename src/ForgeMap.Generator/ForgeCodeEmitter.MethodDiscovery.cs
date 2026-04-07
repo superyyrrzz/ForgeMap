@@ -86,9 +86,11 @@ internal sealed partial class ForgeCodeEmitter
         if (candidates.Count == 0)
         {
             ReportDiagnosticIfNotSuppressed(context,
-                DiagnosticDescriptors.HookMethodInvalid,
+                DiagnosticDescriptors.AfterForgeMethodInvalid,
                 method.Locations.FirstOrDefault(),
-                hookMethodName);
+                hookMethodName,
+                sourceType.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat),
+                destType.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat));
             return null;
         }
 
@@ -105,25 +107,51 @@ internal sealed partial class ForgeCodeEmitter
 
         // Multiple assignable candidates with no exact match — ambiguous
         ReportDiagnosticIfNotSuppressed(context,
-            DiagnosticDescriptors.HookMethodInvalid,
+            DiagnosticDescriptors.AfterForgeMethodInvalid,
             method.Locations.FirstOrDefault(),
-            hookMethodName);
+            hookMethodName,
+            sourceType.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat),
+            destType.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat));
         return null;
     }
 
     /// <summary>
     /// Reports FM0018 if [BeforeForge] or [AfterForge] attributes are present on a method
     /// that does not support hooks (enum or collection forge methods).
+    /// For collection methods, [AfterForge] emits FM0045 (Error) instead of FM0018 (Warning).
     /// </summary>
-    private void ReportHooksNotSupportedIfPresent(IMethodSymbol method, SourceProductionContext context)
+    private void ReportHooksNotSupportedIfPresent(IMethodSymbol method, SourceProductionContext context, bool isCollectionMethod = false)
     {
-        var hasHooks = (_beforeForgeAttributeSymbol != null && method.GetAttributes().Any(a =>
-            SymbolEqualityComparer.Default.Equals(a.AttributeClass, _beforeForgeAttributeSymbol))) ||
-            (_afterForgeAttributeSymbol != null && method.GetAttributes().Any(a =>
-            SymbolEqualityComparer.Default.Equals(a.AttributeClass, _afterForgeAttributeSymbol)));
+        var hasBeforeForge = _beforeForgeAttributeSymbol != null && method.GetAttributes().Any(a =>
+            SymbolEqualityComparer.Default.Equals(a.AttributeClass, _beforeForgeAttributeSymbol));
 
-        if (hasHooks)
+        var hasAfterForge = _afterForgeAttributeSymbol != null && method.GetAttributes().Any(a =>
+            SymbolEqualityComparer.Default.Equals(a.AttributeClass, _afterForgeAttributeSymbol));
+
+        if (!hasBeforeForge && !hasAfterForge)
+            return;
+
+        if (isCollectionMethod)
         {
+            // Collection methods: FM0018 for BeforeForge, FM0045 for AfterForge
+            if (hasBeforeForge)
+            {
+                ReportDiagnosticIfNotSuppressed(context,
+                    DiagnosticDescriptors.HooksNotSupportedOnMethodKind,
+                    method.Locations.FirstOrDefault());
+            }
+
+            if (hasAfterForge)
+            {
+                ReportDiagnosticIfNotSuppressed(context,
+                    DiagnosticDescriptors.AfterForgeOnCollectionMethod,
+                    method.Locations.FirstOrDefault(),
+                    method.Name);
+            }
+        }
+        else
+        {
+            // Enum/ConvertWith methods: single FM0018 for any hook presence
             ReportDiagnosticIfNotSuppressed(context,
                 DiagnosticDescriptors.HooksNotSupportedOnMethodKind,
                 method.Locations.FirstOrDefault());

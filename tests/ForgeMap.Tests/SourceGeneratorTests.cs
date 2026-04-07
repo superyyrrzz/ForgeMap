@@ -1515,7 +1515,7 @@ public class HookGeneratorTests
     }
 
     [Fact]
-    public void Generator_AfterForge_InvalidSignature_ReportsFM0016()
+    public void Generator_AfterForge_InvalidSignature_ReportsFM0043()
     {
         var source = """
             using ForgeMap;
@@ -1546,7 +1546,7 @@ public class HookGeneratorTests
 
         var (diagnostics, _) = RunGenerator(source);
 
-        var hookError = diagnostics.FirstOrDefault(d => d.Id == "FM0016");
+        var hookError = diagnostics.FirstOrDefault(d => d.Id == "FM0043");
         Assert.NotNull(hookError);
         Assert.Equal(DiagnosticSeverity.Error, hookError.Severity);
     }
@@ -1663,6 +1663,45 @@ public class HookGeneratorTests
                 [ForgeMap]
                 public partial class TestForger
                 {
+                    [BeforeForge(nameof(LogList))]
+                    public partial List<DestItem> Forge(List<SourceItem> source);
+
+                    public partial DestItem Forge(SourceItem source);
+
+                    private static void LogList(List<SourceItem> source) { }
+                }
+            }
+            """;
+
+        var (diagnostics, _) = RunGenerator(source);
+
+        var warning = diagnostics.FirstOrDefault(d => d.Id == "FM0018");
+        Assert.NotNull(warning);
+        Assert.Equal(DiagnosticSeverity.Warning, warning.Severity);
+    }
+
+    [Fact]
+    public void Generator_AfterForgeOnCollectionForge_ReportsFM0045()
+    {
+        var source = """
+            using ForgeMap;
+            using System.Collections.Generic;
+
+            namespace TestNamespace
+            {
+                public class SourceItem
+                {
+                    public int Id { get; set; }
+                }
+
+                public class DestItem
+                {
+                    public int Id { get; set; }
+                }
+
+                [ForgeMap]
+                public partial class TestForger
+                {
                     [AfterForge(nameof(LogList))]
                     public partial List<DestItem> Forge(List<SourceItem> source);
 
@@ -1675,10 +1714,9 @@ public class HookGeneratorTests
 
         var (diagnostics, _) = RunGenerator(source);
 
-        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        var warning = diagnostics.FirstOrDefault(d => d.Id == "FM0018");
-        Assert.NotNull(warning);
-        Assert.Equal(DiagnosticSeverity.Warning, warning.Severity);
+        var error = diagnostics.FirstOrDefault(d => d.Id == "FM0045");
+        Assert.NotNull(error);
+        Assert.Equal(DiagnosticSeverity.Error, error.Severity);
     }
 
     private static (IReadOnlyList<Diagnostic> Diagnostics, IReadOnlyList<SyntaxTree> GeneratedTrees) RunGenerator(string source)
@@ -5707,6 +5745,40 @@ public partial class TestForger
         // Should NOT contain DI resolution patterns
         Assert.DoesNotContain("GetService", generatedCode);
         Assert.DoesNotContain("GetRequiredService", generatedCode);
+    }
+
+    [Fact]
+    public void Generator_AfterForgeWithConvertWith_ReportsFM0044()
+    {
+        var source = @"
+using ForgeMap;
+
+public class SourceType { public int Id { get; set; } }
+public class DestType { public int Id { get; set; } }
+
+public class MyConverter : ITypeConverter<SourceType, DestType>
+{
+    public DestType Convert(SourceType source) => new DestType { Id = source.Id };
+}
+
+[ForgeMap]
+public partial class TestForger
+{
+    [ConvertWith(typeof(MyConverter))]
+    [AfterForge(nameof(PostProcess))]
+    public partial DestType Forge(SourceType source);
+
+    private static void PostProcess(SourceType source, DestType dest) { }
+}";
+
+        var (diagnostics, _) = RunGenerator(source);
+
+        var error = diagnostics.FirstOrDefault(d => d.Id == "FM0044");
+        Assert.NotNull(error);
+        Assert.Equal(DiagnosticSeverity.Error, error.Severity);
+
+        // Should not emit stray FM0018 for the AfterForge that's already reported as FM0044
+        Assert.DoesNotContain(diagnostics, d => d.Id == "FM0018");
     }
 
     private static (IReadOnlyList<Diagnostic> Diagnostics, IReadOnlyList<SyntaxTree> GeneratedTrees) RunGenerator(string source)
