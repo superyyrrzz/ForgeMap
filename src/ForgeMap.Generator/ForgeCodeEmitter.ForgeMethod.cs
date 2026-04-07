@@ -578,6 +578,20 @@ internal sealed partial class ForgeCodeEmitter
                                     continue;
                                 }
                             }
+                            else if (elemCandidates.Count == 0 &&
+                                SymbolEqualityComparer.Default.Equals(srcElemType, destElemType))
+                            {
+                                // Pure container coercion for ctor parameters (same element types)
+                                var collLocal = $"__coll_{param.Name}";
+                                var coercionExpr = TryGenerateSequenceCoercion(sourcePropType, param.Type, srcElemType, collLocal);
+                                if (coercionExpr != null)
+                                {
+                                    var nullFallback = param.Type.IsValueType ? "default" : "null!";
+                                    var ctorCollExpr = $"{sourceExpr} is {{ }} {collLocal} ? {coercionExpr} : {nullFallback}";
+                                    mappings.Add(new CtorParamMapping(param.Name, matchedDestPropName!, ctorCollExpr, param.Type, param.Type));
+                                    continue;
+                                }
+                            }
                             else if (elemCandidates.Count > 1)
                             {
                                 var capturedDestPropName2 = matchedDestPropName!;
@@ -588,6 +602,26 @@ internal sealed partial class ForgeCodeEmitter
                                 allMatched = false;
                                 break;
                             }
+                        }
+                    }
+
+                    // Try dictionary coercion for ctor parameters (dictionaries have 2 type args, not in SupportedCollectionTypes)
+                    var srcDictTypes = GetDictionaryKeyValueTypes(sourcePropType);
+                    var destDictTypes = GetDictionaryKeyValueTypes(param.Type);
+                    if (srcDictTypes != null && destDictTypes != null &&
+                        SymbolEqualityComparer.Default.Equals(srcDictTypes.Value.KeyType, destDictTypes.Value.KeyType) &&
+                        SymbolEqualityComparer.Default.Equals(srcDictTypes.Value.ValueType, destDictTypes.Value.ValueType) &&
+                        !CanAssign(sourcePropType, param.Type))
+                    {
+                        var dictCollLocal = $"__coll_{param.Name}";
+                        var dictCoercionExpr = TryGenerateDictionaryCoercion(sourcePropType, param.Type,
+                            srcDictTypes.Value.KeyType, srcDictTypes.Value.ValueType, dictCollLocal, param.Name);
+                        if (dictCoercionExpr != null)
+                        {
+                            var nullFallback = param.Type.IsValueType ? "default" : "null!";
+                            var ctorDictExpr = $"{sourceExpr} is {{ }} {dictCollLocal} ? {dictCoercionExpr} : {nullFallback}";
+                            mappings.Add(new CtorParamMapping(param.Name, matchedDestPropName!, ctorDictExpr, param.Type, param.Type));
+                            continue;
                         }
                     }
 

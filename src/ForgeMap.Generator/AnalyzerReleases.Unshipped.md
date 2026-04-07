@@ -6,3 +6,5 @@
 Rule ID | Category | Severity | Notes
 --------|----------|----------|-------
 FM0038 | ForgeMap | Error | CoalesceToNew requires accessible parameterless constructor
+FM0039 | ForgeMap | Disabled | Collection type coerced
+FM0040 | ForgeMap | Warning | No known collection coercion

@@ -708,7 +708,10 @@ internal sealed partial class ForgeCodeEmitter
             var origDef = destCollType.OriginalDefinition.ToDisplayString();
             if (origDef == "System.Collections.Generic.IEnumerable<T>" ||
                 origDef == "System.Collections.Generic.IReadOnlyList<T>" ||
-                origDef == "System.Collections.Generic.IReadOnlyCollection<T>")
+                origDef == "System.Collections.Generic.IReadOnlyCollection<T>" ||
+                origDef == "System.Collections.ObjectModel.ReadOnlyCollection<T>" ||
+                origDef == "System.Collections.ObjectModel.ReadOnlyDictionary<TKey, TValue>" ||
+                origDef == "System.Collections.Generic.IReadOnlyDictionary<TKey, TValue>")
             {
                 ReportDiagnosticIfNotSuppressed(context,
                     DiagnosticDescriptors.ExistingTargetNoMatchingForgeInto,
@@ -1051,6 +1054,25 @@ internal sealed partial class ForgeCodeEmitter
                 sb.AppendLine($"                result.Add({method.Name}(item));");
                 sb.AppendLine("            }");
                 sb.AppendLine("            return result;");
+            }
+            else if (originalDef == "System.Collections.ObjectModel.ReadOnlyCollection<T>")
+            {
+                // ReadOnlyCollection<T> - build list + AsReadOnly
+                var destElemDisplay = destElementType.ToDisplayString();
+                if (HasCheapCount(sourceCollectionType))
+                {
+                    var countExpr = GetCollectionLengthExpression(sourceCollectionType, sourceParam);
+                    sb.AppendLine($"            var list = new global::System.Collections.Generic.List<{destElemDisplay}>({countExpr});");
+                }
+                else
+                {
+                    sb.AppendLine($"            var list = new global::System.Collections.Generic.List<{destElemDisplay}>();");
+                }
+                sb.AppendLine($"            foreach (var item in {sourceParam})");
+                sb.AppendLine("            {");
+                sb.AppendLine($"                list.Add({method.Name}(item));");
+                sb.AppendLine("            }");
+                sb.AppendLine("            return list.AsReadOnly();");
             }
             else
             {

@@ -312,4 +312,20 @@ internal static class DiagnosticDescriptors
         category: Category,
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor CollectionTypeCoerced = new(
+        id: "FM0039",
+        title: "Collection type coerced",
+        messageFormat: "Property '{0}' collection type coerced from '{1}' to '{2}'",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Info,
+        isEnabledByDefault: false);
+
+    public static readonly DiagnosticDescriptor CollectionCoercionNotSupported = new(
+        id: "FM0040",
+        title: "No known collection coercion",
+        messageFormat: "Property '{0}': no known coercion from '{1}' to '{2}'; property skipped",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
 }
