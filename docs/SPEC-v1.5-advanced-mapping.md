@@ -2,7 +2,7 @@
 
 ## Overview
 
-v1.5 prioritizes three features driven by real-world AutoMapper → ForgeMap migration pain. These gaps were identified during the [Docs.LocalizationContentService](https://dev.azure.com/ceapex/Engineering/_git/Docs.LocalizationContentService) migration, where they collectively forced ~130+ lines of manual boilerplate that ForgeMap should be generating.
+v1.5 prioritizes four features driven by real-world AutoMapper → ForgeMap migration pain. These gaps were identified during the [Docs.LocalizationContentService](https://dev.azure.com/ceapex/Engineering/_git/Docs.LocalizationContentService) migration, where they collectively forced ~130+ lines of manual boilerplate that ForgeMap should be generating.
 
 | # | Feature | Issue | Effort | Status |
 |---|---------|-------|--------|--------|
@@ -13,7 +13,7 @@ v1.5 prioritizes three features driven by real-world AutoMapper → ForgeMap mig
 
 ### Deferred to v1.6
 
-The following features were originally planned for v1.5 but have been moved to v1.6 to prioritize migration-blocking issues #89, #90, and #91:
+The following features were originally planned for v1.5 but have been moved to v1.6 to prioritize migration-blocking issues #89, #90, #91, and #93:
 
 | Feature | Issue | Notes |
 |---------|-------|-------|
@@ -655,6 +655,8 @@ public partial void ForgeInto(OrderUpdateDto source, [UseExistingValue] Order ta
 | Code | Severity | Description |
 |------|----------|-------------|
 | **FM0043** | Error | `[AfterForge]` method '{0}' not found on forger class, or has wrong signature. Expected: `void {0}({1} source, {2} destination)` |
+| **FM0044** | Error | `[AfterForge]` and `[ConvertWith]` are mutually exclusive on method '{0}' — `[ConvertWith]` takes full control of the method body |
+| **FM0045** | Error | `[AfterForge]` is not applicable to collection method '{0}' — use element-level `[AfterForge]` on the element forge method instead |
 
 ### Interaction with Existing Features
 
@@ -662,12 +664,12 @@ public partial void ForgeInto(OrderUpdateDto source, [UseExistingValue] Order ta
 |---------|-------------|
 | `[Ignore]` | Properties handled by the callback should be `[Ignore]`d to avoid double-mapping and suppress FM0006 |
 | `[ForgeProperty]` / `[ForgeFrom]` | Executed before the callback — callback can override or augment any auto-mapped values |
-| `[ConvertWith]` | Mutually exclusive — `[ConvertWith]` takes full control of the method body. Emit FM0043 if both are present |
+| `[ConvertWith]` | Mutually exclusive — `[ConvertWith]` takes full control of the method body. Emit FM0044 if both are present |
 | `[ReverseForge]` | Reverse method does NOT inherit `[AfterForge]` — if the reverse also needs a callback, declare `[AfterForge]` on the reverse method separately |
 | `NullHandling` | Callback is only invoked after the null check — never called with null source |
 | Auto-wired nested mappings | Nested mappings execute before the callback |
 | `ExistingTarget = true` | Nested existing-target updates execute before the callback |
-| Collection methods (Feature 3) | `[AfterForge]` is not applicable to collection methods — the pattern doesn't apply (no per-element fixup needed; use element-level `[AfterForge]` instead) |
+| Collection methods (Feature 3) | `[AfterForge]` is not applicable to collection methods (FM0045) — use element-level `[AfterForge]` on the element forge method instead |
 
 ### Behavioral Contract
 
@@ -675,11 +677,11 @@ public partial void ForgeInto(OrderUpdateDto source, [UseExistingValue] Order ta
 |----------|----------|
 | Valid callback method exists | All auto-mapped properties assigned first, then callback invoked |
 | Callback method not found or wrong signature | FM0043 error |
-| `[AfterForge]` + `[ConvertWith]` on same method | FM0043 error (mutually exclusive) |
+| `[AfterForge]` + `[ConvertWith]` on same method | FM0044 error (mutually exclusive) |
 | Source is null | Callback NOT invoked (null check occurs first) |
 | Callback throws | Exception propagates — no wrapping |
 | Callback modifies auto-mapped properties | Allowed — callback has final say |
-| `[AfterForge]` on collection method | FM0043 error (not applicable) |
+| `[AfterForge]` on collection method | FM0045 error (not applicable) |
 
 ### Competitor Comparison
 
@@ -702,6 +704,8 @@ public partial void ForgeInto(OrderUpdateDto source, [UseExistingValue] Order ta
 | FM0041 | Error | `ForgeMap` | Collection methods | Collection method '{0}' declared but no matching element forge method found |
 | FM0042 | Error | `ForgeMap` | Collection methods | Collection method '{0}' is ambiguous: multiple element forge methods match |
 | FM0043 | Error | `ForgeMap` | `[AfterForge]` | `[AfterForge]` method '{0}' not found or has wrong signature |
+| FM0044 | Error | `ForgeMap` | `[AfterForge]` | `[AfterForge]` and `[ConvertWith]` are mutually exclusive |
+| FM0045 | Error | `ForgeMap` | `[AfterForge]` | `[AfterForge]` is not applicable to collection methods |
 
 ---
 
