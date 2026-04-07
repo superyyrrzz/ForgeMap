@@ -145,7 +145,7 @@ The generator must validate that the destination type is constructible when `Coa
 
 | Code | Severity | Description |
 |------|----------|-------------|
-| **FM0038** | Error | `CoalesceToNew` requires type '{0}' to have an accessible parameterless constructor (not applicable to recognized collection types, which use type-aware empty expressions) |
+| **FM0038** | Error | `CoalesceToNew` cannot synthesize `new {0}()`: type has no accessible parameterless constructor, or has uninitialized `required` members without `[SetsRequiredMembers]` (not applicable to recognized collection types, which use type-aware empty expressions) |
 
 ### Behavioral Contract
 
@@ -203,7 +203,8 @@ When the generator detects a property pair where the source and destination are 
 | Source Type | Destination Type | Generated Code |
 |-------------|-----------------|----------------|
 | `List<T>` / `IList<T>` / `IEnumerable<T>` / `ICollection<T>` | `HashSet<T>` | `new HashSet<T>(source.Prop)` |
-| `List<T>` / `T[]` | `IReadOnlyList<T>` | `source.Prop.ToList()` (materializes a new list that implements `IReadOnlyList<T>`) |
+| `List<T>` | `IReadOnlyList<T>` | `source.Prop` (implicit — `List<T>` implements `IReadOnlyList<T>`) |
+| `T[]` | `IReadOnlyList<T>` | `source.Prop.ToList()` (materializes a list-backed `IReadOnlyList<T>`) |
 | `List<T>` / `IList<T>` | `ReadOnlyCollection<T>` | `new List<T>(source.Prop).AsReadOnly()` — copies to avoid aliasing |
 | `IEnumerable<T>` / `IReadOnlyList<T>` | `T[]` | `source.Prop.ToArray()` |
 | `T[]` / `IEnumerable<T>` | `List<T>` | `new List<T>(source.Prop)` |
@@ -659,7 +660,7 @@ public partial void ForgeInto(OrderUpdateDto source, [UseExistingValue] Order ta
 
 | Code | Severity | Description |
 |------|----------|-------------|
-| **FM0043** | Error | `[AfterForge]` method '{0}' not found on forger class, or has wrong signature. Expected: `void {0}({1} source, {2} destination)` |
+| **FM0043** | Error | `[AfterForge]` method '{0}' not found on forger class, or has wrong signature. Expected: `void {0}({1} source, {2} destination)` for returning forge methods, or `void {0}({1} source, {2} target)` for `ForgeInto` mutation methods |
 | **FM0044** | Error | `[AfterForge]` and `[ConvertWith]` are mutually exclusive on method '{0}' — `[ConvertWith]` takes full control of the method body |
 | **FM0045** | Error | `[AfterForge]` is not applicable to collection method '{0}' — use element-level `[AfterForge]` on the element forge method instead |
 
@@ -703,12 +704,12 @@ public partial void ForgeInto(OrderUpdateDto source, [UseExistingValue] Order ta
 
 | Code | Severity | Category | Feature | Description |
 |------|----------|----------|---------|-------------|
-| FM0038 | Error | `ForgeMap` | `CoalesceToNew` | `CoalesceToNew` requires type '{0}' to have an accessible parameterless constructor |
+| FM0038 | Error | `ForgeMap` | `CoalesceToNew` | `CoalesceToNew` cannot synthesize `new {0}()`: no accessible parameterless constructor, or uninitialized `required` members |
 | FM0039 | Info | `ForgeMap` | Collection coercion | Property '{0}' collection type coerced from '{1}' to '{2}' (disabled by default) |
 | FM0040 | Warning | `ForgeMap` | Collection coercion | Property '{0}': no known coercion from '{1}' to '{2}'; property skipped |
 | FM0041 | Error | `ForgeMap` | Collection methods | Collection method '{0}' declared but no matching element forge method found |
 | FM0042 | Error | `ForgeMap` | Collection methods | Collection method '{0}' is ambiguous: multiple element forge methods match |
-| FM0043 | Error | `ForgeMap` | `[AfterForge]` | `[AfterForge]` method '{0}' not found or has wrong signature |
+| FM0043 | Error | `ForgeMap` | `[AfterForge]` | `[AfterForge]` method '{0}' not found or has wrong signature (supports both returning and mutation methods) |
 | FM0044 | Error | `ForgeMap` | `[AfterForge]` | `[AfterForge]` and `[ConvertWith]` are mutually exclusive |
 | FM0045 | Error | `ForgeMap` | `[AfterForge]` | `[AfterForge]` is not applicable to collection methods |
 
