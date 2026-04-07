@@ -147,7 +147,7 @@ The generator must validate that the destination type is constructible when `Coa
 |----------|----------|
 | Reference-type property, source is null | `new T()` |
 | Reference-type property, source is non-null | Assign directly (or call forge method) |
-| Nullable value-type property (`T?`), source is null | `default(T)` — same as `CoalesceToDefault` |
+| Nullable value-type property (`T?`), source is null | `default(T?)` (i.e., `null`) — same as `CoalesceToDefault` |
 | Non-nullable value-type property, source is non-null | Assign directly — `CoalesceToNew` has no effect (value types cannot be null) |
 | Collection property, source is null | Empty collection (`new List<T>()`, `new HashSet<T>()`, etc.) |
 | Destination type has no parameterless constructor (or has uninitialized `required` members) | FM0038 error |
@@ -243,7 +243,7 @@ Collection type coercion respects `NullPropertyHandling`:
 |---------|-------------|
 | Inline collection mapping (auto-wiring) | Coercion extends existing inline collection code — element forge methods still called per-element |
 | `[ForgeProperty]` | Explicit property mapping takes precedence; coercion applies to the mapped property pair |
-| `ExistingTarget = true` | Collection coercion is compatible with `CollectionUpdateStrategy.Replace`; for `Add`/`Sync`, the existing collection's type is preserved |
+| `ExistingTarget = true` | Collection coercion is compatible with `CollectionUpdateStrategy.Replace` (coerced collection replaces the existing one). For `Add`/`Sync`, coercion does **not** apply — these strategies operate on the existing target collection in place, so the target collection type is already determined by the destination property. If the source and target element types differ, element-level forge methods are used per item |
 | `[ConvertWith]` | Converter takes full precedence — coercion does not apply |
 | `CoalesceToNew` (Feature 1) | Produces empty target collection type (e.g., `new HashSet<T>()`) when source is null |
 | Standalone collection methods (Feature 3) | Coercion applies to return types of collection methods too |
@@ -441,6 +441,22 @@ var __result = new List<T>(source.Count);  // or source.Length for arrays
 ```
 
 When the source is `IEnumerable<T>` (no known count), no pre-sizing is applied:
+
+```csharp
+var __result = new List<T>();
+```
+
+**Array return types**: When the return type is `T[]` and the source exposes `.Count`/`.Length`, the generator uses a pre-allocated array with indexed assignment (as shown in the `T[]` example above). When the source is `IEnumerable<T>` (no count), the generator falls back to building a `List<T>` and calling `.ToArray()`:
+
+```csharp
+// T[] return type with IEnumerable<T> source (no count available)
+var __result = new global::System.Collections.Generic.List<global::T>();
+foreach (var __item in source)
+{
+    __result.Add(ForgeElement(__item));
+}
+return __result.ToArray();
+```
 
 ```csharp
 var __result = new List<T>();
