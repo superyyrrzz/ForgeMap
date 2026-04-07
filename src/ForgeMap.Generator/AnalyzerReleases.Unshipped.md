@@ -5,4 +5,4 @@
 
 Rule ID | Category | Severity | Notes
 --------|----------|----------|-------
-
+FM0038 | ForgeMap | Error | CoalesceToNew requires accessible parameterless constructor

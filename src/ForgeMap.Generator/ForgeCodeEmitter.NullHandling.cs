@@ -43,7 +43,8 @@ internal sealed partial class ForgeCodeEmitter
         ITypeSymbol destType,
         string destPropertyName,
         string destTypeName,
-        int strategy)
+        int strategy,
+        IMethodSymbol? method = null)
     {
         switch (strategy)
         {
@@ -63,8 +64,159 @@ internal sealed partial class ForgeCodeEmitter
             case 3: // ThrowException
                 return $"{sourceExpr} ?? throw new global::System.ArgumentNullException(\"{destPropertyName}\", \"Cannot assign null source property '{sourceExpr}' to non-nullable destination '{destTypeName}.{destPropertyName}'.\")";
 
+            case 4: // CoalesceToNew — assembly-aware expression generation
+                var newExpr = method != null
+                    ? GenerateCoalesceNewExpression(destType, method)
+                    : GenerateCoalesceDefault(destType);
+                if (newExpr != null)
+                    return $"{sourceExpr} ?? {newExpr}";
+                // FM0038 should have already been reported; fall back to NullForgiving
+                return $"{sourceExpr}!";
+
             default:
                 return $"{sourceExpr}!";
         }
+    }
+
+    /// <summary>
+    /// Validates that CoalesceToNew can synthesize a default for the given destination type.
+    /// Reports FM0038 if the type is a non-collection reference type without an accessible parameterless constructor.
+    /// </summary>
+    private void ValidateCoalesceToNew(
+        ITypeSymbol destType,
+        SourceProductionContext context,
+        IMethodSymbol method)
+    {
+        if (destType.IsValueType) return;
+        if (destType.SpecialType == SpecialType.System_String) return;
+        if (destType is IArrayTypeSymbol) return;
+        if (GenerateEmptyCollectionExpression(destType) != null) return;
+
+        if (destType is INamedTypeSymbol namedType)
+        {
+            if (namedType.IsAbstract || namedType.TypeKind == TypeKind.Interface)
+            {
+                ReportDiagnosticIfNotSuppressed(context,
+                    DiagnosticDescriptors.CoalesceToNewNoConstructor,
+                    method.Locations.FirstOrDefault(),
+                    namedType.ToDisplayString());
+                return;
+            }
+
+            var sameAssembly = SymbolEqualityComparer.Default.Equals(
+                namedType.ContainingAssembly, method.ContainingAssembly);
+            var minAccessibility = sameAssembly ? Accessibility.Internal : Accessibility.Public;
+
+            var hasParameterlessCtor = namedType.InstanceConstructors
+                .Any(c => c.Parameters.Length == 0 && c.DeclaredAccessibility >= minAccessibility);
+            if (!hasParameterlessCtor)
+            {
+                ReportDiagnosticIfNotSuppressed(context,
+                    DiagnosticDescriptors.CoalesceToNewNoConstructor,
+                    method.Locations.FirstOrDefault(),
+                    namedType.ToDisplayString());
+                return;
+            }
+
+            // Check for uninitialized required members (C# 11+), including inherited ones
+            var hasUninitializedRequired = HasUninitializedRequiredMembers(namedType);
+            if (hasUninitializedRequired)
+            {
+                // Check if any accessible parameterless constructor has [SetsRequiredMembers]
+                var hasSetsRequired = namedType.InstanceConstructors
+                    .Where(c => c.Parameters.Length == 0 && c.DeclaredAccessibility >= minAccessibility)
+                    .Any(c => c.GetAttributes()
+                        .Any(a => a.AttributeClass?.Name == "SetsRequiredMembersAttribute"
+                            || a.AttributeClass?.ToDisplayString() == "System.Diagnostics.CodeAnalysis.SetsRequiredMembersAttribute"));
+                if (!hasSetsRequired)
+                {
+                    ReportDiagnosticIfNotSuppressed(context,
+                        DiagnosticDescriptors.CoalesceToNewNoConstructor,
+                        method.Locations.FirstOrDefault(),
+                        namedType.ToDisplayString());
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Generates the CoalesceToNew fallback expression for a destination type.
+    /// Uses GenerateCoalesceDefault first (public ctor), then falls back to assembly-aware
+    /// internal ctor check. Returns null if no suitable expression can be generated.
+    /// </summary>
+    private static string? GenerateCoalesceNewExpression(ITypeSymbol destType, IMethodSymbol method)
+    {
+        // Try collection expressions first — handles interfaces like IReadOnlyList<T>
+        var collExpr = GenerateEmptyCollectionExpression(destType);
+        if (collExpr != null)
+            return collExpr;
+
+        var expr = GenerateCoalesceDefault(destType);
+        if (expr != null)
+        {
+            // GenerateCoalesceDefault returns new T() for public ctors — verify no required members
+            if (destType is INamedTypeSymbol publicNamedType && HasUninitializedRequiredMembers(publicNamedType))
+            {
+                var ctor = publicNamedType.InstanceConstructors
+                    .FirstOrDefault(c => c.Parameters.Length == 0 && c.DeclaredAccessibility == Accessibility.Public);
+                if (ctor != null)
+                {
+                    var hasSetsRequired = ctor.GetAttributes()
+                        .Any(a => a.AttributeClass?.Name == "SetsRequiredMembersAttribute"
+                            || a.AttributeClass?.ToDisplayString() == "System.Diagnostics.CodeAnalysis.SetsRequiredMembersAttribute");
+                    if (!hasSetsRequired)
+                        return null; // FM0038 already reported by ValidateCoalesceToNew
+                }
+            }
+            return expr;
+        }
+
+        // GenerateCoalesceDefault uses Public-only; check if internal ctor is accessible (same assembly)
+        if (destType is INamedTypeSymbol namedType
+            && !namedType.IsAbstract && namedType.TypeKind != TypeKind.Interface
+            && SymbolEqualityComparer.Default.Equals(namedType.ContainingAssembly, method.ContainingAssembly))
+        {
+            // Check required members for internal ctors too
+            if (HasUninitializedRequiredMembers(namedType))
+            {
+                var ctor = namedType.InstanceConstructors
+                    .FirstOrDefault(c => c.Parameters.Length == 0 && c.DeclaredAccessibility >= Accessibility.Internal);
+                if (ctor != null)
+                {
+                    var hasSetsRequired = ctor.GetAttributes()
+                        .Any(a => a.AttributeClass?.Name == "SetsRequiredMembersAttribute"
+                            || a.AttributeClass?.ToDisplayString() == "System.Diagnostics.CodeAnalysis.SetsRequiredMembersAttribute");
+                    if (!hasSetsRequired)
+                        return null;
+                }
+            }
+
+            var hasInternalCtor = namedType.InstanceConstructors
+                .Any(c => c.Parameters.Length == 0 && c.DeclaredAccessibility >= Accessibility.Internal);
+            if (hasInternalCtor)
+                return $"new {namedType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}()";
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Checks if a type or any of its base types have uninitialized required members.
+    /// </summary>
+    private static bool HasUninitializedRequiredMembers(INamedTypeSymbol type)
+    {
+        var current = type;
+        while (current != null)
+        {
+            foreach (var member in current.GetMembers())
+            {
+                if (member is IPropertySymbol prop && prop.IsRequired)
+                    return true;
+                if (member is IFieldSymbol field && field.IsRequired)
+                    return true;
+            }
+            current = current.BaseType;
+        }
+        return false;
     }
 }

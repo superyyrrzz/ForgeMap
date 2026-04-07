@@ -304,4 +304,12 @@ internal static class DiagnosticDescriptors
         category: Category,
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor CoalesceToNewNoConstructor = new(
+        id: "FM0038",
+        title: "CoalesceToNew requires accessible parameterless constructor",
+        messageFormat: "CoalesceToNew cannot synthesize 'new {0}()': type has no accessible parameterless constructor, or has uninitialized 'required' members without [SetsRequiredMembers]",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
 }

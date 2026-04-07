@@ -243,6 +243,8 @@ internal static class TypeAnalysisHelper
 
         // Named types with parameterless constructor → new FQN()
         // Skip abstract types and interfaces — they cannot be instantiated
+        // Use Public accessibility: this is a shared helper without assembly context.
+        // Same-assembly internal ctors are handled by ValidateCoalesceToNew separately.
         if (destType is INamedTypeSymbol namedType && !namedType.IsAbstract && namedType.TypeKind != TypeKind.Interface)
         {
             var hasParameterlessCtor = namedType.InstanceConstructors

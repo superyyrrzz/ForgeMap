@@ -21,7 +21,8 @@ internal sealed partial class ForgeCodeEmitter
         string sourceExpr,
         ForgerInfo forger,
         SourceProductionContext context,
-        IMethodSymbol method)
+        IMethodSymbol method,
+        Dictionary<string, int> nullPropertyHandlingOverrides)
     {
         // Don't auto-wire scalar types (primitives, enums, strings)
         if (IsScalarType(sourcePropertyType) || IsScalarType(destProp.Type))
@@ -46,7 +47,25 @@ internal sealed partial class ForgeCodeEmitter
             if (sourcePropertyType.IsReferenceType)
             {
                 var localVarName = $"__autoWire_{destProp.Name}";
-                var nullFallback = destProp.Type.IsValueType ? "default" : "null!";
+                string nullFallback;
+                if (destProp.Type.IsValueType)
+                {
+                    nullFallback = "default";
+                }
+                else
+                {
+                    var strategy = ResolveNullPropertyHandling(destProp.Name, nullPropertyHandlingOverrides);
+                    if (strategy == 4) // CoalesceToNew
+                    {
+                        ValidateCoalesceToNew(destProp.Type, context, method);
+                        var newExpr = GenerateCoalesceNewExpression(destProp.Type, method);
+                        nullFallback = newExpr ?? "null!";
+                    }
+                    else
+                    {
+                        nullFallback = "null!";
+                    }
+                }
                 return $"{sourceExpr} is {{ }} {localVarName} ? {matchedMethod.Name}({localVarName}) : {nullFallback}";
             }
             else
@@ -257,7 +276,7 @@ internal sealed partial class ForgeCodeEmitter
                 block.Append($"            }}");
                 preConstructionBlocks?.Add(block.ToString());
 
-                if (strategy == 2) // CoalesceToDefault
+                if (strategy == 2 || strategy == 4) // CoalesceToDefault / CoalesceToNew
                 {
                     var defaultExpr = GenerateEmptyCollectionExpression(destProp.Type) ?? GenerateCoalesceDefault(destProp.Type);
                     return $"__collInit_{destProp.Name} ?? {defaultExpr ?? $"new {destProp.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}()"}";
@@ -291,7 +310,7 @@ internal sealed partial class ForgeCodeEmitter
                 postBlock.AppendLine($"            }}");
                 postBlock.AppendLine($"            else");
                 postBlock.AppendLine($"            {{");
-                if (strategy == 2) // CoalesceToDefault
+                if (strategy == 2 || strategy == 4) // CoalesceToDefault / CoalesceToNew
                 {
                     var defaultExpr = GenerateEmptyCollectionExpression(destProp.Type) ?? GenerateCoalesceDefault(destProp.Type);
                     postBlock.AppendLine($"                result.{destProp.Name} = {defaultExpr ?? $"new {destProp.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}()"};");
@@ -393,6 +412,7 @@ internal sealed partial class ForgeCodeEmitter
         switch (strategy)
         {
             case 2: // CoalesceToDefault
+            case 4: // CoalesceToNew — same as CoalesceToDefault for collections
                 var defaultExpr = GenerateEmptyCollectionExpression(destProp.Type) ?? GenerateCoalesceDefault(destProp.Type);
                 return defaultExpr ?? "null!";
             case 3: // ThrowException
@@ -529,7 +549,7 @@ internal sealed partial class ForgeCodeEmitter
                 sb.AppendLine($"            }}");
                 sb.AppendLine($"            else");
                 sb.AppendLine($"            {{");
-                if (strategy == 2)
+                if (strategy == 2 || strategy == 4) // CoalesceToDefault / CoalesceToNew
                 {
                     var defaultExpr = GenerateEmptyCollectionExpression(destProp.Type) ?? GenerateCoalesceDefault(destProp.Type);
                     sb.AppendLine($"                {destVarName}.{destProp.Name} = {defaultExpr ?? $"new {destProp.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}()"};");

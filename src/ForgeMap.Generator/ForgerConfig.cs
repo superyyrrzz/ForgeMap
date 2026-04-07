@@ -21,7 +21,7 @@ internal sealed class ForgerConfig
     /// <summary>Diagnostic IDs to suppress for this forger (e.g. "FM0005").</summary>
     public HashSet<string> SuppressDiagnostics { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>0 = NullForgiving (default), 1 = SkipNull, 2 = CoalesceToDefault, 3 = ThrowException</summary>
+    /// <summary>0 = NullForgiving (default), 1 = SkipNull, 2 = CoalesceToDefault, 3 = ThrowException, 4 = CoalesceToNew</summary>
     public int NullPropertyHandling { get; set; }
 
     /// <summary>Whether to auto-discover matching forge methods for nested complex properties. Default true.</summary>
@@ -83,7 +83,7 @@ internal readonly struct ResolvedMethodConfig
     public Dictionary<string, string> ForgeWithMappings { get; }
     public List<string> BeforeForgeHooks { get; }
     public List<string> AfterForgeHooks { get; }
-    /// <summary>Per-property NullPropertyHandling overrides. Key = dest property name, Value = enum int value (0-3). Only explicitly set overrides are included.</summary>
+    /// <summary>Per-property NullPropertyHandling overrides. Key = dest property name, Value = enum int value (0-4). Only explicitly set overrides are included.</summary>
     public Dictionary<string, int> NullPropertyHandlingOverrides { get; }
     /// <summary>Properties marked with ExistingTarget = true. Key = dest property name.</summary>
     public Dictionary<string, ExistingTargetConfig> ExistingTargetProperties { get; }

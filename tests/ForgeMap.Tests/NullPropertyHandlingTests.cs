@@ -703,6 +703,357 @@ public class NullPropertyHandlingTests
         Assert.Contains(@"source.FullName ?? """"", generatedCode);
     }
 
+    [Fact]
+    public void CoalesceToNew_String_GeneratesEmptyString()
+    {
+        var source = """
+            #nullable enable
+            using ForgeMap;
+
+            namespace TestNamespace
+            {
+                public class Source
+                {
+                    public string? Name { get; set; }
+                }
+
+                public class Dest
+                {
+                    public string Name { get; set; } = "";
+                }
+
+                [ForgeMap(NullPropertyHandling = NullPropertyHandling.CoalesceToNew)]
+                public partial class TestForger
+                {
+                    public partial Dest Forge(Source source);
+                }
+            }
+            """;
+
+        var (diagnostics, generatedTrees) = RunGenerator(source);
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        var generatedCode = generatedTrees[0].GetText().ToString();
+        Debug.WriteLine($"Generated code:\n{generatedCode}");
+
+        // CoalesceToNew for string produces same as CoalesceToDefault: ?? ""
+        Assert.Contains(@"source.Name ?? """"", generatedCode);
+    }
+
+    [Fact]
+    public void CoalesceToNew_ReferenceType_GeneratesNewInstance()
+    {
+        var source = """
+            #nullable enable
+            using ForgeMap;
+
+            namespace TestNamespace
+            {
+                public class Inner
+                {
+                    public string Value { get; set; } = "";
+                }
+
+                public class Source
+                {
+                    public Inner? Detail { get; set; }
+                }
+
+                public class Dest
+                {
+                    public Inner Detail { get; set; } = new();
+                }
+
+                [ForgeMap(NullPropertyHandling = NullPropertyHandling.CoalesceToNew)]
+                public partial class TestForger
+                {
+                    public partial Dest Forge(Source source);
+                }
+            }
+            """;
+
+        var (diagnostics, generatedTrees) = RunGenerator(source);
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        var generatedCode = generatedTrees[0].GetText().ToString();
+        Debug.WriteLine($"Generated code:\n{generatedCode}");
+
+        Assert.Contains("source.Detail ?? new global::TestNamespace.Inner()", generatedCode);
+    }
+
+    [Fact]
+    public void CoalesceToNew_List_GeneratesNewList()
+    {
+        var source = """
+            #nullable enable
+            using ForgeMap;
+            using System.Collections.Generic;
+
+            namespace TestNamespace
+            {
+                public class Source
+                {
+                    public List<string>? Tags { get; set; }
+                }
+
+                public class Dest
+                {
+                    public List<string> Tags { get; set; } = new();
+                }
+
+                [ForgeMap(NullPropertyHandling = NullPropertyHandling.CoalesceToNew)]
+                public partial class TestForger
+                {
+                    public partial Dest Forge(Source source);
+                }
+            }
+            """;
+
+        var (diagnostics, generatedTrees) = RunGenerator(source);
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        var generatedCode = generatedTrees[0].GetText().ToString();
+        Debug.WriteLine($"Generated code:\n{generatedCode}");
+
+        Assert.Contains("source.Tags ?? new", generatedCode);
+    }
+
+    [Fact]
+    public void CoalesceToNew_Array_GeneratesArrayEmpty()
+    {
+        var source = """
+            #nullable enable
+            using ForgeMap;
+
+            namespace TestNamespace
+            {
+                public class Source
+                {
+                    public string[]? Items { get; set; }
+                }
+
+                public class Dest
+                {
+                    public string[] Items { get; set; } = System.Array.Empty<string>();
+                }
+
+                [ForgeMap(NullPropertyHandling = NullPropertyHandling.CoalesceToNew)]
+                public partial class TestForger
+                {
+                    public partial Dest Forge(Source source);
+                }
+            }
+            """;
+
+        var (diagnostics, generatedTrees) = RunGenerator(source);
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        var generatedCode = generatedTrees[0].GetText().ToString();
+        Debug.WriteLine($"Generated code:\n{generatedCode}");
+
+        Assert.Contains("source.Items ?? global::System.Array.Empty<string>()", generatedCode);
+    }
+
+    [Fact]
+    public void CoalesceToNew_WithForgeMethod_GeneratesNewDestination()
+    {
+        var source = """
+            #nullable enable
+            using ForgeMap;
+
+            namespace TestNamespace
+            {
+                public class SourceInner
+                {
+                    public string Value { get; set; } = "";
+                }
+
+                public class DestInner
+                {
+                    public string Value { get; set; } = "";
+                }
+
+                public class Source
+                {
+                    public SourceInner? Detail { get; set; }
+                }
+
+                public class Dest
+                {
+                    public DestInner Detail { get; set; } = new();
+                }
+
+                [ForgeMap(NullPropertyHandling = NullPropertyHandling.CoalesceToNew)]
+                public partial class TestForger
+                {
+                    public partial Dest Forge(Source source);
+                    public partial DestInner ForgeInner(SourceInner source);
+                }
+            }
+            """;
+
+        var (diagnostics, generatedTrees) = RunGenerator(source);
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        var generatedCode = generatedTrees[0].GetText().ToString();
+        Debug.WriteLine($"Generated code:\n{generatedCode}");
+
+        // CoalesceToNew with forge method: non-null calls forge, null produces new TDest()
+        Assert.Contains("__autoWire_Detail", generatedCode);
+        Assert.Contains("new global::TestNamespace.DestInner()", generatedCode);
+    }
+
+    [Fact]
+    public void CoalesceToNew_NoParameterlessConstructor_EmitsFM0038()
+    {
+        var source = """
+            #nullable enable
+            using ForgeMap;
+
+            namespace TestNamespace
+            {
+                public class Inner
+                {
+                    public Inner(string required) { Value = required; }
+                    public string Value { get; set; }
+                }
+
+                public class Source
+                {
+                    public Inner? Detail { get; set; }
+                }
+
+                public class Dest
+                {
+                    public Inner Detail { get; set; }
+                }
+
+                [ForgeMap(NullPropertyHandling = NullPropertyHandling.CoalesceToNew)]
+                public partial class TestForger
+                {
+                    public partial Dest Forge(Source source);
+                }
+            }
+            """;
+
+        var (diagnostics, _) = RunGenerator(source);
+
+        var fm0038 = diagnostics.Where(d => d.Id == "FM0038").ToList();
+        Assert.NotEmpty(fm0038);
+        Assert.Contains("Inner", fm0038[0].GetMessage());
+    }
+
+    [Fact]
+    public void CoalesceToNew_RequiredMembers_EmitsFM0038()
+    {
+        var source = """
+            #nullable enable
+            using ForgeMap;
+
+            namespace TestNamespace
+            {
+                public class Inner
+                {
+                    public required string Name { get; set; }
+                    public string Value { get; set; } = "";
+                }
+
+                public class Source
+                {
+                    public Inner? Detail { get; set; }
+                }
+
+                public class Dest
+                {
+                    public Inner Detail { get; set; }
+                }
+
+                [ForgeMap(NullPropertyHandling = NullPropertyHandling.CoalesceToNew)]
+                public partial class TestForger
+                {
+                    public partial Dest Forge(Source source);
+                }
+            }
+            """;
+
+        var (diagnostics, _) = RunGenerator(source);
+
+        var fm0038 = diagnostics.Where(d => d.Id == "FM0038").ToList();
+        Assert.NotEmpty(fm0038);
+        Assert.Contains("Inner", fm0038[0].GetMessage());
+    }
+
+    [Fact]
+    public void ForgeInto_CoalesceToNew_GeneratesCoalesce()
+    {
+        var source = """
+            #nullable enable
+            using ForgeMap;
+
+            namespace TestNamespace
+            {
+                public class Source
+                {
+                    public string? Name { get; set; }
+                }
+
+                public class Dest
+                {
+                    public string Name { get; set; } = "";
+                }
+
+                [ForgeMap(NullPropertyHandling = NullPropertyHandling.CoalesceToNew)]
+                public partial class TestForger
+                {
+                    public partial void ForgeInto(Source source, [UseExistingValue] Dest dest);
+                }
+            }
+            """;
+
+        var (diagnostics, generatedTrees) = RunGenerator(source);
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        var generatedCode = generatedTrees[0].GetText().ToString();
+        Debug.WriteLine($"Generated code:\n{generatedCode}");
+
+        Assert.Contains(@"dest.Name = source.Name ?? """";", generatedCode);
+    }
+
+    [Fact]
+    public void CoalesceToNew_PerPropertyOverride()
+    {
+        var source = """
+            #nullable enable
+            using ForgeMap;
+
+            namespace TestNamespace
+            {
+                public class Source
+                {
+                    public string? Name { get; set; }
+                    public string? Title { get; set; }
+                }
+
+                public class Dest
+                {
+                    public string Name { get; set; } = "";
+                    public string Title { get; set; } = "";
+                }
+
+                [ForgeMap]
+                public partial class TestForger
+                {
+                    [ForgeProperty("Name", "Name", NullPropertyHandling = NullPropertyHandling.CoalesceToNew)]
+                    public partial Dest Forge(Source source);
+                }
+            }
+            """;
+
+        var (diagnostics, generatedTrees) = RunGenerator(source);
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        var generatedCode = generatedTrees[0].GetText().ToString();
+        Debug.WriteLine($"Generated code:\n{generatedCode}");
+
+        // Name: CoalesceToNew → ?? ""
+        Assert.Contains(@"source.Name ?? """"", generatedCode);
+        // Title: default NullForgiving → source.Title!
+        Assert.Contains("source.Title!", generatedCode);
+    }
+
     private static (IReadOnlyList<Diagnostic> Diagnostics, IReadOnlyList<SyntaxTree> GeneratedTrees) RunGenerator(string source)
     {
         var syntaxTree = CSharpSyntaxTree.ParseText(source);
