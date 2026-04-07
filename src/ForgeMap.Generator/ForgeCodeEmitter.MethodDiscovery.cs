@@ -122,10 +122,11 @@ internal sealed partial class ForgeCodeEmitter
     /// </summary>
     private void ReportHooksNotSupportedIfPresent(IMethodSymbol method, SourceProductionContext context, bool isCollectionMethod = false)
     {
-        var hasBeforeForge = _beforeForgeAttributeSymbol != null && method.GetAttributes().Any(a =>
+        var attrs = GetCachedAttributes(method);
+        var hasBeforeForge = _beforeForgeAttributeSymbol != null && attrs.Any(a =>
             SymbolEqualityComparer.Default.Equals(a.AttributeClass, _beforeForgeAttributeSymbol));
 
-        var hasAfterForge = _afterForgeAttributeSymbol != null && method.GetAttributes().Any(a =>
+        var hasAfterForge = _afterForgeAttributeSymbol != null && attrs.Any(a =>
             SymbolEqualityComparer.Default.Equals(a.AttributeClass, _afterForgeAttributeSymbol));
 
         if (!hasBeforeForge && !hasAfterForge)
@@ -165,15 +166,18 @@ internal sealed partial class ForgeCodeEmitter
     /// </summary>
     private IMethodSymbol? FindForgeIntoMethod(INamedTypeSymbol forgerType, ITypeSymbol sourcePropertyType, ITypeSymbol destPropertyType)
     {
-        return forgerType.GetMembers()
-            .OfType<IMethodSymbol>()
-            .FirstOrDefault(m =>
-                m.IsPartialDefinition &&
-                m.ReturnsVoid &&
+        foreach (var m in GetPartialMethods(forgerType))
+        {
+            if (m.ReturnsVoid &&
                 m.Parameters.Length == 2 &&
                 SymbolEqualityComparer.Default.Equals(m.Parameters[0].Type, sourcePropertyType) &&
                 HasUseExistingValueAttribute(m.Parameters[1]) &&
-                SymbolEqualityComparer.Default.Equals(m.Parameters[1].Type, destPropertyType));
+                SymbolEqualityComparer.Default.Equals(m.Parameters[1].Type, destPropertyType))
+            {
+                return m;
+            }
+        }
+        return null;
     }
 
     /// <summary>
@@ -181,16 +185,20 @@ internal sealed partial class ForgeCodeEmitter
     /// </summary>
     private List<IMethodSymbol> FindAutoWireForgeIntoMethodCandidates(INamedTypeSymbol forgerType, ITypeSymbol sourcePropertyType, ITypeSymbol destPropertyType)
     {
-        return forgerType.GetMembers()
-            .OfType<IMethodSymbol>()
-            .Where(m =>
-                m.IsPartialDefinition &&
-                m.ReturnsVoid &&
+        var partialMethods = GetPartialMethods(forgerType);
+        var result = new List<IMethodSymbol>();
+        foreach (var m in partialMethods)
+        {
+            if (m.ReturnsVoid &&
                 m.Parameters.Length == 2 &&
                 SymbolEqualityComparer.Default.Equals(m.Parameters[0].Type, sourcePropertyType) &&
                 HasUseExistingValueAttribute(m.Parameters[1]) &&
                 SymbolEqualityComparer.Default.Equals(m.Parameters[1].Type, destPropertyType))
-            .ToList();
+            {
+                result.Add(m);
+            }
+        }
+        return result;
     }
 
     /// <summary>
@@ -211,19 +219,29 @@ internal sealed partial class ForgeCodeEmitter
     /// <summary>
     /// Finds all partial forge method candidates on the forger class that accept the given source type
     /// and return the given destination type. Used for auto-wiring nested properties.
+    /// Results are cached per (forgerType, sourcePropertyType, destPropertyType) tuple.
     /// </summary>
-    private static List<IMethodSymbol> FindAutoWireForgeMethodCandidates(
+    private List<IMethodSymbol> FindAutoWireForgeMethodCandidates(
         INamedTypeSymbol forgerType, ITypeSymbol sourcePropertyType, ITypeSymbol destPropertyType)
     {
-        return forgerType.GetMembers()
-            .OfType<IMethodSymbol>()
-            .Where(m =>
-                m.IsPartialDefinition &&
-                m.Parameters.Length == 1 &&
+        var key = (forgerType, sourcePropertyType, destPropertyType);
+        if (_autoWireCache.TryGetValue(key, out var cached))
+            return cached;
+
+        var partialMethods = GetPartialMethods(forgerType);
+        var result = new List<IMethodSymbol>();
+        foreach (var m in partialMethods)
+        {
+            if (m.Parameters.Length == 1 &&
                 !m.ReturnsVoid &&
                 SymbolEqualityComparer.Default.Equals(m.Parameters[0].Type, sourcePropertyType) &&
                 SymbolEqualityComparer.Default.Equals(m.ReturnType, destPropertyType))
-            .ToList();
+            {
+                result.Add(m);
+            }
+        }
+        _autoWireCache[key] = result;
+        return result;
     }
 
     /// <summary>
@@ -233,14 +251,19 @@ internal sealed partial class ForgeCodeEmitter
     private static List<IMethodSymbol> FindReverseForgeMethodCandidates(
         INamedTypeSymbol forgerType, ITypeSymbol sourcePropertyType, ITypeSymbol destPropertyType)
     {
-        return forgerType.GetMembers()
-            .OfType<IMethodSymbol>()
-            .Where(m =>
+        var result = new List<IMethodSymbol>();
+        foreach (var member in forgerType.GetMembers())
+        {
+            if (member is IMethodSymbol m &&
                 m.Parameters.Length == 1 &&
                 !m.ReturnsVoid &&
                 SymbolEqualityComparer.Default.Equals(m.Parameters[0].Type, sourcePropertyType) &&
                 SymbolEqualityComparer.Default.Equals(m.ReturnType, destPropertyType))
-            .ToList();
+            {
+                result.Add(m);
+            }
+        }
+        return result;
     }
 
     /// <summary>
@@ -291,7 +314,7 @@ internal sealed partial class ForgeCodeEmitter
     /// type (including interface implementation and nullable reference type variations). Results are
     /// ordered most-derived first; ties broken alphabetically by fully qualified name.
     /// </summary>
-    private static List<IMethodSymbol> DiscoverDerivedForgeMethods(
+    private List<IMethodSymbol> DiscoverDerivedForgeMethods(
         IMethodSymbol baseMethod,
         INamedTypeSymbol baseSourceType,
         INamedTypeSymbol baseDestinationType,
@@ -299,10 +322,10 @@ internal sealed partial class ForgeCodeEmitter
     {
         var candidates = new List<(IMethodSymbol Method, int Depth)>();
 
-        foreach (var member in forger.Symbol.GetMembers().OfType<IMethodSymbol>())
+        foreach (var member in GetPartialMethods(forger.Symbol))
         {
-            // Must be a partial definition with matching method name, one parameter, non-void return
-            if (!member.IsPartialDefinition || member.Parameters.Length != 1 || member.ReturnsVoid)
+            // Must have matching method name, one parameter, non-void return
+            if (member.Parameters.Length != 1 || member.ReturnsVoid)
                 continue;
 
             // Skip the base method itself
