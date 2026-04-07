@@ -240,6 +240,8 @@ Write-Host "`n$mdText"
 Write-Host "`nResults written to: $OutputFile" -ForegroundColor Green
 
 } finally {
-    # Restore the ForgeMap csproj to its original content to avoid dirtying the worktree
+    # Restore the ForgeMap csproj and remove generated NuGet.config to avoid
+    # leaving the worktree in a state where ad-hoc restores would fail.
     [System.IO.File]::WriteAllText($fmCsproj, $originalCsprojContent)
+    if (Test-Path $nugetConfig) { Remove-Item $nugetConfig -Force }
 }
