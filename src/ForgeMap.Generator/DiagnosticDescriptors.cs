@@ -344,4 +344,28 @@ internal static class DiagnosticDescriptors
         category: Category,
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor AfterForgeMethodInvalid = new(
+        id: "FM0043",
+        title: "[AfterForge] method not found or has wrong signature",
+        messageFormat: "[AfterForge] method '{0}' not found on forger class, or has wrong signature; expected: void {0}({1} source, {2} destination)",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor AfterForgeWithConvertWith = new(
+        id: "FM0044",
+        title: "[AfterForge] and [ConvertWith] are mutually exclusive",
+        messageFormat: "[AfterForge] and [ConvertWith] are mutually exclusive on method '{0}' \u2014 [ConvertWith] takes full control of the method body",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor AfterForgeOnCollectionMethod = new(
+        id: "FM0045",
+        title: "[AfterForge] is not applicable to collection methods",
+        messageFormat: "[AfterForge] is not applicable to collection method '{0}' \u2014 use element-level [AfterForge] on the element forge method instead",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
 }

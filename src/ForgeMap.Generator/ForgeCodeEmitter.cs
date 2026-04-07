@@ -277,6 +277,17 @@ internal sealed partial class ForgeCodeEmitter
         // Skip if [ForgeAllDerived] is also present — let GenerateForgeMethod handle the FM0023 error
         if (HasConvertWithAttribute(method) && !HasForgeAllDerivedAttribute(method))
         {
+            // FM0044: [AfterForge] and [ConvertWith] are mutually exclusive
+            var afterForgeHooks = GetAfterForgeHooks(method);
+            if (afterForgeHooks.Count > 0)
+            {
+                ReportDiagnosticIfNotSuppressed(context,
+                    DiagnosticDescriptors.AfterForgeWithConvertWith,
+                    method.Locations.FirstOrDefault(),
+                    method.Name);
+                return string.Empty;
+            }
+
             ReportHooksNotSupportedIfPresent(method, context);
             if (sourceType is INamedTypeSymbol srcNamed && destinationType is INamedTypeSymbol destNamed)
                 return GenerateConvertWithMethod(method, srcNamed, destNamed, forger, context);
@@ -296,7 +307,7 @@ internal sealed partial class ForgeCodeEmitter
         var destElementType = GetCollectionElementType(destinationType);
         if (sourceElementType != null && destElementType != null)
         {
-            ReportHooksNotSupportedIfPresent(method, context);
+            ReportHooksNotSupportedIfPresent(method, context, isCollectionMethod: true);
 
             // Find element forge method by type (standalone collection methods — Feature 3)
             var elementMethods = FindElementForgeMethodsByType(forger.Symbol, sourceElementType, destElementType);
