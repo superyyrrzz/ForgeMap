@@ -119,12 +119,12 @@ internal sealed partial class ForgeCodeEmitter
             var hasUninitializedRequired = HasUninitializedRequiredMembers(namedType);
             if (hasUninitializedRequired)
             {
-                // Check if the parameterless constructor has [SetsRequiredMembers]
-                var ctor = namedType.InstanceConstructors
-                    .First(c => c.Parameters.Length == 0 && c.DeclaredAccessibility >= minAccessibility);
-                var hasSetsRequired = ctor.GetAttributes()
-                    .Any(a => a.AttributeClass?.Name == "SetsRequiredMembersAttribute"
-                        || a.AttributeClass?.ToDisplayString() == "System.Diagnostics.CodeAnalysis.SetsRequiredMembersAttribute");
+                // Check if any accessible parameterless constructor has [SetsRequiredMembers]
+                var hasSetsRequired = namedType.InstanceConstructors
+                    .Where(c => c.Parameters.Length == 0 && c.DeclaredAccessibility >= minAccessibility)
+                    .Any(c => c.GetAttributes()
+                        .Any(a => a.AttributeClass?.Name == "SetsRequiredMembersAttribute"
+                            || a.AttributeClass?.ToDisplayString() == "System.Diagnostics.CodeAnalysis.SetsRequiredMembersAttribute"));
                 if (!hasSetsRequired)
                 {
                     ReportDiagnosticIfNotSuppressed(context,
