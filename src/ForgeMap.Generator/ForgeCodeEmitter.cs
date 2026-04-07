@@ -288,8 +288,16 @@ internal sealed partial class ForgeCodeEmitter
                     method.Locations.FirstOrDefault(),
                     method.Name);
 
-                // Also report FM0018 for [BeforeForge] if present, so it isn't silently dropped
-                ReportHooksNotSupportedIfPresent(method, context);
+                // Also report FM0018 for [BeforeForge] if present, so it isn't silently dropped.
+                // Don't call ReportHooksNotSupportedIfPresent here — it would re-report AfterForge as FM0018.
+                var hasBeforeForgeAttr = _beforeForgeAttributeSymbol != null && method.GetAttributes().Any(a =>
+                    SymbolEqualityComparer.Default.Equals(a.AttributeClass, _beforeForgeAttributeSymbol));
+                if (hasBeforeForgeAttr)
+                {
+                    ReportDiagnosticIfNotSuppressed(context,
+                        DiagnosticDescriptors.HooksNotSupportedOnMethodKind,
+                        method.Locations.FirstOrDefault());
+                }
 
                 // Emit a minimal throwing body so the partial method still compiles
                 if (!method.ReturnsVoid && destinationType != null)

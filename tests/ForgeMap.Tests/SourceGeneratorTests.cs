@@ -5776,6 +5776,9 @@ public partial class TestForger
         var error = diagnostics.FirstOrDefault(d => d.Id == "FM0044");
         Assert.NotNull(error);
         Assert.Equal(DiagnosticSeverity.Error, error.Severity);
+
+        // Should not emit stray FM0018 for the AfterForge that's already reported as FM0044
+        Assert.DoesNotContain(diagnostics, d => d.Id == "FM0018");
     }
 
     private static (IReadOnlyList<Diagnostic> Diagnostics, IReadOnlyList<SyntaxTree> GeneratedTrees) RunGenerator(string source)
