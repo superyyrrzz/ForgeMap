@@ -477,11 +477,11 @@ public partial class NotificationForger
 
 // AFTER (ForgeMap v1.4+) — member-based (DI-injected converter)
 [ForgeMap]
-public partial class NotificationForger
+public partial class NotificationForgerWithDi
 {
     private readonly SendEventRequestConverter _converter;
 
-    public NotificationForger(SendEventRequestConverter converter) => _converter = converter;
+    public NotificationForgerWithDi(SendEventRequestConverter converter) => _converter = converter;
 
     [ConvertWith(nameof(_converter))]
     public partial FailedNotificationStorageModel Forge(SendEventRequest source);
