@@ -100,8 +100,12 @@ internal sealed partial class ForgeCodeEmitter
                 return;
             }
 
+            var sameAssembly = SymbolEqualityComparer.Default.Equals(
+                namedType.ContainingAssembly, method.ContainingAssembly);
+            var minAccessibility = sameAssembly ? Accessibility.Internal : Accessibility.Public;
+
             var hasParameterlessCtor = namedType.InstanceConstructors
-                .Any(c => c.Parameters.Length == 0 && c.DeclaredAccessibility == Accessibility.Public);
+                .Any(c => c.Parameters.Length == 0 && c.DeclaredAccessibility >= minAccessibility);
             if (!hasParameterlessCtor)
             {
                 ReportDiagnosticIfNotSuppressed(context,
@@ -117,7 +121,7 @@ internal sealed partial class ForgeCodeEmitter
             {
                 // Check if the parameterless constructor has [SetsRequiredMembers]
                 var ctor = namedType.InstanceConstructors
-                    .First(c => c.Parameters.Length == 0 && c.DeclaredAccessibility == Accessibility.Public);
+                    .First(c => c.Parameters.Length == 0 && c.DeclaredAccessibility >= minAccessibility);
                 var hasSetsRequired = ctor.GetAttributes()
                     .Any(a => a.AttributeClass?.Name == "SetsRequiredMembersAttribute"
                         || a.AttributeClass?.ToDisplayString() == "System.Diagnostics.CodeAnalysis.SetsRequiredMembersAttribute");
