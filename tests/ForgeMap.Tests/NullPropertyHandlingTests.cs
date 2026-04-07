@@ -939,6 +939,46 @@ public class NullPropertyHandlingTests
     }
 
     [Fact]
+    public void CoalesceToNew_RequiredMembers_EmitsFM0038()
+    {
+        var source = """
+            #nullable enable
+            using ForgeMap;
+
+            namespace TestNamespace
+            {
+                public class Inner
+                {
+                    public required string Name { get; set; }
+                    public string Value { get; set; } = "";
+                }
+
+                public class Source
+                {
+                    public Inner? Detail { get; set; }
+                }
+
+                public class Dest
+                {
+                    public Inner Detail { get; set; }
+                }
+
+                [ForgeMap(NullPropertyHandling = NullPropertyHandling.CoalesceToNew)]
+                public partial class TestForger
+                {
+                    public partial Dest Forge(Source source);
+                }
+            }
+            """;
+
+        var (diagnostics, _) = RunGenerator(source);
+
+        var fm0038 = diagnostics.Where(d => d.Id == "FM0038").ToList();
+        Assert.NotEmpty(fm0038);
+        Assert.Contains("Inner", fm0038[0].GetMessage());
+    }
+
+    [Fact]
     public void ForgeInto_CoalesceToNew_GeneratesCoalesce()
     {
         var source = """
