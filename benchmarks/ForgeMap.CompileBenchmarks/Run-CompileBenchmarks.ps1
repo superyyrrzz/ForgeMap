@@ -76,10 +76,11 @@ $nugetConfig = Join-Path $scriptDir 'NuGet.config'
 # Update the ForgeMap benchmark project to pin this exact version
 $fmCsproj = Join-Path $scriptDir 'ForgeMap' 'ForgeMap.CompileBench.csproj'
 $originalCsprojContent = Get-Content $fmCsproj -Raw
-$csprojContent = $originalCsprojContent -replace 'VersionOverride="[^"]*"', "VersionOverride=""$benchVersion"""
-Set-Content $fmCsproj $csprojContent -Encoding utf8NoBOM
 
 try {
+
+$csprojContent = $originalCsprojContent -replace 'VersionOverride="[^"]*"', "VersionOverride=""$benchVersion"""
+Set-Content $fmCsproj $csprojContent -Encoding utf8NoBOM
 
 Write-Host "  Package written to $localPkgDir"
 

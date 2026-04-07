@@ -34,7 +34,7 @@ pwsh ./Generate-Models.ps1 -Count 25
 ForgeMap.CompileBenchmarks/
 ├── Generate-Models.ps1              # Code generator script
 ├── Run-CompileBenchmarks.ps1        # Benchmark runner
-├── NuGet.config                     # Points to local package source
+├── NuGet.config                     # Generated at runtime (gitignored)
 ├── Shared/Models/                   # Generated models (gitignored)
 ├── LocalPackages/                   # Locally-packed ForgeMap NuGet (gitignored)
 ├── ForgeMap/                        # ForgeMap source-generator project
