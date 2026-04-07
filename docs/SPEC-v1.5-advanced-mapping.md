@@ -555,7 +555,7 @@ A new `[AfterForge]` attribute references a user-defined callback method. The ge
 /// constructed destination object, allowing property fixups or additional logic
 /// before the result is returned.
 /// </summary>
-[AttributeUsage(AttributeTargets.Method, AllowMultiple = false, Inherited = false)]
+[AttributeUsage(AttributeTargets.Method, AllowMultiple = true, Inherited = false)]
 public sealed class AfterForgeAttribute : Attribute
 {
     /// <summary>
@@ -657,6 +657,8 @@ public partial void ForgeInto(OrderUpdateDto source, [UseExistingValue] Order ta
 4. **Interaction with null handling**: The callback is only invoked when the source is non-null and the result/target has been constructed. The null check happens before property assignment, so the callback is never called with a null source
 
 ### Diagnostics
+
+> **Note:** FM0043 and FM0045 refine the existing FM0016 (hook method not found/invalid signature) and FM0018 (`[BeforeForge]`/`[AfterForge]` not supported on enum/collection methods) from SPEC.md. The new codes provide more specific error messages for `[AfterForge]` scenarios; FM0016 and FM0018 remain active for `[BeforeForge]` and other hook-related errors.
 
 | Code | Severity | Description |
 |------|----------|-------------|

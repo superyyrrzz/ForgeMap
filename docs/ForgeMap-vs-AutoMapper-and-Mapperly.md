@@ -28,7 +28,7 @@ The table below compares all three tools across reverse mapping, polymorphic dis
 | **Inline collection mapping** | N/A | Auto-generated | ✅ Generates inline iteration for collection properties, no explicit method needed |
 | **Nested existing-target update** | `Map(src, dest)` updates nested (runtime) | ❌ Not supported ([#884](https://github.com/riok/mapperly/issues/884), [#1311](https://github.com/riok/mapperly/issues/1311)) | ✅ `ExistingTarget = true` with collection sync strategies *(planned v1.4)* |
 | **Dictionary→Object mapping** | ❌ | ❌ Not supported ([#1309](https://github.com/riok/mapperly/issues/1309)) | ✅ `[ForgeDictionary]` with type-safe conversions *(planned v1.5)* |
-| **Diagnostics** | Runtime exceptions | ~95 diagnostics (RMG001–RMG095) | 27 diagnostics (FM0001–FM0027), 10 more planned for v1.4 (FM0028–FM0037), 6 planned for v1.5 (FM0038–FM0043) |
+| **Diagnostics** | Runtime exceptions | ~95 diagnostics (RMG001–RMG095) | 27 diagnostics (FM0001–FM0027), 10 more planned for v1.4 (FM0028–FM0037), 8 planned for v1.5 (FM0038–FM0045), 6 planned for v1.6 (FM0046–FM0051) |
 | **Debuggable generated code** | ❌ | ✅ | ✅ |
 
 ---
@@ -175,7 +175,7 @@ ForgeMap ships with an [**automated migration skill**](../.claude/skills/automap
 
 ## Compile-Time Safety
 
-ForgeMap currently provides **27 diagnostic rules** (FM0001–FM0027) that catch mapping errors at compile time, with an additional 10 rules (FM0028–FM0037) planned for v1.4 and 6 rules (FM0038–FM0043) planned for v1.5:
+ForgeMap currently provides **27 diagnostic rules** (FM0001–FM0027) that catch mapping errors at compile time, with an additional 10 rules (FM0028–FM0037) planned for v1.4, 8 rules (FM0038–FM0045) planned for v1.5, and 6 rules (FM0046–FM0051) planned for v1.6:
 
 - **Structural errors** — non-partial class/method, missing constructors, circular dependencies
 - **Mapping gaps** — unmapped source/destination properties, unmatched constructor parameters
