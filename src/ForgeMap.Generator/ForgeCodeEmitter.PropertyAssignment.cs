@@ -48,7 +48,8 @@ internal sealed partial class ForgeCodeEmitter
         {
             return GenerateForgeWithExpression(
                 destProp, forgingMethodName, sourceParam, sourceType,
-                sourceProperties, propertyMappings, forger, context, method);
+                sourceProperties, propertyMappings, forger, context, method,
+                nullPropertyHandlingOverrides);
         }
 
         // Check if this property has a mapping from [ForgeProperty]
@@ -73,6 +74,7 @@ internal sealed partial class ForgeCodeEmitter
             {
                 var strategy = ResolveNullPropertyHandling(destProp.Name, nullPropertyHandlingOverrides);
                 ReportFM0007(context, method, sourceType.Name, sourcePropName, destProp.ContainingType.Name, destProp.Name);
+                if (strategy == 4) ValidateCoalesceToNew(destProp.Type, context, method);
                 if (strategy == 1 && skipNullAssignments != null) // SkipNull
                 {
                     // Init-only properties cannot be assigned after initialization; fall back to NullForgiving
@@ -149,7 +151,7 @@ internal sealed partial class ForgeCodeEmitter
 
                     var autoWireResult = TryAutoWireForgeMethod(
                         destProp, sourceLeafType, sourceExpr,
-                        forger, context, method);
+                        forger, context, method, nullPropertyHandlingOverrides);
                     if (autoWireResult != null)
                         return autoWireResult;
                 }
@@ -175,6 +177,7 @@ internal sealed partial class ForgeCodeEmitter
                 var strategy = ResolveNullPropertyHandling(destProp.Name, nullPropertyHandlingOverrides);
                 ReportFM0007(context, method, sourceType.Name, sourceProp.Name, destProp.ContainingType.Name, destProp.Name);
                 var sourceExprConv = $"{sourceParam}.{sourceProp.Name}";
+                if (strategy == 4) ValidateCoalesceToNew(destProp.Type, context, method);
                 if (strategy == 1 && skipNullAssignments != null) // SkipNull
                 {
                     // Init-only properties cannot be assigned after initialization; fall back to NullForgiving
@@ -257,6 +260,7 @@ internal sealed partial class ForgeCodeEmitter
                         ? flattenResult.Substring(sourceParam.Length + 2)
                         : destProp.Name;
                 ReportFM0007(context, method, sourceType.Name, flattenSourcePropName, destProp.ContainingType.Name, destProp.Name);
+                if (strategy == 4) ValidateCoalesceToNew(destProp.Type, context, method);
                 if (strategy == 1 && skipNullAssignments != null) // SkipNull
                 {
                     if (destProp.SetMethod?.IsInitOnly == true)
@@ -288,7 +292,7 @@ internal sealed partial class ForgeCodeEmitter
 
             var autoWireResult = TryAutoWireForgeMethod(
                 destProp, sourceProp.Type, $"{sourceParam}.{sourceProp.Name}",
-                forger, context, method);
+                forger, context, method, nullPropertyHandlingOverrides);
             if (autoWireResult != null)
                 return autoWireResult;
         }
@@ -384,7 +388,8 @@ internal sealed partial class ForgeCodeEmitter
         Dictionary<string, string> propertyMappings,
         ForgerInfo forger,
         SourceProductionContext context,
-        IMethodSymbol method)
+        IMethodSymbol method,
+        Dictionary<string, int> nullPropertyHandlingOverrides)
     {
         string? forgeWithSourcePropName = null;
         if (propertyMappings.TryGetValue(destProp.Name, out var mappedSource))
@@ -411,7 +416,24 @@ internal sealed partial class ForgeCodeEmitter
                     if (sourcePropertyType.IsReferenceType)
                     {
                         var localVarName = $"__forgeWith_{destProp.Name}";
-                        var nullFallback = destProp.Type.IsValueType ? "default" : "null!";
+                        string nullFallback;
+                        if (destProp.Type.IsValueType)
+                        {
+                            nullFallback = "default";
+                        }
+                        else
+                        {
+                            var strategy = ResolveNullPropertyHandling(destProp.Name, nullPropertyHandlingOverrides);
+                            if (strategy == 4) // CoalesceToNew
+                            {
+                                var newExpr = GenerateCoalesceDefault(destProp.Type);
+                                nullFallback = newExpr ?? "null!";
+                            }
+                            else
+                            {
+                                nullFallback = "null!";
+                            }
+                        }
                         return $"{sourceExpr} is {{ }} {localVarName} ? {nestedForgeMethod.Name}({localVarName}) : {nullFallback}";
                     }
                     else
@@ -501,6 +523,8 @@ internal sealed partial class ForgeCodeEmitter
                         if (_config.StringToEnum == 1) // TryParse
                             return $"({sourceExpression} is {{ }} __enumStr_{SanitizeVarName(destPropertyName)} && global::System.Enum.TryParse<{enumFqn}>(__enumStr_{SanitizeVarName(destPropertyName)}, true, out var __enumVal_{SanitizeVarName(destPropertyName)}) ? __enumVal_{SanitizeVarName(destPropertyName)} : default({enumFqn}))";
                         return $"({sourceExpression} is {{ }} __enumStr_{SanitizeVarName(destPropertyName)} ? ({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), __enumStr_{SanitizeVarName(destPropertyName)}, true) : default({enumFqn}))";
+                    case 4: // CoalesceToNew — same as CoalesceToDefault for value-type enums
+                        goto case 2;
                     default: // NullForgiving (0) — fall through to default handler
                         break;
                 }
@@ -526,6 +550,8 @@ internal sealed partial class ForgeCodeEmitter
                         return $"{toStrExpr} ?? throw new global::System.ArgumentNullException(\"{destPropertyName}\", \"Cannot assign null source property '{sourceExpression}' to non-nullable destination '{destTypeName}.{destPropertyName}'.\")";
                     case 2: // CoalesceToDefault
                         return $"{toStrExpr} ?? \"\"";
+                    case 4: // CoalesceToNew — same as CoalesceToDefault for string dest
+                        goto case 2;
                     default: // NullForgiving (0)
                         return $"{toStrExpr}!";
                 }
@@ -694,6 +720,9 @@ internal sealed partial class ForgeCodeEmitter
             case 2: // CoalesceToDefault
                 return $"{sourceExpr} is null ? default({enumFqn}) : ({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), {sourceExpr}, true)";
 
+            case 4: // CoalesceToNew — same as CoalesceToDefault for value-type enums
+                goto case 2;
+
             case 3: // ThrowException
                 return $"({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), {sourceExpr} ?? throw new global::System.ArgumentNullException(\"{destPropertyName}\", \"Cannot assign null source property '{sourceExpr}' to non-nullable destination '{destTypeName}.{destPropertyName}'.\"), true)";
 
@@ -744,6 +773,9 @@ internal sealed partial class ForgeCodeEmitter
 
             case 2: // CoalesceToDefault
                 return $"({sourceExpr} is {{ }} __strVal_{varSuffix} && global::System.Enum.TryParse<{enumFqn}>(__strVal_{varSuffix}, true, out var __enum_{varSuffix}) ? __enum_{varSuffix} : default({enumFqn}))";
+
+            case 4: // CoalesceToNew — same as CoalesceToDefault for value-type enums
+                goto case 2;
 
             case 3: // ThrowException
                 return $"({sourceExpr} ?? throw new global::System.ArgumentNullException(\"{destPropertyName}\", \"Cannot assign null source property '{sourceExpr}' to non-nullable destination property '{destPropertyName}'.\")) is {{ }} __strVal_{varSuffix} && global::System.Enum.TryParse<{enumFqn}>(__strVal_{varSuffix}, true, out var __enum_{varSuffix}) ? __enum_{varSuffix} : default({enumFqn})";

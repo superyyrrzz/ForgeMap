@@ -63,8 +63,52 @@ internal sealed partial class ForgeCodeEmitter
             case 3: // ThrowException
                 return $"{sourceExpr} ?? throw new global::System.ArgumentNullException(\"{destPropertyName}\", \"Cannot assign null source property '{sourceExpr}' to non-nullable destination '{destTypeName}.{destPropertyName}'.\")";
 
+            case 4: // CoalesceToNew — same expression as CoalesceToDefault, but FM0038 validation done by caller
+                var newExpr = GenerateCoalesceDefault(destType);
+                if (newExpr != null)
+                    return $"{sourceExpr} ?? {newExpr}";
+                // FM0038 should have already been reported; fall back to NullForgiving
+                return $"{sourceExpr}!";
+
             default:
                 return $"{sourceExpr}!";
+        }
+    }
+
+    /// <summary>
+    /// Validates that CoalesceToNew can synthesize a default for the given destination type.
+    /// Reports FM0038 if the type is a non-collection reference type without an accessible parameterless constructor.
+    /// </summary>
+    private void ValidateCoalesceToNew(
+        ITypeSymbol destType,
+        SourceProductionContext context,
+        IMethodSymbol method)
+    {
+        if (destType.IsValueType) return;
+        if (destType.SpecialType == SpecialType.System_String) return;
+        if (destType is IArrayTypeSymbol) return;
+        if (GenerateEmptyCollectionExpression(destType) != null) return;
+
+        if (destType is INamedTypeSymbol namedType)
+        {
+            if (namedType.IsAbstract || namedType.TypeKind == TypeKind.Interface)
+            {
+                ReportDiagnosticIfNotSuppressed(context,
+                    DiagnosticDescriptors.CoalesceToNewNoConstructor,
+                    method.Locations.FirstOrDefault(),
+                    namedType.ToDisplayString());
+                return;
+            }
+
+            var hasParameterlessCtor = namedType.InstanceConstructors
+                .Any(c => c.Parameters.Length == 0 && c.DeclaredAccessibility >= Accessibility.Internal);
+            if (!hasParameterlessCtor)
+            {
+                ReportDiagnosticIfNotSuppressed(context,
+                    DiagnosticDescriptors.CoalesceToNewNoConstructor,
+                    method.Locations.FirstOrDefault(),
+                    namedType.ToDisplayString());
+            }
         }
     }
 }

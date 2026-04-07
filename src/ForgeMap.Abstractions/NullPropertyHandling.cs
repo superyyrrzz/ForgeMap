@@ -35,5 +35,15 @@ public enum NullPropertyHandling
     /// <c>target.X = source.X ?? throw new ArgumentNullException(nameof(source.X));</c>
     /// Fail-fast behavior for strict null safety using a single-evaluation, coalesce-to-throw pattern.
     /// </summary>
-    ThrowException
+    ThrowException,
+
+    /// <summary>
+    /// Coalesce to a new instance: <c>target.X = source.X ?? new T();</c>
+    /// Similar to <see cref="CoalesceToDefault"/>, but strictly requires an accessible
+    /// parameterless constructor for reference types (emits FM0038 if missing).
+    /// For forge-method properties, emits <c>new TDest()</c> when source is null
+    /// (rather than calling the forge method with a null argument).
+    /// Value types use <c>default(T)</c>; collections use type-aware empty instances.
+    /// </summary>
+    CoalesceToNew
 }

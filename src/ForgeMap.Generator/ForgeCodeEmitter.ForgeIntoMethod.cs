@@ -194,7 +194,24 @@ internal sealed partial class ForgeCodeEmitter
                                 sb.AppendLine($"            if ({sourceExpr} is {{ }} {localVarName})");
                                 sb.AppendLine($"                {destParam}.{destProp.Name} = {nestedForgeMethod.Name}({localVarName});");
                                 sb.AppendLine($"            else");
-                                var nullAssign = destProp.Type.IsValueType ? "default" : "null!";
+                                string nullAssign;
+                                if (destProp.Type.IsValueType)
+                                {
+                                    nullAssign = "default";
+                                }
+                                else
+                                {
+                                    var strategy = ResolveNullPropertyHandling(destProp.Name, nullPropertyHandlingOverrides);
+                                    if (strategy == 4) // CoalesceToNew
+                                    {
+                                        var newExpr = GenerateCoalesceDefault(destProp.Type);
+                                        nullAssign = newExpr ?? "null!";
+                                    }
+                                    else
+                                    {
+                                        nullAssign = "null!";
+                                    }
+                                }
                                 sb.AppendLine($"                {destParam}.{destProp.Name} = {nullAssign};");
                             }
                             else
@@ -238,6 +255,7 @@ internal sealed partial class ForgeCodeEmitter
                 {
                     var strategy = ResolveNullPropertyHandling(destProp.Name, nullPropertyHandlingOverrides);
                     ReportFM0007(context, method, sourceNamedType.Name, sourcePropName, destProp.ContainingType.Name, destProp.Name);
+                    if (strategy == 4) ValidateCoalesceToNew(destProp.Type, context, method);
                     if (strategy == 1) // SkipNull
                     {
                         var localVar = GenerateSafeVariableName(destProp.Type) + "_" + destProp.Name;
@@ -277,7 +295,7 @@ internal sealed partial class ForgeCodeEmitter
                             {
                                 var autoWireResult = TryAutoWireForgeMethod(
                                     destProp, sourceLeafType, sourceExpr,
-                                    forger, context, method);
+                                    forger, context, method, nullPropertyHandlingOverrides);
                                 if (autoWireResult != null)
                                     sb.AppendLine($"            {destParam}.{destProp.Name} = {autoWireResult};");
                             }
@@ -377,6 +395,7 @@ internal sealed partial class ForgeCodeEmitter
                     var strategy = ResolveNullPropertyHandling(destProp.Name, nullPropertyHandlingOverrides);
                     ReportFM0007(context, method, sourceNamedType.Name, sourceProp.Name, destProp.ContainingType.Name, destProp.Name);
                     var sourceExprConv = $"{sourceParam}.{sourceProp.Name}";
+                    if (strategy == 4) ValidateCoalesceToNew(destProp.Type, context, method);
                     if (strategy == 1) // SkipNull
                     {
                         var localVar = GenerateSafeVariableName(destProp.Type) + "_" + destProp.Name;
@@ -490,7 +509,7 @@ internal sealed partial class ForgeCodeEmitter
                     {
                         var autoWireResult = TryAutoWireForgeMethod(
                             destProp, sourceProp.Type, $"{sourceParam}.{sourceProp.Name}",
-                            forger, context, method);
+                            forger, context, method, nullPropertyHandlingOverrides);
                         if (autoWireResult != null)
                             sb.AppendLine($"            {destParam}.{destProp.Name} = {autoWireResult};");
                     }
@@ -604,7 +623,7 @@ internal sealed partial class ForgeCodeEmitter
         sb.Append($"            }}");
 
         // Handle null target property
-        if (strategy == 2) // CoalesceToDefault — create new instance and assign
+        if (strategy == 2 || strategy == 4) // CoalesceToDefault / CoalesceToNew — create new instance and assign
         {
             // Try to find a standard forge method for fallback
             var forgeMethod = FindAutoWireForgeMethodCandidates(forger.Symbol, sourceLeafType, destProp.Type);
@@ -732,7 +751,7 @@ internal sealed partial class ForgeCodeEmitter
 
             // Handle null target collection per NullPropertyHandling
             var strategy = ResolveNullPropertyHandling(destProp.Name, nullPropertyHandlingOverrides);
-            if (strategy == 2) // CoalesceToDefault — create collection and populate
+            if (strategy == 2 || strategy == 4) // CoalesceToDefault / CoalesceToNew — create collection and populate
             {
                 sb.AppendLine();
                 sb.AppendLine($"            else if ({sourceExpr} is {{ }} {srcLocal}_new && {destParam}.{destProp.Name} is null)");
@@ -904,7 +923,7 @@ internal sealed partial class ForgeCodeEmitter
 
             // Handle null target collection per NullPropertyHandling
             var syncStrategy = ResolveNullPropertyHandling(destProp.Name, nullPropertyHandlingOverrides);
-            if (syncStrategy == 2) // CoalesceToDefault — create and populate from source
+            if (syncStrategy == 2 || syncStrategy == 4) // CoalesceToDefault / CoalesceToNew — create and populate from source
             {
                 var syncTypesMatchCoalesce = SymbolEqualityComparer.Default.Equals(srcElemType, destElemType) || CanAssign(srcElemType, destElemType);
                 sb.AppendLine();
