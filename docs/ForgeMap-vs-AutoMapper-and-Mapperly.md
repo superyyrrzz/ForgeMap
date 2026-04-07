@@ -239,7 +239,7 @@ Supports configurable key matching (case-sensitive/insensitive), missing key beh
 | Deep inheritance hierarchies | `[ForgeAllDerived]` auto-discovers subtypes |
 | Mixed nullability across large codebases | 5 strategies (including `CoalesceToNew` in v1.5), per-property control |
 | Nested object flattening | Auto-flattening with `init`/`required` support *(planned v1.6)* |
-| EF Core in-place entity updates | `ExistingTarget = true` with collection sync *(planned v1.4)* |
+| EF Core in-place entity updates | `ExistingTarget = true` with collection sync *(shipped in v1.4)* |
 | Dynamic / dictionary data sources | `[ForgeDictionary]` with compile-time type safety *(planned v1.6)* |
 | Migrating from AutoMapper | 1:1 concept mapping, automated migration skill |
 | Declarative lifecycle hooks | `[BeforeForge]` / `[AfterForge]` with ordered execution |

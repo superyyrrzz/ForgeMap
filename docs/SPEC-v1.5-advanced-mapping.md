@@ -546,7 +546,7 @@ public BuildRun ForgeBuildRun(BuildTableEntity source)
 
 ### Design
 
-A new `[AfterForge]` attribute references a user-defined callback method. The generator handles all matching properties as usual, then calls the callback at the end of the method body, passing the source and the constructed result.
+ForgeMap already includes an `[AfterForge]` attribute (see [SPEC.md](SPEC.md)) for referencing a user-defined callback method. In v1.5, the focus is on adding dedicated diagnostics (FM0043–FM0045) and documenting `[AfterForge]` as the recommended migration pattern for AutoMapper's `.AfterMap()`. The generator handles all matching properties as usual, then calls the callback at the end of the method body, passing the source and the constructed result.
 
 ### API Surface
 
@@ -749,7 +749,7 @@ v1.5 introduces no required source changes and no API-surface breaks. Four behav
 
 3. **Standalone collection methods (opt-in)** — Declaring a partial method with collection types triggers collection method generation. Existing forgers are unaffected unless new partial methods are added.
 
-4. **`[AfterForge]` callback (opt-in)** — New attribute for post-mapping callbacks. No behavior change to existing methods unless `[AfterForge]` is explicitly added.
+4. **`[AfterForge]` migration pattern & diagnostics (opt-in)** — v1.5 adds refined diagnostics (FM0043–FM0045) for the existing `[AfterForge]` attribute and documents it as the recommended migration pattern for AutoMapper's `.AfterMap()`. No behavior change to existing methods unless `[AfterForge]` is explicitly added.
 
 ---
 
