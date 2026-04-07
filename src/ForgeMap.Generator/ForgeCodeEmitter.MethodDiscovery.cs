@@ -128,28 +128,33 @@ internal sealed partial class ForgeCodeEmitter
         var hasAfterForge = _afterForgeAttributeSymbol != null && method.GetAttributes().Any(a =>
             SymbolEqualityComparer.Default.Equals(a.AttributeClass, _afterForgeAttributeSymbol));
 
-        if (hasBeforeForge)
-        {
-            ReportDiagnosticIfNotSuppressed(context,
-                DiagnosticDescriptors.HooksNotSupportedOnMethodKind,
-                method.Locations.FirstOrDefault());
-        }
+        if (!hasBeforeForge && !hasAfterForge)
+            return;
 
-        if (hasAfterForge)
+        if (isCollectionMethod)
         {
-            if (isCollectionMethod)
+            // Collection methods: FM0018 for BeforeForge, FM0045 for AfterForge
+            if (hasBeforeForge)
+            {
+                ReportDiagnosticIfNotSuppressed(context,
+                    DiagnosticDescriptors.HooksNotSupportedOnMethodKind,
+                    method.Locations.FirstOrDefault());
+            }
+
+            if (hasAfterForge)
             {
                 ReportDiagnosticIfNotSuppressed(context,
                     DiagnosticDescriptors.AfterForgeOnCollectionMethod,
                     method.Locations.FirstOrDefault(),
                     method.Name);
             }
-            else
-            {
-                ReportDiagnosticIfNotSuppressed(context,
-                    DiagnosticDescriptors.HooksNotSupportedOnMethodKind,
-                    method.Locations.FirstOrDefault());
-            }
+        }
+        else
+        {
+            // Enum/ConvertWith methods: single FM0018 for any hook presence
+            ReportDiagnosticIfNotSuppressed(context,
+                DiagnosticDescriptors.HooksNotSupportedOnMethodKind,
+                method.Locations.FirstOrDefault());
         }
     }
 
