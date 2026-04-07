@@ -246,7 +246,7 @@ internal static class TypeAnalysisHelper
         if (destType is INamedTypeSymbol namedType && !namedType.IsAbstract && namedType.TypeKind != TypeKind.Interface)
         {
             var hasParameterlessCtor = namedType.InstanceConstructors
-                .Any(c => c.Parameters.Length == 0 && c.DeclaredAccessibility >= Accessibility.Internal);
+                .Any(c => c.Parameters.Length == 0 && c.DeclaredAccessibility == Accessibility.Public);
 
             if (hasParameterlessCtor)
             {

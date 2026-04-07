@@ -101,7 +101,7 @@ internal sealed partial class ForgeCodeEmitter
             }
 
             var hasParameterlessCtor = namedType.InstanceConstructors
-                .Any(c => c.Parameters.Length == 0 && c.DeclaredAccessibility >= Accessibility.Internal);
+                .Any(c => c.Parameters.Length == 0 && c.DeclaredAccessibility == Accessibility.Public);
             if (!hasParameterlessCtor)
             {
                 ReportDiagnosticIfNotSuppressed(context,
@@ -111,15 +111,13 @@ internal sealed partial class ForgeCodeEmitter
                 return;
             }
 
-            // Check for uninitialized required members (C# 11+)
-            var hasUninitializedRequired = namedType.GetMembers()
-                .Any(m => m is IPropertySymbol prop && prop.IsRequired
-                    || m is IFieldSymbol field && field.IsRequired);
+            // Check for uninitialized required members (C# 11+), including inherited ones
+            var hasUninitializedRequired = HasUninitializedRequiredMembers(namedType);
             if (hasUninitializedRequired)
             {
                 // Check if the parameterless constructor has [SetsRequiredMembers]
                 var ctor = namedType.InstanceConstructors
-                    .First(c => c.Parameters.Length == 0 && c.DeclaredAccessibility >= Accessibility.Internal);
+                    .First(c => c.Parameters.Length == 0 && c.DeclaredAccessibility == Accessibility.Public);
                 var hasSetsRequired = ctor.GetAttributes()
                     .Any(a => a.AttributeClass?.Name == "SetsRequiredMembersAttribute"
                         || a.AttributeClass?.ToDisplayString() == "System.Diagnostics.CodeAnalysis.SetsRequiredMembersAttribute");
@@ -132,5 +130,25 @@ internal sealed partial class ForgeCodeEmitter
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// Checks if a type or any of its base types have uninitialized required members.
+    /// </summary>
+    private static bool HasUninitializedRequiredMembers(INamedTypeSymbol type)
+    {
+        var current = type;
+        while (current != null)
+        {
+            foreach (var member in current.GetMembers())
+            {
+                if (member is IPropertySymbol prop && prop.IsRequired)
+                    return true;
+                if (member is IFieldSymbol field && field.IsRequired)
+                    return true;
+            }
+            current = current.BaseType;
+        }
+        return false;
     }
 }
