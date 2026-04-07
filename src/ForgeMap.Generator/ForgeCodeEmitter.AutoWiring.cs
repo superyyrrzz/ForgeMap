@@ -241,8 +241,7 @@ internal sealed partial class ForgeCodeEmitter
                     return null;
                 }
 
-                if (!SymbolEqualityComparer.Default.Equals(srcDict.Value.ValueType, destDict.Value.ValueType)
-                    && !CanAssign(srcDict.Value.ValueType, destDict.Value.ValueType))
+                if (!SymbolEqualityComparer.Default.Equals(srcDict.Value.ValueType, destDict.Value.ValueType))
                 {
                     ReportDiagnosticIfNotSuppressed(context,
                         DiagnosticDescriptors.CollectionCoercionNotSupported,
@@ -289,8 +288,10 @@ internal sealed partial class ForgeCodeEmitter
         var elemCandidates = FindAutoWireForgeMethodCandidates(forger.Symbol, srcElemType, destElemType);
         if (elemCandidates.Count == 0)
         {
-            // No element forge method. Check for pure container coercion (same/assignable element types).
-            if (!SymbolEqualityComparer.Default.Equals(srcElemType, destElemType) && !CanAssign(srcElemType, destElemType))
+            // No element forge method. Check for pure container coercion (identical element types only).
+            // We require exact element type match — assignable-but-different types (e.g., string→object)
+            // would generate invalid code for invariant generic containers.
+            if (!SymbolEqualityComparer.Default.Equals(srcElemType, destElemType))
                 return null;
 
             // Already assignable containers → no coercion needed (CanAssign already handled this upstream)
@@ -676,8 +677,7 @@ internal sealed partial class ForgeCodeEmitter
                     return null;
 
                 if (!SymbolEqualityComparer.Default.Equals(srcDict.Value.KeyType, destDict.Value.KeyType) ||
-                    (!SymbolEqualityComparer.Default.Equals(srcDict.Value.ValueType, destDict.Value.ValueType)
-                     && !CanAssign(srcDict.Value.ValueType, destDict.Value.ValueType)))
+                    !SymbolEqualityComparer.Default.Equals(srcDict.Value.ValueType, destDict.Value.ValueType))
                 {
                     ReportDiagnosticIfNotSuppressed(context,
                         DiagnosticDescriptors.CollectionCoercionNotSupported,
@@ -714,8 +714,8 @@ internal sealed partial class ForgeCodeEmitter
         var elemCandidates = FindAutoWireForgeMethodCandidates(forger.Symbol, srcElemType, destElemType);
         if (elemCandidates.Count == 0)
         {
-            // No element forge method. Check for pure container coercion (same/assignable element types).
-            if (!SymbolEqualityComparer.Default.Equals(srcElemType, destElemType) && !CanAssign(srcElemType, destElemType))
+            // No element forge method. Check for pure container coercion (identical element types only).
+            if (!SymbolEqualityComparer.Default.Equals(srcElemType, destElemType))
                 return null;
 
             if (CanAssign(sourcePropertyType, destProp.Type))

@@ -579,7 +579,7 @@ internal sealed partial class ForgeCodeEmitter
                                 }
                             }
                             else if (elemCandidates.Count == 0 &&
-                                (SymbolEqualityComparer.Default.Equals(srcElemType, destElemType) || CanAssign(srcElemType, destElemType)))
+                                SymbolEqualityComparer.Default.Equals(srcElemType, destElemType))
                             {
                                 // Pure container coercion for ctor parameters (same element types)
                                 var collLocal = $"__coll_{param.Name}";
@@ -598,7 +598,8 @@ internal sealed partial class ForgeCodeEmitter
                                 }
                                 if (coercionExpr != null)
                                 {
-                                    var nullFallback = param.Type.IsValueType ? "default" : "null!";
+                                    var emptyExpr = GenerateEmptyCollectionExpression(param.Type);
+                                    var nullFallback = param.Type.IsValueType ? "default" : (emptyExpr ?? "null!");
                                     var ctorCollExpr = $"{sourceExpr} is {{ }} {collLocal} ? {coercionExpr} : {nullFallback}";
                                     mappings.Add(new CtorParamMapping(param.Name, matchedDestPropName!, ctorCollExpr, param.Type, param.Type));
                                     continue;
