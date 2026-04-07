@@ -117,9 +117,11 @@ __result.Items = source.Items is { } __v_Items
 
 ### Validation
 
-The generator must validate that the destination type has an accessible parameterless constructor when `CoalesceToNew` is used on a reference-type property. If the constructor is missing, emit **FM0038**.
+The generator must validate that the destination type is constructible when `CoalesceToNew` is used on a reference-type property:
 
-For value types, `CoalesceToNew` is always valid and behaves identically to `CoalesceToDefault`.
+- **Plain reference types**: Must have an accessible parameterless constructor. Emit **FM0038** if missing.
+- **Collection/dictionary properties**: The generator uses type-aware empty collection expressions (`new List<T>()`, `new HashSet<T>()`, `new Dictionary<K,V>()`, `Array.Empty<T>()`, etc.) based on the destination collection type — parameterless constructor validation is not applied to these types. If the destination collection type is not a recognized collection, FM0038 is emitted.
+- **Value types**: `CoalesceToNew` is always valid and behaves identically to `CoalesceToDefault` (both produce `default(T)`).
 
 ### Interaction with Existing Features
 
@@ -137,7 +139,7 @@ For value types, `CoalesceToNew` is always valid and behaves identically to `Coa
 
 | Code | Severity | Description |
 |------|----------|-------------|
-| **FM0038** | Error | `CoalesceToNew` requires type '{0}' to have an accessible parameterless constructor |
+| **FM0038** | Error | `CoalesceToNew` requires type '{0}' to have an accessible parameterless constructor (not applicable to recognized collection types, which use type-aware empty expressions) |
 
 ### Behavioral Contract
 
@@ -205,9 +207,9 @@ When the generator detects a property pair where the source and destination are 
 
 | Source Type | Destination Type | Generated Code |
 |-------------|-----------------|----------------|
-| `IDictionary<K,V>` / `Dictionary<K,V>` | `ReadOnlyDictionary<K,V>` | `new ReadOnlyDictionary<K,V>(source.Prop)` (for `IDictionary`); `new ReadOnlyDictionary<K,V>(source.Prop)` (for `Dictionary`) |
-| `Dictionary<K,V>` | `IReadOnlyDictionary<K,V>` | `source.Prop` (implicit — `Dictionary<K,V>` implements `IReadOnlyDictionary<K,V>`) |
-| `IDictionary<K,V>` | `IReadOnlyDictionary<K,V>` | `new ReadOnlyDictionary<K,V>(source.Prop)` |
+| `IDictionary<K,V>` / `Dictionary<K,V>` | `ReadOnlyDictionary<K,V>` | `new ReadOnlyDictionary<K,V>(new Dictionary<K,V>(source.Prop))` — copies to avoid aliasing |
+| `Dictionary<K,V>` | `IReadOnlyDictionary<K,V>` | `new ReadOnlyDictionary<K,V>(new Dictionary<K,V>(source.Prop))` — copies to avoid aliasing |
+| `IDictionary<K,V>` | `IReadOnlyDictionary<K,V>` | `new ReadOnlyDictionary<K,V>(new Dictionary<K,V>(source.Prop))` — copies to avoid aliasing |
 | `IReadOnlyDictionary<K,V>` | `Dictionary<K,V>` | `new Dictionary<K,V>(source.Prop)` |
 
 #### Element Mapping with Coercion
@@ -334,7 +336,7 @@ For each unimplemented partial method on a `[ForgeMap]` class that does not matc
 1. **Detect collection signature**: The method has exactly one parameter whose type is a recognized collection type (`IEnumerable<T>`, `IReadOnlyList<T>`, `IReadOnlyCollection<T>`, `ICollection<T>`, `IList<T>`, `List<T>`, `T[]`, `HashSet<T>`) and a return type that is also a recognized collection type
 2. **Extract element types**: Source element type `TSource` from the parameter's collection, destination element type `TDest` from the return type's collection
 3. **Find matching element method**: Search for a forge method on the same forger with signature `TDest MethodName(TSource source)`. The match is by type only — method name does not matter
-4. **Validate uniqueness**: If multiple element methods match the same `TSource → TDest` pair, emit **FM0042** (ambiguous). The user must remove one or use `[Ignore]`
+4. **Validate uniqueness**: If multiple element methods match the same `TSource → TDest` pair, emit **FM0042** (ambiguous). The user must remove one element method or rename to disambiguate
 5. **Generate body**: Iterate source collection, call element method per item, collect into declared return type
 
 ### Generated Code
@@ -461,7 +463,7 @@ var __result = new List<T>();
 | Code | Severity | Description |
 |------|----------|-------------|
 | **FM0041** | Warning | Collection method '{0}' declared but no matching element forge method found for '{1}' → '{2}' |
-| **FM0042** | Error | Collection method '{0}' is ambiguous: multiple element forge methods match '{1}' → '{2}'. Use `[Ignore]` on one to disambiguate |
+| **FM0042** | Error | Collection method '{0}' is ambiguous: multiple element forge methods match '{1}' → '{2}'. Remove one element method or rename to disambiguate |
 
 ### Behavioral Contract
 
@@ -537,7 +539,7 @@ v1.5 introduces no required source changes and no API-surface breaks. Three beha
 | `CoalesceToNew` requires parameterless constructor | Generator emits `new T()` — cannot know which constructor parameters to supply | Use `[ForgeFrom]` resolver for types without parameterless constructors |
 | Dictionary coercion limited to same key type | Key type conversion adds combinatorial complexity | Use `[ForgeFrom]` resolver for key-type conversions |
 | Collection methods don't support `[ReverseForge]` | Reverse collection mapping is the same pattern — declare a separate method | Declare `partial IReadOnlyList<A> Forge(IEnumerable<B> source)` as the reverse |
-| Collection methods require exactly one matching element method | Ambiguity is a compile-time error | Use `[Ignore]` on one element method or rename to disambiguate |
+| Collection methods require exactly one matching element method | Ambiguity is a compile-time error | Remove one element method or rename to disambiguate |
 
 ---
 

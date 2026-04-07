@@ -220,7 +220,7 @@ public Order Forge(OrderDto source)
 | `PropertyMatching = ByNameCaseInsensitive` | Segment matching is case-insensitive |
 | `[IncludeBaseForge]` | Auto-flattened properties from the base method are inherited. Derived methods can override with explicit `[ForgeProperty]` |
 | `[Ignore]` | Ignored properties are excluded from auto-flattening |
-| `NullPropertyHandling.CoalesceToNew` (v1.5) | Applies to leaf values and intermediate objects in flattened paths |
+| `NullPropertyHandling.CoalesceToNew` (v1.5) | Applies to leaf values in flattened paths. For intermediate objects that are null, the generator uses null-conditional access (`?.`) — `CoalesceToNew` does **not** attempt to construct intermediate objects (use `CoalesceToDefault` semantics for intermediates). This avoids requiring parameterless constructors on intermediate types that may be complex domain objects |
 
 ### Competitor Comparison
 
