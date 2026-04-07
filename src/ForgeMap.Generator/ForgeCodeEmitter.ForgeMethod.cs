@@ -584,22 +584,9 @@ internal sealed partial class ForgeCodeEmitter
                                 // Pure container coercion for ctor parameters (same element types)
                                 var collLocal = $"__coll_{param.Name}";
                                 var coercionExpr = TryGenerateSequenceCoercion(sourcePropType, param.Type, srcElemType, collLocal);
-                                if (coercionExpr == null)
-                                {
-                                    // Try dictionary coercion for ctor parameters
-                                    var srcDict = GetDictionaryKeyValueTypes(sourcePropType);
-                                    var destDict = GetDictionaryKeyValueTypes(param.Type);
-                                    if (srcDict != null && destDict != null &&
-                                        SymbolEqualityComparer.Default.Equals(srcDict.Value.KeyType, destDict.Value.KeyType))
-                                    {
-                                        coercionExpr = TryGenerateDictionaryCoercion(sourcePropType, param.Type,
-                                            srcDict.Value.KeyType, srcDict.Value.ValueType, collLocal, param.Name);
-                                    }
-                                }
                                 if (coercionExpr != null)
                                 {
-                                    var emptyExpr = GenerateEmptyCollectionExpression(param.Type);
-                                    var nullFallback = param.Type.IsValueType ? "default" : (emptyExpr ?? "null!");
+                                    var nullFallback = param.Type.IsValueType ? "default" : "null!";
                                     var ctorCollExpr = $"{sourceExpr} is {{ }} {collLocal} ? {coercionExpr} : {nullFallback}";
                                     mappings.Add(new CtorParamMapping(param.Name, matchedDestPropName!, ctorCollExpr, param.Type, param.Type));
                                     continue;
@@ -615,6 +602,26 @@ internal sealed partial class ForgeCodeEmitter
                                 allMatched = false;
                                 break;
                             }
+                        }
+                    }
+
+                    // Try dictionary coercion for ctor parameters (dictionaries have 2 type args, not in SupportedCollectionTypes)
+                    var srcDictTypes = GetDictionaryKeyValueTypes(sourcePropType);
+                    var destDictTypes = GetDictionaryKeyValueTypes(param.Type);
+                    if (srcDictTypes != null && destDictTypes != null &&
+                        SymbolEqualityComparer.Default.Equals(srcDictTypes.Value.KeyType, destDictTypes.Value.KeyType) &&
+                        SymbolEqualityComparer.Default.Equals(srcDictTypes.Value.ValueType, destDictTypes.Value.ValueType) &&
+                        !CanAssign(sourcePropType, param.Type))
+                    {
+                        var dictCollLocal = $"__coll_{param.Name}";
+                        var dictCoercionExpr = TryGenerateDictionaryCoercion(sourcePropType, param.Type,
+                            srcDictTypes.Value.KeyType, srcDictTypes.Value.ValueType, dictCollLocal, param.Name);
+                        if (dictCoercionExpr != null)
+                        {
+                            var nullFallback = param.Type.IsValueType ? "default" : "null!";
+                            var ctorDictExpr = $"{sourceExpr} is {{ }} {dictCollLocal} ? {dictCoercionExpr} : {nullFallback}";
+                            mappings.Add(new CtorParamMapping(param.Name, matchedDestPropName!, ctorDictExpr, param.Type, param.Type));
+                            continue;
                         }
                     }
 
