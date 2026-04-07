@@ -217,5 +217,5 @@ Write-Host "`nResults written to: $OutputFile" -ForegroundColor Green
 
 } finally {
     # Restore the ForgeMap csproj to its original content to avoid dirtying the worktree
-    Set-Content $fmCsproj $originalCsprojContent -NoNewline
+    [System.IO.File]::WriteAllText($fmCsproj, $originalCsprojContent)
 }
