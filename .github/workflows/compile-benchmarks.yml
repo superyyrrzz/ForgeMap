@@ -38,8 +38,8 @@ jobs:
       - name: Run compile benchmarks
         shell: pwsh
         run: |
-          $scales = "${{ github.event.inputs.scales || '10,50,100' }}" -split ',' | ForEach-Object { [int]$_ }
-          $scenarios = ("${{ github.event.inputs.scenarios || 'Flat,Nested,Collection,Mixed' }}" -split ',')
+          $scales = "${{ github.event.inputs.scales || '10,50,100' }}" -split ',' | ForEach-Object { [int]$_.Trim() }
+          $scenarios = ("${{ github.event.inputs.scenarios || 'Flat,Nested,Collection,Mixed' }}" -split ',' | ForEach-Object { $_.Trim() })
           $iterations = [int]"${{ github.event.inputs.iterations || '5' }}"
           ./benchmarks/ForgeMap.CompileBenchmarks/Run-CompileBenchmarks.ps1 `
             -Scales $scales `

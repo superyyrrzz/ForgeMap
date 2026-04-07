@@ -44,7 +44,7 @@ New-Item -ItemType Directory -Path $localPkgDir -Force | Out-Null
 $benchVersion = "99.0.0-bench.$(Get-Date -Format 'yyyyMMddHHmmss')"
 Write-Host "Packing ForgeMap as local NuGet package (version $benchVersion)..."
 dotnet pack (Join-Path $repoRoot 'src' 'ForgeMap' 'ForgeMap.csproj') `
-    -c Release --verbosity quiet -o $localPkgDir -p:Version=$benchVersion
+    -c $Configuration --verbosity quiet -o $localPkgDir -p:Version=$benchVersion
 if ($LASTEXITCODE -ne 0) {
     Write-Error 'Failed to pack ForgeMap'
     exit 1
@@ -102,6 +102,10 @@ foreach ($scenario in $Scenarios) {
             for ($i = 1; $i -le $Iterations; $i++) {
                 # Clean to force full rebuild
                 dotnet clean $proj.Path -c $Configuration --verbosity quiet 2>$null
+                if ($LASTEXITCODE -ne 0) {
+                    Write-Error "Clean failed for $($proj.Name) at $scenario/$scale, iteration $i"
+                    exit 1
+                }
 
                 # Shut down build servers between iterations
                 dotnet build-server shutdown 2>$null
