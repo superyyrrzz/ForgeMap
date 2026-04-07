@@ -151,7 +151,7 @@ foreach ($scenario in $Scenarios) {
 $md = @()
 $md += '# Compile-Time Benchmark Results'
 $md += ''
-$md += 'Measures `dotnet build` wall-clock time (clean rebuild, Release configuration) for projects'
+$md += "Measures ``dotnet build`` wall-clock time (clean rebuild, $Configuration configuration) for projects"
 $md += 'using ForgeMap, Mapperly, and AutoMapper at varying numbers of mapping classes.'
 $md += ''
 $md += 'AutoMapper is reflection-based (no source generator) and serves as a baseline showing'

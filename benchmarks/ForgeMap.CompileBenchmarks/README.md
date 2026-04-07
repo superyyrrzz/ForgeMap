@@ -24,7 +24,7 @@ pwsh ./Generate-Models.ps1 -Count 25
 
 ## How It Works
 
-1. **Generate-Models.ps1** creates N source/destination class pairs (`Source1`/`Dest1` through `SourceN`/`DestN`, each with 10 properties) plus mapper declarations for each library.
+1. **Generate-Models.ps1** creates N source/destination class pairs (`Source1`/`Dest1` through `SourceN`/`DestN`) plus mapper declarations for each library. The model shape depends on the selected scenario: Flat (10 properties), Nested (4 flat + 2 nested objects), Collection (3 flat + 2 List<T> properties), or Mixed (6 flat + 2 nested + 1 collection).
 2. **Run-CompileBenchmarks.ps1** packs ForgeMap into a local NuGet package first (so all three mappers are consumed as pre-compiled packages), restores once, then for each mapper: cleans, shuts down build servers, and times `dotnet build --no-restore`. This is repeated across iterations; the median is reported.
 3. Results are written to `COMPILE_BENCHMARK_RESULTS.md`.
 
