@@ -1,302 +1,576 @@
-# ForgeMap v1.5 Specification — Advanced Mapping
+# ForgeMap v1.5 Specification — Migration-Priority Features
 
 ## Overview
 
-v1.5 delivers two features deferred from the original v1.4 plan to prioritize migration-driven issues.
+v1.5 prioritizes four features driven by real-world AutoMapper → ForgeMap migration pain. These gaps were identified during the [Docs.LocalizationContentService](https://dev.azure.com/ceapex/Engineering/_git/Docs.LocalizationContentService) migration, where they collectively forced ~130+ lines of manual boilerplate that ForgeMap should be generating.
 
-| # | Feature | Issue | Status |
-|---|---------|-------|--------|
-| 1 | Auto-flattening with `init`/`required` support | [#82](https://github.com/superyyrrzz/ForgeMap/issues/82) | Planned |
-| 2 | Dictionary-to-typed-object mapping (`[ForgeDictionary]`) | [#83](https://github.com/superyyrrzz/ForgeMap/issues/83) | Planned |
+| # | Feature | Issue | Effort | Status |
+|---|---------|-------|--------|--------|
+| 1 | `CoalesceToNew` null-property strategy | [#91](https://github.com/superyyrrzz/ForgeMap/issues/91) | Low | Planned |
+| 2 | Collection type coercion | [#90](https://github.com/superyyrrzz/ForgeMap/issues/90) | Medium | Planned |
+| 3 | Standalone collection mapping methods | [#89](https://github.com/superyyrrzz/ForgeMap/issues/89) | Medium | Planned |
+| 4 | `[AfterForge]` migration pattern & diagnostics | [#93](https://github.com/superyyrrzz/ForgeMap/issues/93) | Low | Planned |
+
+### Deferred to v1.6
+
+The following features were originally planned for v1.5 but have been moved to v1.6 to prioritize migration-blocking issues #89, #90, #91, and #93:
+
+| Feature | Issue | Notes |
+|---------|-------|-------|
+| Auto-flattening with `init`/`required` support | [#82](https://github.com/superyyrrzz/ForgeMap/issues/82) | See [SPEC-v1.6-advanced-mapping.md](SPEC-v1.6-advanced-mapping.md) |
+| Dictionary-to-typed-object mapping (`[ForgeDictionary]`) | [#83](https://github.com/superyyrrzz/ForgeMap/issues/83) | See [SPEC-v1.6-advanced-mapping.md](SPEC-v1.6-advanced-mapping.md) |
 
 ---
 
-## Feature 1: Auto-Flattening with `init`/`required` Support
+## Feature 1: `CoalesceToNew` NullPropertyHandling Strategy
 
-> **Issue:** [#82](https://github.com/superyyrrzz/ForgeMap/issues/82)
+> **Issue:** [#91](https://github.com/superyyrrzz/ForgeMap/issues/91)
 
 ### Problem
 
-Users frequently map nested source objects to flattened DTOs (e.g., `Order.Customer.Name` → `OrderDto.CustomerName`). This is one of the most common mapping patterns in enterprise applications:
+During AutoMapper → ForgeMap migration, a common pattern is null-coalescing a nested object to an empty instance. AutoMapper does this implicitly — when a source member is `null`, it creates a new destination instance with default values (not `null`). ForgeMap's existing `CoalesceToDefault` strategy already handles many cases — it uses type-aware defaults (`""` for strings, empty collections, `new T()` for types with parameterless constructors) — but it **silently falls back to `NullForgiving`** (with FM0007 warning) when the destination type has no parameterless constructor. Additionally, when a property is mapped via an auto-wired forge method, `CoalesceToDefault` does not produce `new TDestination()` — the forge method is simply not called for null source values.
 
 ```csharp
-class Order {
-    public Customer Customer { get; set; }
-    public Address ShippingAddress { get; set; }
-}
-
-class OrderDto {
-    public string CustomerName { get; set; }
-    public string CustomerEmail { get; set; }
-    public string ShippingAddressCity { get; set; }
-    public required string ShippingAddressZipCode { get; init; }  // modern C#
-}
+// Manual code required today — ForgeMap can't express this
+Service = source.Service != null
+    ? _forger.ForgeServiceViewObject(source.Service)
+    : new ApiModels.ServiceViewObject(),
 ```
 
-Currently, ForgeMap requires explicit `[ForgeProperty]` with dot-path notation for every flattened property:
-
-```csharp
-// v1.3: manual [ForgeProperty] for every flattened member
-[ForgeProperty("Customer.Name", "CustomerName")]
-[ForgeProperty("Customer.Email", "CustomerEmail")]
-[ForgeProperty("ShippingAddress.City", "ShippingAddressCity")]
-[ForgeProperty("ShippingAddress.ZipCode", "ShippingAddressZipCode")]
-public partial OrderDto Forge(Order source);
-```
-
-Mapperly auto-flattens by PascalCase convention but has been **broken for `init`/`required` properties since mid-2023** ([#643](https://github.com/riok/mapperly/issues/643), [#589](https://github.com/riok/mapperly/issues/589)).
+This is especially common for:
+- Nested DTOs that consumers expect to be non-null
+- View models where `null` would cause `NullReferenceException` in templates
+- API responses where the contract requires an object (not `null`)
 
 ### Design
 
-The generator automatically resolves unmatched destination properties by splitting the property name into PascalCase segments and walking the source object graph. When the destination property has an `init` or `required` modifier, the assignment is routed to the object initializer or constructor instead of a post-construction setter.
+Add a new value to the existing `NullPropertyHandling` enum. Key differences from `CoalesceToDefault`:
 
-### Configuration
+1. **Forge method properties**: When a matching forge method exists, `CoalesceToNew` emits `new TDestination()` for null source values. `CoalesceToDefault` does not — it relies on the forge method which is not called when source is null.
+2. **Strict validation**: `CoalesceToNew` emits FM0038 error when the destination type has no accessible parameterless constructor. `CoalesceToDefault` silently falls back to `NullForgiving` with FM0007 warning.
+3. **Value types**: Both behave identically — `default(T)` for value types.
 
-Auto-flattening is controlled by a new `AutoFlatten` property on `[ForgeMap]` and `[ForgeMapDefaults]`:
+### API Surface
 
 ```csharp
-[AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = false)]
-public sealed class ForgeMapAttribute : Attribute
+public enum NullPropertyHandling
 {
-    // ... existing properties ...
-
-    /// <summary>
-    /// When true, the generator automatically resolves unmatched destination properties
-    /// by splitting PascalCase names and walking the source object graph.
-    /// e.g., "CustomerName" resolves to source.Customer.Name.
-    /// Default is true.
-    /// </summary>
-    public bool AutoFlatten { get; set; } = true;
-}
-
-[AttributeUsage(AttributeTargets.Assembly, AllowMultiple = false, Inherited = false)]
-public sealed class ForgeMapDefaultsAttribute : Attribute
-{
-    // ... existing properties ...
-
-    /// <summary>
-    /// Assembly-level default for auto-flattening. Default is true.
-    /// </summary>
-    public bool AutoFlatten { get; set; } = true;
+    NullForgiving,      // existing (0): assign with !
+    SkipNull,           // existing (1): skip assignment
+    CoalesceToDefault,  // existing (2): type-aware default ("", empty collection, new T() if ctor exists; falls back to ! if not)
+    ThrowException,     // existing (3): throw
+    CoalesceToNew,      // NEW (4): new T() for reference types, default(T) for value types
 }
 ```
 
-### Resolution Algorithm
-
-For each unmatched destination property (no direct source match, no `[ForgeProperty]`, no `[ForgeFrom]`, no `[Ignore]`):
-
-1. **Split** the destination property name into PascalCase segments:
-   - `CustomerName` → `["Customer", "Name"]`
-   - `ShippingAddressZipCode` → `["Shipping", "Address", "Zip", "Code"]`
-
-2. **Greedy match** against the source type's property graph, trying the longest prefix first:
-   - Try `source.ShippingAddressZipCode` (direct — already handled before flattening)
-   - Try `source.ShippingAddress.ZipCode` (2 segments + 2 segments)
-   - Try `source.ShippingAddress.Zip.Code` (2 segments + 1 + 1)
-   - Try `source.Shipping.AddressZipCode` (1 segment + 3 segments)
-   - Try `source.Shipping.Address.ZipCode` (1 + 1 + 2)
-   - ... etc.
-   - First match where all segments resolve to accessible properties wins
-
-3. **Case sensitivity** follows the forger's `PropertyMatching` setting:
-   - `ByName` (default): exact PascalCase match
-   - `ByNameCaseInsensitive`: case-insensitive segment matching
-
-4. **Assignability check**: The leaf property's type must be assignable to the destination property type (same rules as direct property mapping, including `NullPropertyHandling`)
-
-5. **Precedence** (highest to lowest):
-   - Explicit `[ForgeProperty]` / `[ForgeFrom]` / `[Ignore]` / `[ForgeWith]`
-   - Direct name match (existing behavior)
-   - Auto-flattened match (new)
-   - Auto-wired nested forge method (existing v1.3 behavior)
-   - Unmapped → FM0006
-
-### Usage
+No new attributes required. Works at all three existing configuration tiers:
 
 ```csharp
-[ForgeMap]  // AutoFlatten defaults to true
-public partial class AppForger
-{
-    // Auto-flattening resolves all properties automatically:
-    //   CustomerName      ← source.Customer.Name
-    //   CustomerEmail     ← source.Customer.Email
-    //   ShippingAddressCity    ← source.ShippingAddress.City
-    //   ShippingAddressZipCode ← source.ShippingAddress.ZipCode
-    public partial OrderDto Forge(Order source);
-}
+// Assembly-level
+[assembly: ForgeMapDefaults(NullPropertyHandling = NullPropertyHandling.CoalesceToNew)]
 
-// Opt out per-forger:
-[ForgeMap(AutoFlatten = false)]
-public partial class ExplicitForger { ... }
+// Forger-level
+[ForgeMap(NullPropertyHandling = NullPropertyHandling.CoalesceToNew)]
+
+// Per-property
+[ForgeProperty("Service", "Service", NullPropertyHandling = NullPropertyHandling.CoalesceToNew)]
 ```
 
 ### Generated Code
 
-**Regular setter properties** (`NullHandling = ReturnNull`, `NullPropertyHandling = NullForgiving` — defaults):
+**Simple property (no forge method):**
 
 ```csharp
-public partial OrderDto Forge(Order source)
-{
-    if (source == null) return null!;  // NullHandling.ReturnNull (default); ThrowException would throw here
+// NullPropertyHandling.CoalesceToNew on a reference-type property
+__result.Address = source.Address ?? new global::MyApp.Address();
 
-    var __result = new OrderDto
-    {
-        // init/required properties assigned here
-        ShippingAddressZipCode = source.ShippingAddress?.ZipCode!,
-    };
-
-    // Regular setters assigned post-construction
-    __result.CustomerName = source.Customer?.Name!;
-    __result.CustomerEmail = source.Customer?.Email!;
-    __result.ShippingAddressCity = source.ShippingAddress?.City!;
-
-    return __result;
-}
+// NullPropertyHandling.CoalesceToNew on a nullable value-type source
+// mapped to a non-nullable destination (same as CoalesceToDefault)
+__result.Count = source.Count ?? default(int);
 ```
 
-**Null-safe path traversal**: Intermediate path segments use null-conditional access (`?.`) to avoid `NullReferenceException`. The leaf value's null handling follows the configured `NullPropertyHandling`:
+**With auto-wired forge method:**
 
-| `NullPropertyHandling` | Intermediate null | Leaf null |
-|-------------------------|-------------------|-----------|
-| `NullForgiving` | Path evaluates to `null`, assigned with `!` | `null!` |
-| `SkipNull` | Skip assignment for regular setters; for `init`/`required` members behaves as `NullForgiving` | Skip assignment for regular setters; for `init`/`required` members behaves as `NullForgiving` |
-| `CoalesceToDefault` | Coalesce to type default | Coalesce to type default |
-| `ThrowException` | Throw | Throw |
-
-**`init`/`required` members and `SkipNull`**: For destination members that are `init`-only or marked `required`, ForgeMap cannot omit the assignment in an object initializer without breaking required-member initialization or preventing assignment to `init`-only properties. When such members are mapped with `NullPropertyHandling.SkipNull`, ForgeMap emits code equivalent to `NullForgiving` (assigning `null!` in the initializer) and may additionally emit a diagnostic to highlight the configuration mismatch.
-
-### Unflattening (Reverse Direction)
-
-When `[ReverseForge]` is used on a method with auto-flattened properties, the reverse direction performs **unflattening** — constructing intermediate objects:
+When `CoalesceToNew` is active and a matching forge method exists for the property type:
 
 ```csharp
-// Forward: auto-flattens Order → OrderDto
-[ReverseForge]
-public partial OrderDto Forge(Order source);
-
-// Reverse generated (unflattening) — emitted by the generator:
-public Order Forge(OrderDto source)
-{
-    if (source == null) return null!;
-
-    var __result = new Order();
-
-    __result.Customer = new Customer
-    {
-        Name = source.CustomerName,
-        Email = source.CustomerEmail,
-    };
-
-    __result.ShippingAddress = new Address
-    {
-        City = source.ShippingAddressCity,
-        ZipCode = source.ShippingAddressZipCode,
-    };
-
-    return __result;
-}
+// Source non-null → call forge method; source null → new TDestination()
+__result.Service = source.Service is { } __v_Service
+    ? ForgeServiceViewObject(__v_Service)
+    : new global::ApiModels.ServiceViewObject();
 ```
 
-**Unflattening constraints:**
-- Intermediate types must have accessible parameterless constructors (or constructor parameters matching the properties). Emit **FM0039** if not constructible
-- When multiple destination properties unflatten into the same intermediate object, they are grouped into a single object initializer
-- `[ReverseForge]` unflattening is best-effort — emit **FM0040** (warning) for any property that cannot be unflattened, with a suggestion to add explicit `[ForgeProperty]` on the reverse method
+**In object initializer (init/required properties):**
 
-### Diagnostics
+```csharp
+var __result = new OrderDto
+{
+    // init/required properties with CoalesceToNew
+    Service = source.Service is { } __v_Service
+        ? ForgeServiceViewObject(__v_Service)
+        : new global::ApiModels.ServiceViewObject(),
+};
+```
 
-| Code | Severity | Description |
-|------|----------|-------------|
-| **FM0038** | Info | Property '{0}' auto-flattened from '{1}' (disabled by default; enable via `.editorconfig`) |
-| **FM0039** | Error | Unflattening requires type '{0}' to have an accessible constructor, but none was found |
-| **FM0040** | Warning | Auto-flattened property '{0}' cannot be unflattened for `[ReverseForge]`: {reason} |
+**Inline collection properties:**
+
+```csharp
+// CoalesceToNew on a collection property — empty collection instead of null
+__result.Items = source.Items is { } __v_Items
+    ? __v_Items.Select(__item => ForgeItem(__item)).ToList()
+    : new global::System.Collections.Generic.List<global::ItemDto>();
+```
+
+### Validation
+
+The generator must validate that the destination type is constructible when `CoalesceToNew` is used on a reference-type property:
+
+- **Plain reference types**: Must have an accessible parameterless constructor and must not have any uninitialized `required` members (or the constructor must be annotated with `[SetsRequiredMembers]`). Emit **FM0038** if the type cannot be instantiated via `new T()`.
+- **Collection/dictionary properties**: The generator uses type-aware empty collection expressions (`new List<T>()`, `new HashSet<T>()`, `new Dictionary<K,V>()`, `Array.Empty<T>()`, etc.) based on the destination collection type — parameterless constructor validation is not applied to these types. If the destination collection type is not a recognized collection, FM0038 is emitted.
+- **Value types**: `CoalesceToNew` is always valid and behaves identically to `CoalesceToDefault` (both produce `default(T)`).
 
 ### Interaction with Existing Features
 
 | Feature | Interaction |
 |---------|-------------|
-| `[ForgeProperty]` with dot-path | Explicit dot-path takes precedence over auto-flattening. Both produce the same codegen — auto-flattening eliminates the need for the attribute |
-| `AutoWireNestedMappings` | Auto-flattening runs before auto-wiring. A flattened scalar assignment prevents auto-wiring from treating the property as a nested complex type |
-| `PropertyMatching = ByNameCaseInsensitive` | Segment matching is case-insensitive |
-| `[IncludeBaseForge]` | Auto-flattened properties from the base method are inherited. Derived methods can override with explicit `[ForgeProperty]` |
-| `[Ignore]` | Ignored properties are excluded from auto-flattening |
+| `CoalesceToDefault` | `CoalesceToNew` differs for forge-method properties: `new TDest()` vs relying on the forge method (which isn't called). For simple properties with parameterless ctor, both produce `new T()`. `CoalesceToNew` also hard-errors (FM0038) instead of falling back to `NullForgiving` |
+| Auto-wired forge methods | Non-null → forge method; null → `new TDest()` |
+| `[ConvertWith]` | `NullHandling` (method-level) controls null source before converter is called; `CoalesceToNew` applies to individual properties, not converter methods |
+| `[ForgeFrom]` resolver | Resolver is called when source is non-null; `CoalesceToNew` produces `new T()` when source property is null |
+| Inline collection mapping | Empty collection (`new List<T>()`, `new T[0]`, etc.) instead of null |
+| `ExistingTarget = true` | `CoalesceToNew` on a null target property creates a new instance and assigns it (same as `CoalesceToDefault` but with `new T()` instead of `default`) |
+| `[ReverseForge]` | Reverse method inherits `NullPropertyHandling` — `CoalesceToNew` applies symmetrically |
+
+### Diagnostics
+
+| Code | Severity | Description |
+|------|----------|-------------|
+| **FM0038** | Error | `CoalesceToNew` cannot synthesize `new {0}()`: type has no accessible parameterless constructor, or has uninitialized `required` members without `[SetsRequiredMembers]` (not applicable to recognized collection types, which use type-aware empty expressions) |
+
+### Behavioral Contract
+
+| Scenario | Behavior |
+|----------|----------|
+| Reference-type property, source is null | `new T()` |
+| Reference-type property, source is non-null | Assign directly (or call forge method) |
+| Nullable value-type property (`T?`), source is null | `default(T?)` (i.e., `null`) — same as `CoalesceToDefault` |
+| Non-nullable value-type property, source is non-null | Assign directly — `CoalesceToNew` has no effect (value types cannot be null) |
+| Collection property, source is null | Empty collection (`new List<T>()`, `new HashSet<T>()`, etc.) |
+| Destination type has no parameterless constructor (or has uninitialized `required` members) | FM0038 error |
+| Used with forge method, source null | `new TDestination()` (forge method NOT called) |
+| Used with `[ForgeFrom]` resolver, source null | `new TDestination()` (resolver NOT called) |
 
 ### Competitor Comparison
 
-| Aspect | AutoMapper | Mapperly | ForgeMap v1.5 (planned) |
+| Aspect | AutoMapper | Mapperly | ForgeMap v1.5 |
 |--------|-----------|---------|---------------|
-| Auto-flattening | ✅ Runtime convention | ✅ Compile-time PascalCase | ✅ Compile-time PascalCase |
-| `init`/`required` properties | ✅ Runtime (since v13) | ❌ Broken (#643) | ✅ Object initializer routing |
-| Unflattening | `.ReverseMap()` with runtime | Manual `MapProperty` paths | ✅ Auto via `[ReverseForge]` |
-| Opt-out | `.DisableCtorValidation()` | No opt-out | `AutoFlatten = false` |
-| Case sensitivity control | Always case-insensitive | Case-insensitive | Follows `PropertyMatching` |
-| Null-safe paths | Runtime null checks | Compile-time `?.` chains | Compile-time `?.` chains |
-| Diagnostic visibility | None (runtime only) | Compile-time | FM0038 info (opt-in) |
+| Null → new instance | ✅ Default behavior | ❌ Null produces null | ✅ `CoalesceToNew` opt-in |
+| Configuration level | Global only | N/A | ✅ Assembly / forger / per-property |
+| Constructor validation | Runtime error | N/A | ✅ Compile-time FM0038 |
 
 ---
 
-## Feature 2: Dictionary-to-Typed-Object Mapping
+## Feature 2: Collection Type Coercion
 
-> **Issue:** [#83](https://github.com/superyyrrzz/ForgeMap/issues/83)
+> **Issue:** [#90](https://github.com/superyyrrzz/ForgeMap/issues/90)
 
 ### Problem
 
-Many real-world scenarios produce `Dictionary<string, object?>` (or `IDictionary<string, object?>`, `IReadOnlyDictionary<string, object?>`):
+ForgeMap currently handles inline collection mapping when element types differ (via auto-wired forge methods), but requires the source and destination collection *wrapper* types to be compatible. When they differ — e.g., `List<string>` → `HashSet<string>`, `IDictionary<K,V>` → `ReadOnlyDictionary<K,V>` — the property is skipped or requires manual mapping.
 
-- JSON deserialization fallbacks / dynamic JSON
-- Configuration providers (`IConfiguration.Get<T>()` pattern)
-- NoSQL document stores (Cosmos DB, MongoDB raw documents)
-- Dapper dynamic queries
-- Form data / query string binding
-- CSV/Excel row parsing
+In the LCS migration, this forced ~57 lines of manual mapping across two methods:
 
-Users want to map these to strongly-typed objects with compile-time safety and zero reflection. This is the [#10 most-reacted open issue in Mapperly](https://github.com/riok/mapperly/issues/1309) (10👍).
+```csharp
+// ForgeMap can't generate this — List<string> → HashSet<string>
+DisallowedLocales = source.DisallowedLocales != null
+    ? new HashSet<string>(source.DisallowedLocales)
+    : new HashSet<string>(),
+
+// ForgeMap can't generate this — IDictionary<K,V> → ReadOnlyDictionary<K,V>
+metadata: source.Metadata?.AsReadOnly(),
+locMetadata: source.LocMetadata?.AsReadOnly(),
+versionIndependentMetadata: source.VersionIndependentMetadata?.AsReadOnly(),
+```
 
 ### Design
 
-A new `[ForgeDictionary]` attribute marks a forge method as a dictionary-to-object mapping. The generator enumerates the destination type's properties and generates `TryGetValue` lookups with type-safe casts.
+When the generator detects a property pair where the source and destination are different collection/dictionary types but the element types are compatible (same type, or a forge method exists), it automatically emits the appropriate conversion code. This is a natural extension of ForgeMap's existing collection handling — no new attributes or configuration required.
+
+### Conversion Matrix
+
+#### Sequence Collections
+
+| Source Type | Destination Type | Generated Code |
+|-------------|-----------------|----------------|
+| `List<T>` / `IList<T>` / `IEnumerable<T>` / `ICollection<T>` | `HashSet<T>` | `new HashSet<T>(source.Prop)` |
+| `List<T>` | `IReadOnlyList<T>` | `source.Prop` (implicit — `List<T>` implements `IReadOnlyList<T>`) |
+| `T[]` | `IReadOnlyList<T>` | `source.Prop.ToList()` (materializes a list-backed `IReadOnlyList<T>`) |
+| `List<T>` / `IList<T>` | `ReadOnlyCollection<T>` | `new List<T>(source.Prop).AsReadOnly()` — copies to avoid aliasing |
+| `IEnumerable<T>` / `IReadOnlyList<T>` | `T[]` | `source.Prop.ToArray()` |
+| `T[]` / `IEnumerable<T>` | `List<T>` | `new List<T>(source.Prop)` |
+| `IEnumerable<T>` | `ICollection<T>` | `new List<T>(source.Prop)` |
+| `HashSet<T>` | `IReadOnlyCollection<T>` | `source.Prop` (implicit) |
+
+#### Dictionary Collections
+
+| Source Type | Destination Type | Generated Code |
+|-------------|-----------------|----------------|
+| `IDictionary<K,V>` / `Dictionary<K,V>` | `ReadOnlyDictionary<K,V>` | `source.Prop is Dictionary<K,V> __dict ? new ReadOnlyDictionary<K,V>(new Dictionary<K,V>(__dict, __dict.Comparer)) : new ReadOnlyDictionary<K,V>(new Dictionary<K,V>(source.Prop))` — copies to avoid aliasing, preserves comparer when available |
+| `Dictionary<K,V>` | `IReadOnlyDictionary<K,V>` | `new ReadOnlyDictionary<K,V>(new Dictionary<K,V>(source.Prop, source.Prop.Comparer))` — copies to avoid aliasing, preserves comparer |
+| `IDictionary<K,V>` | `IReadOnlyDictionary<K,V>` | `source.Prop is Dictionary<K,V> __dict ? new ReadOnlyDictionary<K,V>(new Dictionary<K,V>(__dict, __dict.Comparer)) : new ReadOnlyDictionary<K,V>(new Dictionary<K,V>(source.Prop))` — copies to avoid aliasing, preserves comparer when available |
+| `IReadOnlyDictionary<K,V>` | `Dictionary<K,V>` | `source.Prop is Dictionary<K,V> __dict ? new Dictionary<K,V>(__dict, __dict.Comparer) : new Dictionary<K,V>(source.Prop)` — preserves comparer when available |
+
+#### Element Mapping with Coercion
+
+When elem types differ AND collection types differ, both conversions apply:
+
+```csharp
+// List<SourceItem> → HashSet<DestItem> with element-level forge method
+__result.Tags = source.Tags is { } __v_Tags
+    ? new global::System.Collections.Generic.HashSet<global::DestItem>(
+        global::System.Linq.Enumerable.Select(__v_Tags, __item => ForgeItem(__item)))
+    : null!;  // NullPropertyHandling governs
+```
+
+### Null Handling
+
+Collection type coercion respects `NullPropertyHandling`:
+
+| `NullPropertyHandling` | Behavior |
+|-------------------------|----------|
+| `NullForgiving` | `source.Prop is { } __v ? <coerce>(__v) : null!` |
+| `SkipNull` | `if (source.Prop is { } __v) __result.Prop = <coerce>(__v);` |
+| `CoalesceToDefault` | `source.Prop is { } __v ? <coerce>(__v) : <empty destination collection/dictionary>` (type-aware, same as non-coercion) |
+| `CoalesceToNew` | `source.Prop is { } __v ? <coerce>(__v) : new HashSet<T>()` (empty target collection) |
+| `ThrowException` | `source.Prop is { } __v ? <coerce>(__v) : throw new ArgumentNullException(...)` |
+
+### Interaction with Existing Features
+
+| Feature | Interaction |
+|---------|-------------|
+| Inline collection mapping (auto-wiring) | Coercion extends existing inline collection code — element forge methods still called per-element |
+| `[ForgeProperty]` | Explicit property mapping takes precedence; coercion applies to the mapped property pair |
+| `ExistingTarget = true` | Collection coercion is compatible with `CollectionUpdateStrategy.Replace` (coerced collection replaces the existing one). For `Add`/`Sync`, coercion does **not** apply — these strategies operate on the existing target collection in place, so the target collection type is already determined by the destination property. If the source and target element types differ, element-level forge methods are used per item |
+| `[ConvertWith]` | Converter takes full precedence — coercion does not apply |
+| `CoalesceToNew` (Feature 1) | Produces empty target collection type (e.g., `new HashSet<T>()`) when source is null |
+| Standalone collection methods (Feature 3) | Coercion applies to return types of collection methods too |
+
+### Diagnostics
+
+| Code | Severity | Description |
+|------|----------|-------------|
+| **FM0039** | Info | Property '{0}' collection type coerced from '{1}' to '{2}' (disabled by default) |
+| **FM0040** | Warning | Property '{0}': no known coercion from '{1}' to '{2}'; property skipped |
+
+### Behavioral Contract
+
+| Scenario | Behavior |
+|----------|----------|
+| Same collection type, same element type | Direct assignment (existing behavior, no coercion needed) |
+| Different collection type, same element type | Coerce via conversion matrix |
+| Different collection type, different element type with forge method | Coerce + element mapping |
+| Unknown collection type pair | FM0040 warning, property skipped |
+| Source is null | Follows `NullPropertyHandling` |
+| Dictionary key type mismatch | Not supported — FM0040 warning |
+
+### Competitor Comparison
+
+| Aspect | AutoMapper | Mapperly | ForgeMap v1.5 |
+|--------|-----------|---------|---------------|
+| List→HashSet | ✅ Runtime | ❌ Limited | ✅ Compile-time |
+| IDictionary→ReadOnlyDictionary | ✅ Runtime | ❌ Not supported | ✅ Compile-time |
+| List→ReadOnlyCollection | ✅ Runtime | ✅ Compile-time | ✅ Compile-time |
+| Element mapping + coercion | ✅ Runtime | ✅ Partial | ✅ Compile-time |
+| Null handling | Runtime | Compile-time | ✅ Full `NullPropertyHandling` |
+| Diagnostic visibility | None | Compile-time | ✅ FM0039/FM0040 |
+
+---
+
+## Feature 3: Standalone Collection Mapping Methods
+
+> **Issue:** [#89](https://github.com/superyyrrzz/ForgeMap/issues/89)
+
+### Problem
+
+AutoMapper auto-maps collections from a single `CreateMap<A, B>()` declaration — calling `mapper.Map<IReadOnlyList<B>>(listOfA)` just works. ForgeMap generates element-level forge methods and handles collections as *properties* inside parent objects (inline iteration), but does **not** generate standalone collection mapping methods.
+
+> **Note:** The existing `GenerateCollectionMappings` setting on `[ForgeMapDefaults]` (see [SPEC.md](SPEC.md)) controls whether the generator auto-generates `IEnumerable<T>`, `List<T>`, and `T[]` overloads for *inline collection property* iteration code. Feature 3 is a separate concept: it lets users declare *arbitrary partial methods* with collection-typed parameters/returns. The generator then discovers the matching element forge method and implements the body. `GenerateCollectionMappings` remains unchanged and continues to control inline property-level collection code generation independently of standalone collection methods.
+
+In the LCS migration, this forced ~78 lines of hand-written collection dispatch:
+
+```csharp
+// 5 repetitive blocks like this:
+if (elementType == typeof(FileRequest)
+    && source is IEnumerable<FileResponse> fileResponses)
+{
+    return (TDestination)(object)fileResponses
+        .Select(s => _forger.ForgeFileRequest(s)).ToList().AsReadOnly();
+}
+```
+
+Each block is the same pattern: iterate source, call forge method, collect into list. This is pure boilerplate that the source generator should eliminate.
+
+### Design
+
+The user declares a partial method with a collection parameter and collection return type. The generator discovers the matching element-level forge method (by matching source/destination element types) and implements the body. This is consistent with ForgeMap's existing pattern: user declares partial method signature, generator implements.
+
+### Usage
+
+```csharp
+[ForgeMap]
+public partial class ClientForger
+{
+    // Element mapping — user declares, generator implements
+    public partial FileRequest ForgeFileRequest(FileResponse source);
+    public partial GroupItemRequest ForgeGroupItemRequest(GroupItemResponse source);
+
+    // Collection mapping — user declares, generator implements
+    // Generator discovers ForgeFileRequest(FileResponse) as the element method
+    public partial IReadOnlyList<FileRequest> ForgeFileRequests(
+        IEnumerable<FileResponse> source);
+
+    // Array return type
+    public partial GroupItemRequest[] ForgeGroupItemRequests(
+        IReadOnlyList<GroupItemResponse> source);
+
+    // List return type
+    public partial List<FileRequest> ForgeFileRequestList(
+        FileResponse[] source);
+}
+```
+
+### Resolution Algorithm
+
+For each unimplemented partial method on a `[ForgeMap]` class that does not match the element forge method signature pattern (single non-collection parameter → single non-collection return):
+
+1. **Detect collection signature**: The method has exactly one parameter whose type is a recognized collection type (`IEnumerable<T>`, `IReadOnlyList<T>`, `IReadOnlyCollection<T>`, `ICollection<T>`, `IList<T>`, `List<T>`, `T[]`, `HashSet<T>`) and a return type that is also a recognized collection type
+2. **Extract element types**: Source element type `TSource` from the parameter's collection, destination element type `TDest` from the return type's collection
+3. **Find matching element method**: Search for a forge method on the same forger with signature `TDest MethodName(TSource source)`. The match is by type only — method name does not matter
+4. **Validate uniqueness**: If multiple element methods match the same `TSource → TDest` pair, emit **FM0042** (ambiguous). The user must remove one element method to disambiguate (renaming does not help — matching is by type only)
+5. **Generate body**: Iterate source collection, call element method per item, collect into declared return type
+
+### Generated Code
+
+**`IReadOnlyList<T>` return type:**
+
+```csharp
+public partial IReadOnlyList<FileRequest> ForgeFileRequests(
+    IEnumerable<FileResponse> source)
+{
+    if (source == null) return null!;  // NullHandling.ReturnNull (default)
+
+    var __result = new global::System.Collections.Generic.List<global::FileRequest>();
+    foreach (var __item in source)
+    {
+        __result.Add(ForgeFileRequest(__item));
+    }
+    return __result;
+}
+```
+
+**`T[]` return type:**
+
+```csharp
+public partial GroupItemRequest[] ForgeGroupItemRequests(
+    IReadOnlyList<GroupItemResponse> source)
+{
+    if (source == null) return null!;
+
+    var __result = new global::GroupItemRequest[source.Count];
+    for (var __i = 0; __i < source.Count; __i++)
+    {
+        __result[__i] = ForgeGroupItemRequest(source[__i]);
+    }
+    return __result;
+}
+```
+
+**`List<T>` return type:**
+
+```csharp
+public partial List<FileRequest> ForgeFileRequestList(
+    FileResponse[] source)
+{
+    if (source == null) return null!;
+
+    var __result = new global::System.Collections.Generic.List<global::FileRequest>(source.Length);
+    foreach (var __item in source)
+    {
+        __result.Add(ForgeFileRequest(__item));
+    }
+    return __result;
+}
+```
+
+**`IEnumerable<T>` return type (lazy):**
+
+```csharp
+public partial IEnumerable<FileRequest> ForgeFileRequestsLazy(
+    IEnumerable<FileResponse> source)
+{
+    if (source == null) return null!;
+
+    return global::System.Linq.Enumerable.Select(source,
+        __item => ForgeFileRequest(__item));
+}
+```
+
+**`HashSet<T>` return type:**
+
+```csharp
+public partial HashSet<DestItem> ForgeDestItems(
+    IEnumerable<SourceItem> source)
+{
+    if (source == null) return null!;
+
+    var __result = new global::System.Collections.Generic.HashSet<global::DestItem>();
+    foreach (var __item in source)
+    {
+        __result.Add(ForgeItem(__item));
+    }
+    return __result;
+}
+```
+
+### Null Handling
+
+Collection methods follow the forger's `NullHandling` setting (method-level), not `NullPropertyHandling` (property-level):
+
+| `NullHandling` | Generated Code |
+|----------------|----------------|
+| `ReturnNull` (default) | `if (source == null) return null!;` |
+| `ThrowException` | `if (source == null) throw new global::System.ArgumentNullException(nameof(source));` |
+
+### Pre-sized Collections
+
+When the source parameter type exposes a cheap `.Count` or `.Length` property (`IReadOnlyCollection<T>`, `ICollection<T>`, `IList<T>`, `List<T>`, `T[]`), the generated `List<T>` is pre-sized:
+
+```csharp
+var __result = new List<T>(source.Count);  // or source.Length for arrays
+```
+
+When the source is `IEnumerable<T>` (no known count), no pre-sizing is applied:
+
+```csharp
+var __result = new List<T>();
+```
+
+**Array return types**: When the return type is `T[]` and the source exposes `.Count`/`.Length`, the generator uses a pre-allocated array with indexed assignment (as shown in the `T[]` example above). When the source is `IEnumerable<T>` (no count), the generator falls back to building a `List<T>` and calling `.ToArray()`:
+
+```csharp
+// T[] return type with IEnumerable<T> source (no count available)
+var __result = new global::System.Collections.Generic.List<global::T>();
+foreach (var __item in source)
+{
+    __result.Add(ForgeElement(__item));
+}
+return __result.ToArray();
+```
+
+### Interaction with Existing Features
+
+| Feature | Interaction |
+|---------|-------------|
+| Inline collection properties | Existing behavior unchanged — inline iteration handles collection properties within parent mappings. Standalone methods are for top-level collection mapping |
+| `[ForgeProperty]` / `[ForgeFrom]` / `[Ignore]` | Not applicable — these are method-level, not property-level. Collection methods have no properties to configure |
+| `NullHandling` | `ReturnNull` or `ThrowException` — follows forger-level setting |
+| `[ConvertWith]` | Supported with precedence — if present on a collection method, `[ConvertWith]` takes full control of the method body and standalone collection generation is skipped for that method |
+| `[ForgeAllDerived]` | Not applicable to collection methods |
+| `[ReverseForge]` | Not supported on collection methods — declare a separate collection method for the reverse direction |
+| Collection type coercion (Feature 2) | Coercion applies to the return type — e.g., element method returns `DestItem`, collection method returns `HashSet<DestItem>` |
+| `CoalesceToNew` (Feature 1) | Not applicable — `NullHandling` governs null source, not `NullPropertyHandling` |
+
+### Diagnostics
+
+| Code | Severity | Description |
+|------|----------|-------------|
+| **FM0041** | Error | Collection method '{0}' declared but no matching element forge method found for '{1}' → '{2}' |
+| **FM0042** | Error | Collection method '{0}' is ambiguous: multiple element forge methods match '{1}' → '{2}'. Remove one element method to disambiguate (renaming does not help — matching is by type only) |
+
+### Behavioral Contract
+
+| Scenario | Behavior |
+|----------|----------|
+| Matching element method exists | Generate collection iteration body |
+| No matching element method | FM0041 error, method body not generated (causes CS8795 compiler error for public partial methods) |
+| Multiple matching element methods | FM0042 error |
+| Source is null, `NullHandling = ReturnNull` | Returns `null!` |
+| Source is null, `NullHandling = ThrowException` | Throws `ArgumentNullException` |
+| Element method throws for an element | Exception propagates — no per-element error handling |
+| Empty source collection | Returns empty destination collection |
+| `[ConvertWith]` on collection method | Converter takes precedence, collection generation skipped |
+| Collection method + `[ReverseForge]` | Not supported — declare separate method for reverse |
+
+### Competitor Comparison
+
+| Aspect | AutoMapper | Mapperly | ForgeMap v1.5 |
+|--------|-----------|---------|---------------|
+| Collection from element mapping | ✅ Implicit (runtime) | ✅ Auto-generated (compile-time) | ✅ User declares partial, generator implements |
+| Return type control | Limited (`List<T>` default) | Limited | ✅ Full control via declared return type |
+| Naming | N/A (same `Map<T>()` call) | Auto-generated | ✅ User controls method name |
+| Lazy enumeration | ❌ Always materialized | ❌ Always materialized | ✅ `IEnumerable<T>` return → lazy `Select` |
+| Pre-sized collections | ❌ Runtime | ❌ | ✅ When source has `.Count`/`.Length` |
+| Null handling | Runtime config | Compile-time | ✅ `NullHandling` on forger |
+
+---
+
+## Feature 4: `[AfterForge]` Migration Pattern & Diagnostics
+
+> **Issue:** [#93](https://github.com/superyyrrzz/ForgeMap/issues/93)
+
+### Problem
+
+`[AfterForge]` already exists in ForgeMap (see [SPEC.md](SPEC.md)) but lacks dedicated diagnostics for common migration mistakes. When migrating from AutoMapper, many mappings have 1–2 properties (out of 15+) that need special handling while the rest map 1:1. Currently, the only options are:
+
+- Write the **entire** method manually, losing all auto-generation benefits
+- Use `[ConvertWith]`, which replaces the **entire** generated mapping with a custom converter
+
+Neither option preserves the auto-generated 1:1 mappings. In a migration of ~71 AutoMapper `CreateMap` entries, 8 methods (~130 lines) had to be written fully manually because of 1–2 non-trivial properties each. This is the ForgeMap equivalent of AutoMapper's `.AfterMap((src, dest) => { ... })`.
+
+```csharp
+// Today: forced to write 30-line manual method because of 2 properties
+public BuildRun ForgeBuildRun(BuildTableEntity source)
+{
+    var dest = new BuildRun
+    {
+        Id = source.BuildId,
+        RequestedAt = source.StartedAt,
+        // ... 18 more 1:1 properties manually written ...
+    };
+    dest.BuildType = nameof(BuildType.Commit);  // only exception
+    dest.AutoHealingCustomData = ForgeAutoHealingCustomDataViewModel(
+        source.AutoHealingCustomData);  // only exception
+    return dest;
+}
+```
+
+### Design
+
+ForgeMap already includes an `[AfterForge]` attribute (see [SPEC.md](SPEC.md)) for referencing a user-defined callback method. In v1.5, the focus is on adding dedicated diagnostics (FM0043–FM0045) and documenting `[AfterForge]` as the recommended migration pattern for AutoMapper's `.AfterMap()`. The generator handles all matching properties as usual, then calls the callback at the end of the method body, passing the source and the constructed result.
 
 ### API Surface
 
 ```csharp
 /// <summary>
-/// Marks a forge method as a dictionary-to-typed-object mapping.
-/// The source parameter must be Dictionary&lt;string, object?&gt;,
-/// IDictionary&lt;string, object?&gt;, or IReadOnlyDictionary&lt;string, object?&gt;.
+/// Specifies a callback method to invoke after the generator has assigned all
+/// auto-mapped properties. The callback receives the source object and the
+/// constructed destination object, allowing property fixups or additional logic
+/// before the result is returned.
 /// </summary>
-[AttributeUsage(AttributeTargets.Method, AllowMultiple = false, Inherited = false)]
-public sealed class ForgeDictionaryAttribute : Attribute
+[AttributeUsage(AttributeTargets.Method, AllowMultiple = true, Inherited = false)]
+public sealed class AfterForgeAttribute : Attribute
 {
     /// <summary>
-    /// Specifies how dictionary keys are matched to destination property names.
-    /// Default is <see cref="PropertyMatching.ByName"/> (case-sensitive).
-    /// Overrides the forger-level PropertyMatching for this method only.
+    /// The name of a method on the forger class to call after property assignment.
+    /// The method must accept (TSource source, TDestination destination) and return void.
+    /// Use nameof() for compile-time safety.
     /// </summary>
-    public PropertyMatching KeyMatching { get; set; } = PropertyMatching.ByName;
+    public string MethodName { get; }
 
-    /// <summary>
-    /// Specifies the behavior when a dictionary key is missing for a destination property,
-    /// or when the key exists but its value is unusable (wrong type or not convertible).
-    /// Default is Skip (leave the property at its default value).
-    /// </summary>
-    public MissingKeyBehavior MissingKeyBehavior { get; set; } = MissingKeyBehavior.Skip;
-}
-
-/// <summary>
-/// Specifies behavior when a dictionary key is missing or when the value is unusable
-/// (wrong type or not convertible to the destination property type).
-/// </summary>
-public enum MissingKeyBehavior
-{
-    /// <summary>Leave the destination property at its default value.</summary>
-    Skip,
-
-    /// <summary>
-    /// Throw when the key is missing (KeyNotFoundException), when there is no
-    /// applicable conversion (InvalidCastException), or when a framework conversion
-    /// helper (e.g., Convert.ToXxx, Enum.Parse) throws; such exceptions
-    /// (FormatException, OverflowException, etc.) are propagated as-is.
-    /// </summary>
-    Throw
+    public AfterForgeAttribute(string methodName)
+    {
+        MethodName = methodName;
+    }
 }
 ```
 
@@ -306,233 +580,127 @@ public enum MissingKeyBehavior
 [ForgeMap]
 public partial class AppForger
 {
-    // Basic dictionary-to-object mapping
-    [ForgeDictionary]
-    public partial UserDto Forge(Dictionary<string, object?> source);
+    [AfterForge(nameof(FixupBuildRun))]
+    [Ignore(nameof(BuildRun.BuildType), nameof(BuildRun.AutoHealingCustomData))]
+    public partial BuildRun ForgeBuildRun(BuildTableEntity source);
 
-    // Case-insensitive key matching
-    [ForgeDictionary(KeyMatching = PropertyMatching.ByNameCaseInsensitive)]
-    public partial ConfigSettings Forge(IDictionary<string, object?> source);
-
-    // Strict mode: throw on missing keys
-    [ForgeDictionary(MissingKeyBehavior = MissingKeyBehavior.Throw)]
-    public partial StrictDto ForgeStrict(Dictionary<string, object?> source);
+    private void FixupBuildRun(BuildTableEntity source, BuildRun dest)
+    {
+        dest.BuildType = nameof(BuildType.Commit);
+        dest.AutoHealingCustomData = ForgeAutoHealingCustomDataViewModel(
+            source.AutoHealingCustomData);
+    }
 }
 ```
+
+Properties handled by the callback should be marked with `[Ignore]` to suppress FM0006 (unmapped property warning) and avoid the generator also attempting to map them.
 
 ### Generated Code
 
-**Basic case-sensitive mapping** (`NullHandling = ReturnNull`, default):
-
 ```csharp
-public partial UserDto Forge(Dictionary<string, object?> source)
-{
-    if (source == null) return null!;  // NullHandling.ReturnNull (default); ThrowException would throw here
-
-    var __result = new UserDto();
-
-    if (source.TryGetValue("Name", out var __v_Name) && __v_Name is string __cast_Name)
-        __result.Name = __cast_Name;
-
-    if (source.TryGetValue("Age", out var __v_Age) && __v_Age is int __cast_Age)
-        __result.Age = __cast_Age;
-
-    if (source.TryGetValue("Email", out var __v_Email) && __v_Email is string __cast_Email)
-        __result.Email = __cast_Email;
-
-    if (source.TryGetValue("IsActive", out var __v_IsActive) && __v_IsActive is bool __cast_IsActive)
-        __result.IsActive = __cast_IsActive;
-
-    if (source.TryGetValue("Score", out var __v_Score))
-    {
-        if (__v_Score is null)
-        {
-            // NullPropertyHandling governs behavior:
-            // NullForgiving (default): __result.Score = default!;
-            // CoalesceToDefault: __result.Score = 0.0;
-            // SkipNull: skip assignment
-            // ThrowException: throw
-            __result.Score = default!;
-        }
-        else
-        {
-            __result.Score = global::System.Convert.ToDouble(__v_Score);
-        }
-    }
-
-    return __result;
-}
-```
-
-**Case-insensitive key matching:**
-
-When `KeyMatching = PropertyMatching.ByNameCaseInsensitive`, the generator uses ordinal-ignore-case comparisons to match ForgeMap's existing `ByNameCaseInsensitive` semantics:
-
-```csharp
-public partial ConfigSettings Forge(IDictionary<string, object?> source)
+public partial BuildRun ForgeBuildRun(BuildTableEntity source)
 {
     if (source == null) return null!;
 
-    var __result = new ConfigSettings();
-
-    foreach (var __kvp in source)
+    var __result = new BuildRun
     {
-        var __key = __kvp.Key;
+        // init/required properties
+    };
 
-        if (string.Equals(__key, "HostName", global::System.StringComparison.OrdinalIgnoreCase))
-        {
-            if (__kvp.Value is string __cast_HostName)
-                __result.HostName = __cast_HostName;
-        }
-        else if (string.Equals(__key, "Port", global::System.StringComparison.OrdinalIgnoreCase))
-        {
-            if (__kvp.Value is int __cast_Port)
-                __result.Port = __cast_Port;
-        }
-        else if (string.Equals(__key, "UsesSsl", global::System.StringComparison.OrdinalIgnoreCase))
-        {
-            if (__kvp.Value is bool __cast_UsesSsl)
-                __result.UsesSsl = __cast_UsesSsl;
-        }
-    }
+    // Auto-generated 1:1 property assignments
+    __result.Id = source.BuildId;
+    __result.RequestedAt = source.StartedAt;
+    // ... all other matching properties ...
+
+    // AfterForge callback — user-defined fixups
+    FixupBuildRun(source, __result);
 
     return __result;
 }
 ```
 
-**Strict mode (throw on missing key):**
+### With `[UseExistingValue]` Mutation Methods
 
-Strict mode separates missing-key, null-value, and wrong-type cases. Missing keys throw `KeyNotFoundException`. Null values follow `NullPropertyHandling`. Wrong types throw `InvalidCastException`.
+`[AfterForge]` also works on `ForgeInto` mutation methods:
 
 ```csharp
-public partial StrictDto ForgeStrict(Dictionary<string, object?> source)
+[AfterForge(nameof(FixupOrder))]
+public partial void ForgeInto(OrderUpdateDto source, [UseExistingValue] Order target);
+
+private void FixupOrder(OrderUpdateDto source, Order target)
 {
-    if (source == null) return null!;
-
-    var __result = new StrictDto();
-
-    if (!source.TryGetValue("Name", out var __v_Name))
-        throw new global::System.Collections.Generic.KeyNotFoundException(
-            $"Required key 'Name' not found in source dictionary.");
-    if (__v_Name is null)
-        __result.Name = null!; // NullPropertyHandling (default NullForgiving)
-    else if (__v_Name is string __cast_Name)
-        __result.Name = __cast_Name;
-    else
-        throw new global::System.InvalidCastException(
-            $"Value for key 'Name' is not convertible to 'System.String'.");
-
-    if (!source.TryGetValue("Age", out var __v_Age))
-        throw new global::System.Collections.Generic.KeyNotFoundException(
-            $"Required key 'Age' not found in source dictionary.");
-    if (__v_Age is null)
-    { /* NullPropertyHandling governs: keep default (NullForgiving/SkipNull), coalesce (CoalesceToDefault), or throw (ThrowException) */ }
-    else if (__v_Age is int __cast_Age)
-        __result.Age = __cast_Age;
-    else
-        throw new global::System.InvalidCastException(
-            $"Value for key 'Age' is not convertible to 'System.Int32'.");
-
-    return __result;
+    target.LastModified = DateTimeOffset.UtcNow;
 }
 ```
 
-### Type Conversion Strategy
+Generated:
 
-The generator applies the following conversion hierarchy for each destination property type:
+```csharp
+public partial void ForgeInto(OrderUpdateDto source, [UseExistingValue] Order target)
+{
+    if (source == null) return;
+    if (target == null) throw new global::System.ArgumentNullException(nameof(target));
 
-| Priority | Strategy | Example | Handles |
-|----------|----------|---------|---------|
-| 1 | Pattern match (`is T`) | `value is int x` | Exact type match, reference conversions |
-| 2 | Nullable unwrap | `value is int x` for `int?` dest | `object?` → `Nullable<T>` |
-| 3 | `Convert.ToXxx()` | `Convert.ToDouble(value)` | Numeric widening (int→double), string→number |
-| 4 | `Enum.Parse` / cast | `value is int i ? (MyEnum)i : value is string s ? (MyEnum)Enum.Parse(typeof(MyEnum), s, true) : /* skip/throw */` | String→enum, int→enum. For nullable enum destinations (`MyEnum?`), the result is cast to `(MyEnum?)` after parsing via the underlying type |
-| 5 | Nested `[ForgeDictionary]` | `value is IDictionary<string, object?> d ? Forge(d) : value is IReadOnlyDictionary<string, object?> rd ? Forge(rd) : /* skip/throw */` | Nested dictionary-like → nested object |
-| 6 | Auto-wired forge method | `value is SourceType s ? Forge(s) : /* skip/throw */` | Complex nested types |
-| 7 | `ToString()` | `value?.ToString()` | Any → string (fallback) |
+    target.Status = source.Status;
+    // ... auto-mapped properties ...
 
-The generator picks the **first applicable** strategy at compile time. If no strategy applies, the property is skipped and **FM0042** is emitted.
+    FixupOrder(source, target);
+}
+```
 
-For strategies that use framework conversion helpers (e.g., `Convert.ToXxx`, `Enum.Parse`), any exceptions thrown by those helpers (`FormatException`, `OverflowException`, `ArgumentException`, etc.) are propagated as-is; the generator does **not** catch and wrap them into a uniform `InvalidCastException`.
+### Resolution Algorithm
 
-For numeric types specifically:
+1. **Detect attribute**: Check if the forge method has `[AfterForge]`
+2. **Resolve callback**: Find a method on the forger class with the specified name. The method must:
+   - Accept exactly two parameters: `(TSource, TDestination)` matching the forge method's source and return types (or source and `[UseExistingValue]` parameter for mutation methods)
+   - Return `void`
+   - Be accessible from the generated code (private, internal, or public)
+3. **Emit callback**: After all property assignments (and after any auto-wired nested mappings), emit `MethodName(source, __result);` (or `MethodName(source, target);` for mutation methods)
+4. **Interaction with null handling**: The callback is only invoked when the source is non-null and the result/target has been constructed. The null check happens before property assignment, so the callback is never called with a null source
 
-| Destination Type | Generated Code |
-|------------------|----------------|
-| `int` | `value is int x` (fallback: `Convert.ToInt32(value)`) |
-| `long` | `value is long x` (fallback: `Convert.ToInt64(value)`) |
-| `double` | `value is double x` (fallback: `Convert.ToDouble(value)`) |
-| `decimal` | `value is decimal x` (fallback: `Convert.ToDecimal(value)`) |
-| `float` | `value is float x` (fallback: `Convert.ToSingle(value)`) |
+### Diagnostics
 
-The `Convert.ToXxx` fallback handles JSON deserializers that parse `42` as `long` or `int` across different libraries.
+> **Note:** FM0043 and FM0045 refine the existing FM0016 (hook method not found/invalid signature) and FM0018 (`[BeforeForge]`/`[AfterForge]` not supported on enum/collection methods) from SPEC.md. The new codes provide more specific error messages for `[AfterForge]` scenarios; FM0016 and FM0018 remain active for `[BeforeForge]` and other hook-related errors.
+
+| Code | Severity | Description |
+|------|----------|-------------|
+| **FM0043** | Error | `[AfterForge]` method '{0}' not found on forger class, or has wrong signature. Expected: `void {0}({1} source, {2} destination)` for returning forge methods, or `void {0}({1} source, {2} target)` for `ForgeInto` mutation methods |
+| **FM0044** | Error | `[AfterForge]` and `[ConvertWith]` are mutually exclusive on method '{0}' — `[ConvertWith]` takes full control of the method body |
+| **FM0045** | Error | `[AfterForge]` is not applicable to collection method '{0}' — use element-level `[AfterForge]` on the element forge method instead |
 
 ### Interaction with Existing Features
 
 | Feature | Interaction |
 |---------|-------------|
-| `[Ignore]` | Ignored properties are excluded from dictionary lookup |
-| `[ForgeProperty]` | `[ForgeProperty("dict_key", "PropertyName")]` overrides the key used for lookup |
-| `[ForgeFrom]` | Resolver receives the entire dictionary as source — works as-is |
-| `NullPropertyHandling` | Applies to the value after extraction from dictionary (same semantics as regular mapping) |
-| `[ReverseForge]` | Reverse generates typed-object-to-dictionary mapping (see below) |
-| `init`/`required` properties | Routed to object initializer (same as auto-flattening) |
-| Constructor mapping | Dictionary values matched to constructor parameters by name |
-
-### Reverse Mapping (Object-to-Dictionary)
-
-When `[ReverseForge]` is present on a `[ForgeDictionary]` method, the generator creates the inverse mapping:
-
-```csharp
-// Forward (user-declared signature; implementation generated from [ForgeDictionary] + [ReverseForge]):
-public partial UserDto Forge(Dictionary<string, object?> source);
-
-// Reverse (auto-generated, NullHandling = ReturnNull default):
-public Dictionary<string, object?> Forge(UserDto source)
-{
-    if (source == null) return null!;  // NullHandling.ReturnNull (default); ThrowException would throw here
-
-    return new global::System.Collections.Generic.Dictionary<string, object?>
-    {
-        ["Name"] = source.Name,
-        ["Age"] = source.Age,
-        ["Email"] = source.Email,
-        ["IsActive"] = source.IsActive,
-    };
-}
-```
-
-### Diagnostics
-
-| Code | Severity | Description |
-|------|----------|-------------|
-| **FM0041** | Error | `[ForgeDictionary]` source parameter must be `Dictionary<string, object?>`, `IDictionary<string, object?>`, or `IReadOnlyDictionary<string, object?>` |
-| **FM0042** | Warning | Destination property '{0}' of type '{1}' has no applicable conversion from `object?`. The property will be skipped |
-| **FM0043** | Info | Property '{0}' mapped from dictionary key '{1}' with conversion '{2}' (disabled by default) |
+| `[Ignore]` | Properties handled by the callback should be `[Ignore]`d to avoid double-mapping and suppress FM0006 |
+| `[ForgeProperty]` / `[ForgeFrom]` | Executed before the callback — callback can override or augment any auto-mapped values |
+| `[ConvertWith]` | Mutually exclusive — `[ConvertWith]` takes full control of the method body. Emit FM0044 if both are present |
+| `[ReverseForge]` | Reverse method does NOT inherit `[AfterForge]` — if the reverse also needs a callback, declare `[AfterForge]` on the reverse method separately |
+| `NullHandling` | Callback is only invoked after the null check — never called with null source |
+| Auto-wired nested mappings | Nested mappings execute before the callback |
+| `ExistingTarget = true` | Nested existing-target updates execute before the callback |
+| Collection methods (Feature 3) | `[AfterForge]` is not applicable to collection methods (FM0045) — use element-level `[AfterForge]` on the element forge method instead |
 
 ### Behavioral Contract
 
 | Scenario | Behavior |
 |----------|----------|
-| Key exists, value is correct type | Assign via pattern match |
-| Key exists, value is convertible type | Assign via `Convert.ToXxx` or cast |
-| Key exists, value is wrong type (no applicable conversion) | Skip or throw per `MissingKeyBehavior` |
-| Key missing | Skip or throw per `MissingKeyBehavior` |
-| Key exists, value is `null` | Follows `NullPropertyHandling` |
-| Source dictionary is `null` | Follows `NullHandling` (ReturnNull or ThrowException) |
-| Nested dictionary value | Auto-wired to nested `[ForgeDictionary]` method or forge method |
-| `init`/`required` property | Routed to object initializer |
+| Valid callback method exists | All auto-mapped properties assigned first, then callback invoked |
+| Callback method not found or wrong signature | FM0043 error |
+| `[AfterForge]` + `[ConvertWith]` on same method | FM0044 error (mutually exclusive) |
+| Source is null | Callback NOT invoked (null check occurs first) |
+| Callback throws | Exception propagates — no wrapping |
+| Callback modifies auto-mapped properties | Allowed — callback has final say |
+| `[AfterForge]` on collection method | FM0045 error (not applicable) |
 
 ### Competitor Comparison
 
-| Aspect | AutoMapper | Mapperly | ForgeMap v1.5 (planned) |
+| Aspect | AutoMapper | Mapperly | ForgeMap v1.5 |
 |--------|-----------|---------|---------------|
-| Dictionary→Object | ❌ Not supported | ❌ Not supported (#1309) | ✅ `[ForgeDictionary]` |
-| Case-insensitive keys | N/A | N/A | ✅ `KeyMatching` option |
-| Missing key behavior | N/A | N/A | ✅ `Skip` or `Throw` |
-| Type conversion | N/A | N/A | ✅ 7-tier compile-time strategy |
-| Reverse (Object→Dictionary) | N/A | N/A | ✅ Via `[ReverseForge]` |
-| Zero reflection | N/A | N/A | ✅ All compile-time generated |
+| Post-mapping callback | ✅ `.AfterMap()` (runtime) | ❌ Not supported | ✅ `[AfterForge]` (compile-time) |
+| Callback signature | `Action<TSource, TDest>` | N/A | `void Method(TSource, TDest)` |
+| Compile-time validation | ❌ Runtime errors | N/A | ✅ FM0043 diagnostic |
+| Pre-mapping callback | ✅ `.BeforeMap()` | ❌ | ❌ Not in v1.5 scope |
 
 ---
 
@@ -540,26 +708,63 @@ public Dictionary<string, object?> Forge(UserDto source)
 
 | Code | Severity | Category | Feature | Description |
 |------|----------|----------|---------|-------------|
-| FM0038 | Info | `ForgeMap` | Auto-flattening | Property '{0}' auto-flattened from '{1}' (disabled by default) |
-| FM0039 | Error | `ForgeMap` | Auto-flattening | Unflattening requires type '{0}' to have an accessible constructor |
-| FM0040 | Warning | `ForgeMap` | Auto-flattening | Auto-flattened property '{0}' cannot be unflattened for `[ReverseForge]`: {reason} |
-| FM0041 | Error | `ForgeMap` | `[ForgeDictionary]` | Source parameter must be `Dictionary<string, object?>`, `IDictionary<string, object?>`, or `IReadOnlyDictionary<string, object?>` |
-| FM0042 | Warning | `ForgeMap` | `[ForgeDictionary]` | Destination property '{0}' of type '{1}' has no applicable conversion from `object?` |
-| FM0043 | Info | `ForgeMap` | `[ForgeDictionary]` | Property '{0}' mapped from dictionary key '{1}' with conversion '{2}' (disabled by default) |
+| FM0038 | Error | `ForgeMap` | `CoalesceToNew` | `CoalesceToNew` cannot synthesize `new {0}()`: no accessible parameterless constructor, or uninitialized `required` members |
+| FM0039 | Info | `ForgeMap` | Collection coercion | Property '{0}' collection type coerced from '{1}' to '{2}' (disabled by default) |
+| FM0040 | Warning | `ForgeMap` | Collection coercion | Property '{0}': no known coercion from '{1}' to '{2}'; property skipped |
+| FM0041 | Error | `ForgeMap` | Collection methods | Collection method '{0}' declared but no matching element forge method found |
+| FM0042 | Error | `ForgeMap` | Collection methods | Collection method '{0}' is ambiguous: multiple element forge methods match |
+| FM0043 | Error | `ForgeMap` | `[AfterForge]` | `[AfterForge]` method '{0}' not found or has wrong signature (supports both returning and mutation methods) |
+| FM0044 | Error | `ForgeMap` | `[AfterForge]` | `[AfterForge]` and `[ConvertWith]` are mutually exclusive |
+| FM0045 | Error | `ForgeMap` | `[AfterForge]` | `[AfterForge]` is not applicable to collection methods |
 
 ---
 
 ## API Changes Summary
 
-| Type | Kind | Description |
-|------|------|-------------|
-| `ForgeDictionaryAttribute` | Attribute | Dictionary-to-typed-object mapping |
-| `MissingKeyBehavior` | Enum | Skip / Throw for missing dictionary keys |
-| `ForgeMapAttribute.AutoFlatten` | Property | Enable auto-flattening |
-| `ForgeMapDefaultsAttribute.AutoFlatten` | Property | Assembly-level auto-flattening default |
+### New Enum Values (v1.5)
+
+| Enum | New Value | Description |
+|------|-----------|-------------|
+| `NullPropertyHandling` | `CoalesceToNew = 4` | `new T()` for null reference types, `default(T)` for value types |
+
+### New Diagnostics (v1.5)
+
+Feature 4 adds three new diagnostics (FM0043–FM0045) that refine validation for the existing `[AfterForge]` attribute. No new attributes are introduced — `AfterForgeAttribute` already exists in the main spec.
+
+### No New Attributes
+
+All v1.5 features work within the existing attribute surface.
 
 ---
 
-*Specification Version: 1.5 (2026-04-03)*
+## Migration Guide
+
+### From v1.4 to v1.5
+
+v1.5 introduces no required source changes and no API-surface breaks. Four behavior items to be aware of:
+
+1. **`CoalesceToNew` (opt-in)** — New enum value added to `NullPropertyHandling`. No behavior change unless explicitly opted in via attribute configuration.
+
+2. **Collection type coercion (automatic)** — Properties where source and destination differ only in collection wrapper type (e.g., `List<string>` → `HashSet<string>`) will now be automatically mapped instead of skipped with FM0006. This **may change behavior** for projects that relied on the property being unmapped. To suppress coercion for a specific property, use `[Ignore]`. If the previous unmapped warning (FM0006) was suppressed, the property is now auto-mapped — review the generated code.
+
+3. **Standalone collection methods (opt-in)** — Declaring a partial method with collection types triggers collection method generation. Existing forgers are unaffected unless new partial methods are added.
+
+4. **`[AfterForge]` migration pattern & diagnostics (opt-in)** — v1.5 adds refined diagnostics (FM0043–FM0045) for the existing `[AfterForge]` attribute and documents it as the recommended migration pattern for AutoMapper's `.AfterMap()`. No behavior change to existing methods unless `[AfterForge]` is explicitly added.
+
+---
+
+## Limitations
+
+| Limitation | Reason | Workaround |
+|-----------|--------|------------|
+| `CoalesceToNew` requires parameterless constructor | Generator emits `new T()` — cannot know which constructor parameters to supply | Use `[ForgeFrom]` resolver for types without parameterless constructors |
+| Dictionary coercion limited to same key type | Key type conversion adds combinatorial complexity | Use `[ForgeFrom]` resolver for key-type conversions |
+| Collection methods don't support `[ReverseForge]` | Reverse collection mapping is the same pattern — declare a separate method | Declare `partial IReadOnlyList<A> Forge(IEnumerable<B> source)` as the reverse |
+| Collection methods require exactly one matching element method | Ambiguity is a compile-time error | Remove one element method to disambiguate (matching is by type, not name) |
+
+---
+
+*Specification Version: 1.5 (2026-04-07)*
 *Status: Planned*
+*Deferred features: [SPEC-v1.6-advanced-mapping.md](SPEC-v1.6-advanced-mapping.md)*
 *License: MIT*

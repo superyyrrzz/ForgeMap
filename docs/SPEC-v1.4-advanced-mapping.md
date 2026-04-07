@@ -10,14 +10,14 @@ v1.4 delivers nested existing-target mapping plus two AutoMapper migration pain 
 | 2 | Auto-convert string→enum | [#80](https://github.com/superyyrrzz/ForgeMap/issues/80) | **Shipped** |
 | 3 | `[ConvertWith]` code generation | [#81](https://github.com/superyyrrzz/ForgeMap/issues/81) | **Shipped** |
 
-### Deferred to v1.5
+### Deferred to v1.6
 
-The following features were originally planned for v1.4 but have been moved to v1.5 to prioritize migration-driven issues #80 and #81:
+The following features were originally planned for v1.4 but have been deferred (v1.4 → v1.5 → v1.6) to prioritize migration-driven issues:
 
 | Feature | Issue | Notes |
 |---------|-------|-------|
-| Auto-flattening with `init`/`required` support | [#82](https://github.com/superyyrrzz/ForgeMap/issues/82) | See [SPEC-v1.5-advanced-mapping.md](SPEC-v1.5-advanced-mapping.md) |
-| Dictionary-to-typed-object mapping (`[ForgeDictionary]`) | [#83](https://github.com/superyyrrzz/ForgeMap/issues/83) | See [SPEC-v1.5-advanced-mapping.md](SPEC-v1.5-advanced-mapping.md) |
+| Auto-flattening with `init`/`required` support | [#82](https://github.com/superyyrrzz/ForgeMap/issues/82) | See [SPEC-v1.6-advanced-mapping.md](SPEC-v1.6-advanced-mapping.md) |
+| Dictionary-to-typed-object mapping (`[ForgeDictionary]`) | [#83](https://github.com/superyyrrzz/ForgeMap/issues/83) | See [SPEC-v1.6-advanced-mapping.md](SPEC-v1.6-advanced-mapping.md) |
 
 ---
 
@@ -625,5 +625,6 @@ v1.4 introduces no required source changes and no API-surface breaks. Three beha
 
 *Specification Version: 1.4 (revised 2026-04-03)*
 *Status: Complete — all features shipped*
-*v1.5 deferred features: [SPEC-v1.5-advanced-mapping.md](SPEC-v1.5-advanced-mapping.md)*
+*v1.5: [SPEC-v1.5-advanced-mapping.md](SPEC-v1.5-advanced-mapping.md)*
+*v1.6 deferred features: [SPEC-v1.6-advanced-mapping.md](SPEC-v1.6-advanced-mapping.md)*
 *License: MIT*
