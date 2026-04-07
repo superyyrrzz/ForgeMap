@@ -461,7 +461,9 @@ internal sealed partial class ForgeCodeEmitter
         ITypeSymbol destPropertyType,
         string destPropertyName,
         string destTypeName,
-        Dictionary<string, int> nullPropertyHandlingOverrides)
+        Dictionary<string, int> nullPropertyHandlingOverrides,
+        SourceProductionContext context,
+        IMethodSymbol method)
     {
         if (sourcePropertyType != null && IsNullableToNonNullableValueType(sourcePropertyType, destPropertyType))
             return sourceExpression.Contains("?.") ? $"({destPropertyType.ToDisplayString()})({sourceExpression})!" : $"({destPropertyType.ToDisplayString()}){sourceExpression}!";
@@ -496,6 +498,7 @@ internal sealed partial class ForgeCodeEmitter
             // SkipNull (1) is not applicable for ctor params — fall back to NullForgiving
             if (strategy == 1)
                 strategy = 0;
+            if (strategy == 4) ValidateCoalesceToNew(destPropertyType, context, method);
             return ApplyNullPropertyHandlingExpression(sourceExpression, destPropertyType, destPropertyName, destTypeName, strategy)
                    ?? $"{sourceExpression}!"; // fallback if ApplyNullPropertyHandlingExpression returns null (SkipNull)
         }

@@ -279,7 +279,7 @@ internal sealed partial class ForgeCodeEmitter
                 var expr = GenerateCtorParamExpression(
                     mapping.SourceExpression, mapping.SourcePropertyType, mapping.DestPropertyType,
                     mapping.DestPropertyName, destinationType.ToDisplayString(),
-                    nullPropertyHandlingOverrides);
+                    nullPropertyHandlingOverrides, context, method);
                 sb.AppendLine($"                {mapping.CtorParamName}: {expr}{separator}");
             }
 
