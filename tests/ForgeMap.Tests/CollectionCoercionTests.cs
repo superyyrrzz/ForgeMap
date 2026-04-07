@@ -1,6 +1,4 @@
 using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.CSharp;
-using ForgeMap.Generator;
 using Xunit;
 
 namespace ForgeMap.Tests;
@@ -278,7 +276,7 @@ namespace TestNamespace
         var generatedCode = string.Join("\n", trees.Select(t => t.GetText().ToString()));
         // The coercion generates a HashSet from source, with empty fallback for null
         Assert.Contains("HashSet<string>", generatedCode);
-        Assert.DoesNotContain("FM0006", generatedCode); // not unmapped
+        Assert.DoesNotContain(diagnostics, d => d.Id == "FM0006"); // not unmapped
     }
 
     [Fact]
