@@ -584,6 +584,18 @@ internal sealed partial class ForgeCodeEmitter
                                 // Pure container coercion for ctor parameters (same element types)
                                 var collLocal = $"__coll_{param.Name}";
                                 var coercionExpr = TryGenerateSequenceCoercion(sourcePropType, param.Type, srcElemType, collLocal);
+                                if (coercionExpr == null)
+                                {
+                                    // Try dictionary coercion for ctor parameters
+                                    var srcDict = GetDictionaryKeyValueTypes(sourcePropType);
+                                    var destDict = GetDictionaryKeyValueTypes(param.Type);
+                                    if (srcDict != null && destDict != null &&
+                                        SymbolEqualityComparer.Default.Equals(srcDict.Value.KeyType, destDict.Value.KeyType))
+                                    {
+                                        coercionExpr = TryGenerateDictionaryCoercion(sourcePropType, param.Type,
+                                            srcDict.Value.KeyType, srcDict.Value.ValueType, collLocal, param.Name);
+                                    }
+                                }
                                 if (coercionExpr != null)
                                 {
                                     var nullFallback = param.Type.IsValueType ? "default" : "null!";

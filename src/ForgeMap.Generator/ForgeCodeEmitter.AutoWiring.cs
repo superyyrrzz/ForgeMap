@@ -996,6 +996,17 @@ internal sealed partial class ForgeCodeEmitter
             return $"{sourceExpr} is {dictType} {dictLocal} ? new {dictType}({dictLocal}, {dictLocal}.Comparer) : new {dictType}({sourceExpr})";
         }
 
+        // Any supported source → IDictionary<K,V> (copy into new Dictionary)
+        var destIsIDictionary = destDef == "System.Collections.Generic.IDictionary<TKey, TValue>";
+        if (destIsIDictionary)
+        {
+            if (srcIsConcreteDictionary)
+            {
+                return $"new {dictType}({sourceExpr}, {sourceExpr}.Comparer)";
+            }
+            return $"{sourceExpr} is {dictType} {dictLocal} ? new {dictType}({dictLocal}, {dictLocal}.Comparer) : new {dictType}({sourceExpr})";
+        }
+
         return null;
     }
 
