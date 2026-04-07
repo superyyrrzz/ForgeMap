@@ -56,6 +56,8 @@ $originalCsprojContent = Get-Content $fmCsproj -Raw
 $csprojContent = $originalCsprojContent -replace 'VersionOverride="[^"]*"', "VersionOverride=""$benchVersion"""
 Set-Content $fmCsproj $csprojContent -Encoding utf8NoBOM
 
+try {
+
 Write-Host "  Package written to $localPkgDir"
 
 $projects = @(
@@ -213,5 +215,7 @@ Set-Content -Path $OutputFile -Value $mdText -Encoding utf8NoBOM
 Write-Host "`n$mdText"
 Write-Host "`nResults written to: $OutputFile" -ForegroundColor Green
 
-# Restore the ForgeMap csproj to its original content to avoid dirtying the worktree
-Set-Content $fmCsproj $originalCsprojContent -NoNewline
+} finally {
+    # Restore the ForgeMap csproj to its original content to avoid dirtying the worktree
+    Set-Content $fmCsproj $originalCsprojContent -NoNewline
+}

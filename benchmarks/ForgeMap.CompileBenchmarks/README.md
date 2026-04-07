@@ -6,7 +6,7 @@ AutoMapper is reflection-based (no source generator) and serves as a baseline sh
 
 ## Prerequisites
 
-- [.NET SDK 9.0+](https://dotnet.microsoft.com/download)
+- [.NET SDK 10.0+](https://dotnet.microsoft.com/download) (per root `global.json`)
 - [PowerShell Core (pwsh)](https://github.com/PowerShell/PowerShell)
 
 ## Quick Start
