@@ -50,6 +50,29 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 
+# Generate NuGet.config at runtime so CI dependency scanners don't fail
+# trying to restore from a non-existent LocalPackages directory.
+$nugetConfig = Join-Path $scriptDir 'NuGet.config'
+@"
+<?xml version="1.0" encoding="utf-8"?>
+<configuration>
+  <packageSources>
+    <clear />
+    <add key="local" value="./LocalPackages" />
+    <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
+  </packageSources>
+  <packageSourceMapping>
+    <packageSource key="local">
+      <package pattern="ForgeMap" />
+      <package pattern="ForgeMap.*" />
+    </packageSource>
+    <packageSource key="nuget.org">
+      <package pattern="*" />
+    </packageSource>
+  </packageSourceMapping>
+</configuration>
+"@ | Set-Content $nugetConfig -Encoding utf8NoBOM
+
 # Update the ForgeMap benchmark project to pin this exact version
 $fmCsproj = Join-Path $scriptDir 'ForgeMap' 'ForgeMap.CompileBench.csproj'
 $originalCsprojContent = Get-Content $fmCsproj -Raw
