@@ -317,6 +317,29 @@ internal sealed partial class ForgeCodeEmitter
     }
 
     /// <summary>
+    /// Finds all element-level forge methods on the forger class that match a given
+    /// source → destination element type pair. Used for standalone collection method resolution.
+    /// Excludes methods whose parameter and return types are both collection types
+    /// (those are collection methods themselves, not element methods).
+    /// </summary>
+    private static List<IMethodSymbol> FindElementForgeMethodsByType(
+        INamedTypeSymbol forgerType, ITypeSymbol sourceElementType, ITypeSymbol destElementType)
+    {
+        return forgerType.GetMembers()
+            .OfType<IMethodSymbol>()
+            .Where(m =>
+                m.IsPartialDefinition &&
+                m.Parameters.Length == 1 &&
+                !m.ReturnsVoid &&
+                SymbolEqualityComparer.Default.Equals(m.Parameters[0].Type, sourceElementType) &&
+                SymbolEqualityComparer.Default.Equals(m.ReturnType, destElementType) &&
+                // Exclude methods that are themselves collection methods
+                GetCollectionElementType(m.Parameters[0].Type) == null &&
+                GetCollectionElementType(m.ReturnType) == null)
+            .ToList();
+    }
+
+    /// <summary>
     /// Returns true if <paramref name="derived"/> inherits from <paramref name="baseType"/>
     /// via the BaseType chain only (excludes interface implementation).
     /// Used by <see cref="DiscoverDerivedForgeMethods"/> where <see cref="GetInheritanceDepth"/>
