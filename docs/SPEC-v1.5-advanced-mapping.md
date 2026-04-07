@@ -9,6 +9,7 @@ v1.5 prioritizes three features driven by real-world AutoMapper → ForgeMap mig
 | 1 | `CoalesceToNew` null-property strategy | [#91](https://github.com/superyyrrzz/ForgeMap/issues/91) | Low | Planned |
 | 2 | Collection type coercion | [#90](https://github.com/superyyrrzz/ForgeMap/issues/90) | Medium | Planned |
 | 3 | Standalone collection mapping methods | [#89](https://github.com/superyyrrzz/ForgeMap/issues/89) | Medium | Planned |
+| 4 | `[AfterForge]` callback | [#93](https://github.com/superyyrrzz/ForgeMap/issues/93) | Low | Planned |
 
 ### Deferred to v1.6
 
@@ -197,7 +198,7 @@ When the generator detects a property pair where the source and destination are 
 | Source Type | Destination Type | Generated Code |
 |-------------|-----------------|----------------|
 | `List<T>` / `IList<T>` / `IEnumerable<T>` / `ICollection<T>` | `HashSet<T>` | `new HashSet<T>(source.Prop)` |
-| `List<T>` / `IList<T>` / `T[]` | `IReadOnlyList<T>` | `source.Prop` (implicit — `List<T>` implements `IReadOnlyList<T>`) or `.ToList()` for non-list sources |
+| `List<T>` / `T[]` | `IReadOnlyList<T>` | `source.Prop.ToList()` (materializes a new list that implements `IReadOnlyList<T>`) |
 | `List<T>` / `IList<T>` | `ReadOnlyCollection<T>` | `new List<T>(source.Prop).AsReadOnly()` — copies to avoid aliasing |
 | `IEnumerable<T>` / `IReadOnlyList<T>` | `T[]` | `source.Prop.ToArray()` |
 | `T[]` / `IEnumerable<T>` | `List<T>` | `new List<T>(source.Prop)` |
@@ -475,7 +476,7 @@ return __result.ToArray();
 
 | Code | Severity | Description |
 |------|----------|-------------|
-| **FM0041** | Warning | Collection method '{0}' declared but no matching element forge method found for '{1}' → '{2}' |
+| **FM0041** | Error | Collection method '{0}' declared but no matching element forge method found for '{1}' → '{2}' |
 | **FM0042** | Error | Collection method '{0}' is ambiguous: multiple element forge methods match '{1}' → '{2}'. Remove one element method to disambiguate (renaming does not help — matching is by type only) |
 
 ### Behavioral Contract
@@ -483,7 +484,7 @@ return __result.ToArray();
 | Scenario | Behavior |
 |----------|----------|
 | Matching element method exists | Generate collection iteration body |
-| No matching element method | FM0041 warning, method body not generated |
+| No matching element method | FM0041 error, method body not generated (causes CS8795 compiler error for public partial methods) |
 | Multiple matching element methods | FM0042 error |
 | Source is null, `NullHandling = ReturnNull` | Returns `null!` |
 | Source is null, `NullHandling = ThrowException` | Throws `ArgumentNullException` |
@@ -505,6 +506,192 @@ return __result.ToArray();
 
 ---
 
+## Feature 4: `[AfterForge]` Callback
+
+> **Issue:** [#93](https://github.com/superyyrrzz/ForgeMap/issues/93)
+
+### Problem
+
+When migrating from AutoMapper, many mappings have 1–2 properties (out of 15+) that need special handling while the rest map 1:1. Currently, the only options are:
+
+- Write the **entire** method manually, losing all auto-generation benefits
+- Use `[ConvertWith]`, which replaces the **entire** generated mapping with a custom converter
+
+Neither option preserves the auto-generated 1:1 mappings. In a migration of ~71 AutoMapper `CreateMap` entries, 8 methods (~130 lines) had to be written fully manually because of 1–2 non-trivial properties each. This is the ForgeMap equivalent of AutoMapper's `.AfterMap((src, dest) => { ... })`.
+
+```csharp
+// Today: forced to write 30-line manual method because of 2 properties
+public BuildRun ForgeBuildRun(BuildTableEntity source)
+{
+    var dest = new BuildRun
+    {
+        Id = source.BuildId,
+        RequestedAt = source.StartedAt,
+        // ... 18 more 1:1 properties manually written ...
+    };
+    dest.BuildType = nameof(BuildType.Commit);  // only exception
+    dest.AutoHealingCustomData = ForgeAutoHealingCustomDataViewModel(
+        source.AutoHealingCustomData);  // only exception
+    return dest;
+}
+```
+
+### Design
+
+A new `[AfterForge]` attribute references a user-defined callback method. The generator handles all matching properties as usual, then calls the callback at the end of the method body, passing the source and the constructed result.
+
+### API Surface
+
+```csharp
+/// <summary>
+/// Specifies a callback method to invoke after the generator has assigned all
+/// auto-mapped properties. The callback receives the source object and the
+/// constructed destination object, allowing property fixups or additional logic
+/// before the result is returned.
+/// </summary>
+[AttributeUsage(AttributeTargets.Method, AllowMultiple = false, Inherited = false)]
+public sealed class AfterForgeAttribute : Attribute
+{
+    /// <summary>
+    /// The name of a method on the forger class to call after property assignment.
+    /// The method must accept (TSource source, TDestination destination) and return void.
+    /// Use nameof() for compile-time safety.
+    /// </summary>
+    public string MethodName { get; }
+
+    public AfterForgeAttribute(string methodName)
+    {
+        MethodName = methodName;
+    }
+}
+```
+
+### Usage
+
+```csharp
+[ForgeMap]
+public partial class AppForger
+{
+    [AfterForge(nameof(FixupBuildRun))]
+    [Ignore(nameof(BuildRun.BuildType), nameof(BuildRun.AutoHealingCustomData))]
+    public partial BuildRun ForgeBuildRun(BuildTableEntity source);
+
+    private void FixupBuildRun(BuildTableEntity source, BuildRun dest)
+    {
+        dest.BuildType = nameof(BuildType.Commit);
+        dest.AutoHealingCustomData = ForgeAutoHealingCustomDataViewModel(
+            source.AutoHealingCustomData);
+    }
+}
+```
+
+Properties handled by the callback should be marked with `[Ignore]` to suppress FM0006 (unmapped property warning) and avoid the generator also attempting to map them.
+
+### Generated Code
+
+```csharp
+public partial BuildRun ForgeBuildRun(BuildTableEntity source)
+{
+    if (source == null) return null!;
+
+    var __result = new BuildRun
+    {
+        // init/required properties
+    };
+
+    // Auto-generated 1:1 property assignments
+    __result.Id = source.BuildId;
+    __result.RequestedAt = source.StartedAt;
+    // ... all other matching properties ...
+
+    // AfterForge callback — user-defined fixups
+    FixupBuildRun(source, __result);
+
+    return __result;
+}
+```
+
+### With `[UseExistingValue]` Mutation Methods
+
+`[AfterForge]` also works on `ForgeInto` mutation methods:
+
+```csharp
+[AfterForge(nameof(FixupOrder))]
+public partial void ForgeInto(OrderUpdateDto source, [UseExistingValue] Order target);
+
+private void FixupOrder(OrderUpdateDto source, Order target)
+{
+    target.LastModified = DateTimeOffset.UtcNow;
+}
+```
+
+Generated:
+
+```csharp
+public partial void ForgeInto(OrderUpdateDto source, [UseExistingValue] Order target)
+{
+    if (source == null) return;
+    if (target == null) throw new global::System.ArgumentNullException(nameof(target));
+
+    target.Status = source.Status;
+    // ... auto-mapped properties ...
+
+    FixupOrder(source, target);
+}
+```
+
+### Resolution Algorithm
+
+1. **Detect attribute**: Check if the forge method has `[AfterForge]`
+2. **Resolve callback**: Find a method on the forger class with the specified name. The method must:
+   - Accept exactly two parameters: `(TSource, TDestination)` matching the forge method's source and return types (or source and `[UseExistingValue]` parameter for mutation methods)
+   - Return `void`
+   - Be accessible from the generated code (private, internal, or public)
+3. **Emit callback**: After all property assignments (and after any auto-wired nested mappings), emit `MethodName(source, __result);` (or `MethodName(source, target);` for mutation methods)
+4. **Interaction with null handling**: The callback is only invoked when the source is non-null and the result/target has been constructed. The null check happens before property assignment, so the callback is never called with a null source
+
+### Diagnostics
+
+| Code | Severity | Description |
+|------|----------|-------------|
+| **FM0043** | Error | `[AfterForge]` method '{0}' not found on forger class, or has wrong signature. Expected: `void {0}({1} source, {2} destination)` |
+
+### Interaction with Existing Features
+
+| Feature | Interaction |
+|---------|-------------|
+| `[Ignore]` | Properties handled by the callback should be `[Ignore]`d to avoid double-mapping and suppress FM0006 |
+| `[ForgeProperty]` / `[ForgeFrom]` | Executed before the callback — callback can override or augment any auto-mapped values |
+| `[ConvertWith]` | Mutually exclusive — `[ConvertWith]` takes full control of the method body. Emit FM0043 if both are present |
+| `[ReverseForge]` | Reverse method does NOT inherit `[AfterForge]` — if the reverse also needs a callback, declare `[AfterForge]` on the reverse method separately |
+| `NullHandling` | Callback is only invoked after the null check — never called with null source |
+| Auto-wired nested mappings | Nested mappings execute before the callback |
+| `ExistingTarget = true` | Nested existing-target updates execute before the callback |
+| Collection methods (Feature 3) | `[AfterForge]` is not applicable to collection methods — the pattern doesn't apply (no per-element fixup needed; use element-level `[AfterForge]` instead) |
+
+### Behavioral Contract
+
+| Scenario | Behavior |
+|----------|----------|
+| Valid callback method exists | All auto-mapped properties assigned first, then callback invoked |
+| Callback method not found or wrong signature | FM0043 error |
+| `[AfterForge]` + `[ConvertWith]` on same method | FM0043 error (mutually exclusive) |
+| Source is null | Callback NOT invoked (null check occurs first) |
+| Callback throws | Exception propagates — no wrapping |
+| Callback modifies auto-mapped properties | Allowed — callback has final say |
+| `[AfterForge]` on collection method | FM0043 error (not applicable) |
+
+### Competitor Comparison
+
+| Aspect | AutoMapper | Mapperly | ForgeMap v1.5 |
+|--------|-----------|---------|---------------|
+| Post-mapping callback | ✅ `.AfterMap()` (runtime) | ❌ Not supported | ✅ `[AfterForge]` (compile-time) |
+| Callback signature | `Action<TSource, TDest>` | N/A | `void Method(TSource, TDest)` |
+| Compile-time validation | ❌ Runtime errors | N/A | ✅ FM0043 diagnostic |
+| Pre-mapping callback | ✅ `.BeforeMap()` | ❌ | ❌ Not in v1.5 scope |
+
+---
+
 ## Diagnostics Summary
 
 | Code | Severity | Category | Feature | Description |
@@ -512,12 +699,19 @@ return __result.ToArray();
 | FM0038 | Error | `ForgeMap` | `CoalesceToNew` | `CoalesceToNew` requires type '{0}' to have an accessible parameterless constructor |
 | FM0039 | Info | `ForgeMap` | Collection coercion | Property '{0}' collection type coerced from '{1}' to '{2}' (disabled by default) |
 | FM0040 | Warning | `ForgeMap` | Collection coercion | Property '{0}': no known coercion from '{1}' to '{2}'; property skipped |
-| FM0041 | Warning | `ForgeMap` | Collection methods | Collection method '{0}' declared but no matching element forge method found |
+| FM0041 | Error | `ForgeMap` | Collection methods | Collection method '{0}' declared but no matching element forge method found |
 | FM0042 | Error | `ForgeMap` | Collection methods | Collection method '{0}' is ambiguous: multiple element forge methods match |
+| FM0043 | Error | `ForgeMap` | `[AfterForge]` | `[AfterForge]` method '{0}' not found or has wrong signature |
 
 ---
 
 ## API Changes Summary
+
+### New Attributes (v1.5)
+
+| Attribute | Target | Description |
+|-----------|--------|-------------|
+| `AfterForgeAttribute` | Method | Post-mapping callback for property fixups |
 
 ### New Enum Values (v1.5)
 
@@ -525,9 +719,9 @@ return __result.ToArray();
 |------|-----------|-------------|
 | `NullPropertyHandling` | `CoalesceToNew = 4` | `new T()` for null reference types, `default(T)` for value types |
 
-### No New Attributes
+### No Other New Attributes
 
-All three features work within the existing attribute surface — no new attributes are introduced.
+Features 1–3 work within the existing attribute surface.
 
 ---
 
@@ -535,13 +729,15 @@ All three features work within the existing attribute surface — no new attribu
 
 ### From v1.4 to v1.5
 
-v1.5 introduces no required source changes and no API-surface breaks. Three behavior items to be aware of:
+v1.5 introduces no required source changes and no API-surface breaks. Four behavior items to be aware of:
 
 1. **`CoalesceToNew` (opt-in)** — New enum value added to `NullPropertyHandling`. No behavior change unless explicitly opted in via attribute configuration.
 
 2. **Collection type coercion (automatic)** — Properties where source and destination differ only in collection wrapper type (e.g., `List<string>` → `HashSet<string>`) will now be automatically mapped instead of skipped with FM0006. This **may change behavior** for projects that relied on the property being unmapped. To suppress coercion for a specific property, use `[Ignore]`. If the previous unmapped warning (FM0006) was suppressed, the property is now auto-mapped — review the generated code.
 
 3. **Standalone collection methods (opt-in)** — Declaring a partial method with collection types triggers collection method generation. Existing forgers are unaffected unless new partial methods are added.
+
+4. **`[AfterForge]` callback (opt-in)** — New attribute for post-mapping callbacks. No behavior change to existing methods unless `[AfterForge]` is explicitly added.
 
 ---
 
