@@ -505,12 +505,14 @@ public partial class OrderForger
     public partial void ForgeInto(OrderUpdateDto source, [UseExistingValue] Order target);
 
     public partial void ForgeInto(CustomerUpdateDto source, [UseExistingValue] Customer target);
-    // Sync requires BOTH ForgeInto (to update matched items) and Forge (to add new items):
+    // For full Sync behavior, provide ForgeInto (to update matched items)
+    // and Forge (to create new items). If missing, FM0030 warns and the
+    // generator still compiles, but updates/adds may be incomplete:
     public partial void ForgeInto(OrderItemUpdateDto source, [UseExistingValue] OrderItem target);
     public partial OrderItem Forge(OrderItemUpdateDto source);
 }
 // Nested Customer is updated in place (preserves EF Core change tracking).
 // Items collection is synced by Id: existing items updated via ForgeInto,
-// new items added via Forge, missing items removed.
+// new items created via Forge when available, missing items removed.
 // NOTE: Sync requires the destination to be List<T> specifically.
 ```
