@@ -146,15 +146,51 @@ internal sealed partial class ForgeCodeEmitter
     /// </summary>
     private static string? GenerateCoalesceNewExpression(ITypeSymbol destType, IMethodSymbol method)
     {
+        // Try collection expressions first — handles interfaces like IReadOnlyList<T>
+        var collExpr = GenerateEmptyCollectionExpression(destType);
+        if (collExpr != null)
+            return collExpr;
+
         var expr = GenerateCoalesceDefault(destType);
         if (expr != null)
+        {
+            // GenerateCoalesceDefault returns new T() for public ctors — verify no required members
+            if (destType is INamedTypeSymbol publicNamedType && HasUninitializedRequiredMembers(publicNamedType))
+            {
+                var ctor = publicNamedType.InstanceConstructors
+                    .FirstOrDefault(c => c.Parameters.Length == 0 && c.DeclaredAccessibility == Accessibility.Public);
+                if (ctor != null)
+                {
+                    var hasSetsRequired = ctor.GetAttributes()
+                        .Any(a => a.AttributeClass?.Name == "SetsRequiredMembersAttribute"
+                            || a.AttributeClass?.ToDisplayString() == "System.Diagnostics.CodeAnalysis.SetsRequiredMembersAttribute");
+                    if (!hasSetsRequired)
+                        return null; // FM0038 already reported by ValidateCoalesceToNew
+                }
+            }
             return expr;
+        }
 
         // GenerateCoalesceDefault uses Public-only; check if internal ctor is accessible (same assembly)
         if (destType is INamedTypeSymbol namedType
             && !namedType.IsAbstract && namedType.TypeKind != TypeKind.Interface
             && SymbolEqualityComparer.Default.Equals(namedType.ContainingAssembly, method.ContainingAssembly))
         {
+            // Check required members for internal ctors too
+            if (HasUninitializedRequiredMembers(namedType))
+            {
+                var ctor = namedType.InstanceConstructors
+                    .FirstOrDefault(c => c.Parameters.Length == 0 && c.DeclaredAccessibility >= Accessibility.Internal);
+                if (ctor != null)
+                {
+                    var hasSetsRequired = ctor.GetAttributes()
+                        .Any(a => a.AttributeClass?.Name == "SetsRequiredMembersAttribute"
+                            || a.AttributeClass?.ToDisplayString() == "System.Diagnostics.CodeAnalysis.SetsRequiredMembersAttribute");
+                    if (!hasSetsRequired)
+                        return null;
+                }
+            }
+
             var hasInternalCtor = namedType.InstanceConstructors
                 .Any(c => c.Parameters.Length == 0 && c.DeclaredAccessibility >= Accessibility.Internal);
             if (hasInternalCtor)
