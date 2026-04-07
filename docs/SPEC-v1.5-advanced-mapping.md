@@ -215,10 +215,10 @@ When the generator detects a property pair where the source and destination are 
 
 | Source Type | Destination Type | Generated Code |
 |-------------|-----------------|----------------|
-| `IDictionary<K,V>` / `Dictionary<K,V>` | `ReadOnlyDictionary<K,V>` | `new ReadOnlyDictionary<K,V>(new Dictionary<K,V>(source.Prop))` — copies to avoid aliasing |
-| `Dictionary<K,V>` | `IReadOnlyDictionary<K,V>` | `new ReadOnlyDictionary<K,V>(new Dictionary<K,V>(source.Prop))` — copies to avoid aliasing |
-| `IDictionary<K,V>` | `IReadOnlyDictionary<K,V>` | `new ReadOnlyDictionary<K,V>(new Dictionary<K,V>(source.Prop))` — copies to avoid aliasing |
-| `IReadOnlyDictionary<K,V>` | `Dictionary<K,V>` | `new Dictionary<K,V>(source.Prop)` |
+| `IDictionary<K,V>` / `Dictionary<K,V>` | `ReadOnlyDictionary<K,V>` | `source.Prop is Dictionary<K,V> __dict ? new ReadOnlyDictionary<K,V>(new Dictionary<K,V>(__dict, __dict.Comparer)) : new ReadOnlyDictionary<K,V>(new Dictionary<K,V>(source.Prop))` — copies to avoid aliasing, preserves comparer when available |
+| `Dictionary<K,V>` | `IReadOnlyDictionary<K,V>` | `new ReadOnlyDictionary<K,V>(new Dictionary<K,V>(source.Prop, source.Prop.Comparer))` — copies to avoid aliasing, preserves comparer |
+| `IDictionary<K,V>` | `IReadOnlyDictionary<K,V>` | `source.Prop is Dictionary<K,V> __dict ? new ReadOnlyDictionary<K,V>(new Dictionary<K,V>(__dict, __dict.Comparer)) : new ReadOnlyDictionary<K,V>(new Dictionary<K,V>(source.Prop))` — copies to avoid aliasing, preserves comparer when available |
+| `IReadOnlyDictionary<K,V>` | `Dictionary<K,V>` | `source.Prop is Dictionary<K,V> __dict ? new Dictionary<K,V>(__dict, __dict.Comparer) : new Dictionary<K,V>(source.Prop)` — preserves comparer when available |
 
 #### Element Mapping with Coercion
 
