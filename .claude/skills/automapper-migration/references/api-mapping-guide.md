@@ -28,7 +28,7 @@ This reference maps AutoMapper patterns to their ForgeMap equivalents.
 |---|---|---|
 | `IValueResolver<S,D,TVal>` | `[ForgeFrom(nameof(D.DestProp), nameof(ResolverMethod))]` | Static/instance method on the forger class |
 | `.MapFrom(s => expr)` | `[ForgeFrom(nameof(D.DestProp), nameof(Method))]` | Resolver method returns value |
-| `ITypeConverter<S,D>` | `[ForgeFrom]` resolver methods | The `[ConvertWith]` attribute exists in the abstractions but is not yet honored by the generator for conversion; use `[ForgeFrom]`-based resolver methods instead |
+| `ITypeConverter<S,D>` | `[ConvertWith(typeof(Converter))]` on forge method | Delegates entire conversion to `ITypeConverter<S,D>.Convert()`; also supports member-based `[ConvertWith(nameof(_field))]` for DI-injected converters. Note: `[ReverseForge]` does not generate a reverse method for `[ConvertWith]`-decorated methods — if you need a reverse mapping, declare a separate forge method |
 
 ### Resolver method signatures
 
@@ -47,6 +47,7 @@ private static decimal ConvertPrice(int priceInCents)
 | AutoMapper | ForgeMap | Notes |
 |---|---|---|
 | Auto-detected nested maps | Auto-wired when matching forge method exists in the same forger class (v1.3+, `AutoWireNestedMappings = true` default) | `[ForgeWith]` still works as explicit override |
+| Nested in-place update (`Map(src, dest)` updating nested objects) | `[ForgeProperty("Prop", "Prop", ExistingTarget = true)]` on `[UseExistingValue]` mutation methods (v1.4+) | Updates nested objects in place; supports `CollectionUpdateStrategy.Sync` with `KeyProperty` for collection matching |
 | `.IncludeMembers(s => s.Inner)` | Not directly supported | Use `[ForgeProperty]` with dot notation instead |
 
 ### Example
@@ -199,13 +200,14 @@ Controls how nullable-to-non-nullable **reference type** property assignments an
 |---|---|---|
 | Auto enum-to-enum by name | Auto by name | Forge method: `partial DEnum Forge(SEnum source)` |
 | Enum-to-string | Auto string conversion | Forge method: `partial string Forge(SEnum source)` |
+| String-to-enum (`.ConvertUsing()`) | Auto-converted at property and constructor-parameter level (v1.4+, default on) | `Enum.Parse` by default; `StringToEnumConversion.TryParse` falls back to `default(T)` for non-nullable destinations, or `null` for nullable enum destinations (`Enum?`); `StringToEnumConversion.None` disables. Set per-forger on `[ForgeMap]` or assembly-wide on `[ForgeMapDefaults]`. Applies to property assignments and constructor parameters — dedicated forge methods (`partial TEnum Forge(string)`) always use `Enum.Parse`. Nullable combinations supported; respects `NullPropertyHandling`. Reverse via `[ReverseForge]` emits `.ToString()` |
 | Compatible enum mapping | Auto-converted when compatible | Distinct enum types with identical members, values, declaration order, and the same underlying integral type are cast automatically via their underlying type — including nullable variants; commonly cross-namespace but namespace difference is not required |
 
 ## Configuration Validation
 
 | AutoMapper | ForgeMap | Notes |
 |---|---|---|
-| `AssertConfigurationIsValid()` | Compiler diagnostics (FM0001–FM0027) | Compile-time diagnostics (errors, warnings, and info), not runtime |
+| `AssertConfigurationIsValid()` | Compiler diagnostics (FM0001–FM0037) | Compile-time diagnostics (errors, warnings, and info), not runtime |
 | Unmapped property warnings | FM0005: Unmapped source property | Configurable via `SuppressDiagnostics` |
 
 ## Case-Insensitive Matching
@@ -224,7 +226,8 @@ Controls how nullable-to-non-nullable **reference type** property assignments an
     PropertyMatching = PropertyMatching.ByNameCaseInsensitive,
     GenerateCollectionMappings = true,
     AutoWireNestedMappings = true,             // default; set false to require explicit [ForgeWith]
-    NullPropertyHandling = NullPropertyHandling.NullForgiving  // default
+    NullPropertyHandling = NullPropertyHandling.NullForgiving,  // default
+    StringToEnum = StringToEnumConversion.Parse  // default; TryParse or None also available
 )]
 ```
 
@@ -431,4 +434,85 @@ public partial class AppForger
         NullPropertyHandling = NullPropertyHandling.ThrowException)]
     public partial SnapshotDto Forge(Assessment source);
 }
+```
+
+### Pattern 10: String-to-enum auto-conversion
+
+```csharp
+// BEFORE (AutoMapper)
+CreateMap<TicketEntity, TicketDto>()
+    .ForMember(d => d.Priority, o => o.MapFrom(s => Enum.Parse<Priority>(s.Priority, true)));
+
+// AFTER (ForgeMap v1.4+) — auto-converted, no configuration needed
+[ForgeMap]
+public partial class TicketForger
+{
+    public partial TicketDto Forge(TicketEntity source);
+}
+// string Priority → enum Priority via Enum.Parse (case-insensitive, throws on invalid)
+
+// With TryParse (invalid values fall back to default(T)):
+[ForgeMap(StringToEnum = StringToEnumConversion.TryParse)]
+public partial class SafeTicketForger
+{
+    public partial TicketDto Forge(TicketEntity source);
+}
+```
+
+### Pattern 11: [ConvertWith] type converter
+
+```csharp
+// BEFORE (AutoMapper)
+CreateMap<SendEventRequest, FailedNotificationStorageModel>()
+    .ConvertUsing<SendEventRequestConverter>();
+// where SendEventRequestConverter : ITypeConverter<SendEventRequest, FailedNotificationStorageModel>
+
+// AFTER (ForgeMap v1.4+) — type-based (parameterless ctor)
+[ForgeMap]
+public partial class NotificationForger
+{
+    [ConvertWith(typeof(SendEventRequestConverter))]
+    public partial FailedNotificationStorageModel Forge(SendEventRequest source);
+}
+
+// AFTER (ForgeMap v1.4+) — member-based (DI-injected converter)
+[ForgeMap]
+public partial class NotificationForgerWithDi
+{
+    private readonly SendEventRequestConverter _converter;
+
+    public NotificationForgerWithDi(SendEventRequestConverter converter) => _converter = converter;
+
+    [ConvertWith(nameof(_converter))]
+    public partial FailedNotificationStorageModel Forge(SendEventRequest source);
+}
+```
+
+### Pattern 12: Nested existing-target (EF Core in-place update)
+
+```csharp
+// BEFORE (AutoMapper)
+mapper.Map(orderUpdateDto, existingOrder);
+// AutoMapper updates nested objects in place by default
+
+// AFTER (ForgeMap v1.4+) — opt-in ExistingTarget for nested properties
+[ForgeMap]
+public partial class OrderForger
+{
+    [ForgeProperty("Customer", "Customer", ExistingTarget = true)]
+    [ForgeProperty("Items", "Items", ExistingTarget = true,
+        CollectionUpdate = CollectionUpdateStrategy.Sync, KeyProperty = "Id")]
+    public partial void ForgeInto(OrderUpdateDto source, [UseExistingValue] Order target);
+
+    public partial void ForgeInto(CustomerUpdateDto source, [UseExistingValue] Customer target);
+    // For full Sync behavior, provide ForgeInto (to update matched items)
+    // and Forge (to create new items). If missing, FM0030 warns and the
+    // generator still compiles, but updates/adds may be incomplete:
+    public partial void ForgeInto(OrderItemUpdateDto source, [UseExistingValue] OrderItem target);
+    public partial OrderItem Forge(OrderItemUpdateDto source);
+}
+// Nested Customer is updated in place (preserves EF Core change tracking).
+// Items collection is synced by Id: existing items updated via ForgeInto,
+// new items created via Forge when available, missing items removed.
+// NOTE: Sync requires the destination to be List<T> specifically.
 ```
