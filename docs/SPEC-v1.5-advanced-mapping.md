@@ -474,7 +474,7 @@ return __result.ToArray();
 | Inline collection properties | Existing behavior unchanged — inline iteration handles collection properties within parent mappings. Standalone methods are for top-level collection mapping |
 | `[ForgeProperty]` / `[ForgeFrom]` / `[Ignore]` | Not applicable — these are method-level, not property-level. Collection methods have no properties to configure |
 | `NullHandling` | `ReturnNull` or `ThrowException` — follows forger-level setting |
-| `[ConvertWith]` | Mutually exclusive — `[ConvertWith]` takes full control of a method body. Collection methods must not have `[ConvertWith]` |
+| `[ConvertWith]` | Supported with precedence — if present on a collection method, `[ConvertWith]` takes full control of the method body and standalone collection generation is skipped for that method |
 | `[ForgeAllDerived]` | Not applicable to collection methods |
 | `[ReverseForge]` | Not supported on collection methods — declare a separate collection method for the reverse direction |
 | Collection type coercion (Feature 2) | Coercion applies to the return type — e.g., element method returns `DestItem`, collection method returns `HashSet<DestItem>` |
