@@ -99,7 +99,7 @@ header.bg-body {
     font-family: 'Outfit', sans-serif;
     font-weight: 800;
     font-size: 1.25rem;
-    color: var(--forge-ash) !important;
+    color: #f4f1ed !important;
     letter-spacing: -0.03em;
     gap: 0.5rem;
     transition: color 0.2s ease;
@@ -288,7 +288,7 @@ table {
 
 thead th {
     background: var(--forge-anvil) !important;
-    color: var(--forge-ash) !important;
+    color: #f4f1ed !important;
     font-family: 'Outfit', sans-serif;
     font-weight: 600;
     font-size: 0.8rem;
