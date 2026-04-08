@@ -30,10 +30,12 @@ jobs:
             10.0.x
 
       - name: Run runtime benchmarks
+        env:
+          BDN_FILTER: ${{ github.event.inputs.filter || '*' }}
         run: >
           dotnet run -c Release
           --project benchmarks/ForgeMap.Benchmarks/ForgeMap.Benchmarks.csproj
-          -- --filter '${{ github.event.inputs.filter || '*' }}'
+          -- --filter "$BDN_FILTER"
           --artifacts benchmarks/ForgeMap.Benchmarks/BenchmarkDotNet.Artifacts
 
       - name: Upload results
