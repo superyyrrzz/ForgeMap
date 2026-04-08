@@ -1,4 +1,442 @@
+/* ==========================================================================
+   ForgeMap DocFX Theme — "The Blacksmith's Forge"
+
+   Warm amber forging tones against dark steel surfaces.
+   Precision, craft, and power — like compile-time code generation.
+   ========================================================================== */
+
+/* ---------- Google Fonts ---------- */
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;1,400&family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Outfit:wght@400;500;600;700;800&display=swap');
+
+/* ---------- CSS Custom Properties ---------- */
+:root,
+[data-bs-theme="light"] {
+    /* Forge palette */
+    --forge-ember: #e8760a;
+    --forge-ember-light: #f5a623;
+    --forge-ember-glow: #ffd89b;
+    --forge-steel: #1e2530;
+    --forge-steel-light: #2c3642;
+    --forge-graphite: #3a4556;
+    --forge-ash: #f4f1ed;
+    --forge-ash-warm: #ebe6df;
+    --forge-smoke: #8a9099;
+    --forge-white: #faf9f7;
+    --forge-anvil: #141a22;
+
+    /* Override Bootstrap */
+    --bs-primary: var(--forge-ember);
+    --bs-primary-rgb: 232, 118, 10;
+    --bs-link-color: var(--forge-ember);
+    --bs-link-color-rgb: 232, 118, 10;
+    --bs-link-hover-color: #c4630a;
+    --bs-body-bg: var(--forge-white);
+    --bs-body-color: var(--forge-steel);
+    --bs-code-color: var(--forge-ember);
+    --bs-border-color: var(--forge-ash-warm);
+
+    /* Typography */
+    --bs-body-font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    --bs-font-monospace: 'IBM Plex Mono', 'Cascadia Code', 'Fira Code', monospace;
+    --bs-heading-color: var(--forge-anvil);
+}
+
+[data-bs-theme="dark"] {
+    --forge-ember: #f09030;
+    --forge-ember-light: #f5b85a;
+    --forge-ember-glow: rgba(240, 144, 48, 0.15);
+    --forge-steel: #e0ddd8;
+    --forge-steel-light: #c0bbb4;
+    --forge-graphite: #8a9099;
+    --forge-ash: #1a1f28;
+    --forge-ash-warm: #242b36;
+    --forge-smoke: #6b7280;
+    --forge-white: #0f141b;
+    --forge-anvil: #f0ede8;
+
+    --bs-primary: var(--forge-ember);
+    --bs-primary-rgb: 240, 144, 48;
+    --bs-link-color: var(--forge-ember);
+    --bs-link-color-rgb: 240, 144, 48;
+    --bs-link-hover-color: var(--forge-ember-light);
+    --bs-body-bg: var(--forge-white);
+    --bs-body-color: var(--forge-steel);
+    --bs-code-color: var(--forge-ember-light);
+    --bs-border-color: var(--forge-ash-warm);
+    --bs-heading-color: var(--forge-anvil);
+}
+
+/* ---------- Base Typography ---------- */
+body {
+    font-family: var(--bs-body-font-family);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    letter-spacing: -0.01em;
+}
+
+h1, h2, h3, h4, h5, h6 {
+    font-family: 'Outfit', var(--bs-body-font-family);
+    font-weight: 700;
+    letter-spacing: -0.025em;
+    color: var(--bs-heading-color);
+}
+
+h1 { font-weight: 800; }
+
+/* ---------- Navbar ---------- */
+header.bg-body {
+    background: var(--forge-anvil) !important;
+    border-bottom: 2px solid var(--forge-ember) !important;
+    box-shadow: 0 1px 12px rgba(0, 0, 0, 0.25);
+}
+
+.navbar {
+    padding-top: 0.6rem;
+    padding-bottom: 0.6rem;
+}
+
+.navbar-brand {
+    font-family: 'Outfit', sans-serif;
+    font-weight: 800;
+    font-size: 1.25rem;
+    color: var(--forge-ash) !important;
+    letter-spacing: -0.03em;
+    gap: 0.5rem;
+    transition: color 0.2s ease;
+}
+
+.navbar-brand:hover {
+    color: var(--forge-ember-light) !important;
+}
+
 #logo {
     max-height: 32px;
     width: auto;
+    filter: drop-shadow(0 0 6px rgba(232, 118, 10, 0.4));
+    transition: filter 0.3s ease;
+}
+
+.navbar-brand:hover #logo {
+    filter: drop-shadow(0 0 10px rgba(232, 118, 10, 0.7));
+}
+
+/* Nav links */
+.navbar .nav-link {
+    font-family: 'DM Sans', sans-serif;
+    font-weight: 600;
+    font-size: 0.875rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--forge-smoke) !important;
+    padding: 0.5rem 1rem !important;
+    transition: color 0.2s ease;
+}
+
+.navbar .nav-link:hover,
+.navbar .nav-link.active {
+    color: var(--forge-ember-light) !important;
+}
+
+/* Header buttons & icons (theme toggle, mobile menu, etc.) */
+header .btn,
+header .dropdown-toggle {
+    color: var(--forge-smoke) !important;
+    transition: color 0.2s ease;
+}
+
+header .btn:hover,
+header .btn:focus,
+header .dropdown-toggle:hover,
+header .dropdown-toggle:focus {
+    color: var(--forge-ember-light) !important;
+}
+
+header .bi {
+    color: inherit;
+}
+
+/* Search */
+header .form-control {
+    background: var(--forge-steel-light) !important;
+    border: 1px solid var(--forge-graphite) !important;
+    color: var(--forge-ash) !important;
+    border-radius: 6px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 0.85rem;
+}
+
+header .form-control::placeholder {
+    color: var(--forge-smoke) !important;
+}
+
+header .form-control:focus {
+    border-color: var(--forge-ember) !important;
+    box-shadow: 0 0 0 2px rgba(232, 118, 10, 0.2) !important;
+}
+
+/* ---------- Landing Page ---------- */
+[data-layout="landing"] article {
+    max-width: 52rem;
+    margin: 0 auto;
+    padding-top: 3rem;
+}
+
+[data-layout="landing"] h1 {
+    font-size: 3.5rem;
+    font-weight: 800;
+    line-height: 1.05;
+    margin-bottom: 1rem;
+    background: linear-gradient(135deg, var(--forge-ember) 0%, #d45d00 50%, var(--forge-ember-light) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+[data-layout="landing"] h1 + p {
+    font-size: 1.2rem;
+    line-height: 1.6;
+    color: var(--forge-graphite);
+    max-width: 38rem;
+}
+
+[data-bs-theme="dark"] [data-layout="landing"] h1 + p {
+    color: var(--forge-steel-light);
+}
+
+/* Feature headings */
+[data-layout="landing"] h3 {
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: var(--forge-ember);
+    margin-top: 1.75rem;
+    padding-left: 0.75rem;
+    border-left: 3px solid var(--forge-ember);
+}
+
+[data-bs-theme="dark"] [data-layout="landing"] h3 {
+    color: var(--forge-ember-light);
+    border-left-color: var(--forge-ember);
+}
+
+/* ---------- Code Blocks ---------- */
+pre {
+    font-family: var(--bs-font-monospace);
+    font-size: 0.85rem;
+    line-height: 1.65;
+    border-radius: 8px;
+    border: 1px solid var(--forge-ash-warm);
+    position: relative;
+    overflow: hidden;
+}
+
+[data-bs-theme="light"] pre {
+    background: #1e2530 !important;
+    border-color: #2c3642;
+}
+
+[data-bs-theme="light"] pre code {
+    color: #e0ddd8 !important;
+}
+
+[data-bs-theme="dark"] pre {
+    background: #0a0e14 !important;
+    border-color: #1e2530;
+}
+
+pre::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, var(--forge-ember), var(--forge-ember-light), transparent);
+    opacity: 0.7;
+}
+
+code {
+    font-family: var(--bs-font-monospace);
+    font-size: 0.875em;
+    font-weight: 500;
+}
+
+/* Inline code */
+:not(pre) > code {
+    background: var(--forge-ash);
+    padding: 0.15em 0.4em;
+    border-radius: 4px;
+    font-size: 0.85em;
+    color: var(--bs-code-color);
+    border: 1px solid var(--forge-ash-warm);
+}
+
+[data-bs-theme="dark"] :not(pre) > code {
+    background: var(--forge-ash-warm);
+    border-color: #2f3845;
+}
+
+/* ---------- Tables ---------- */
+table {
+    font-size: 0.9rem;
+    border-collapse: separate;
+    border-spacing: 0;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid var(--forge-ash-warm);
+    width: 100%;
+}
+
+thead th {
+    background: var(--forge-anvil) !important;
+    color: var(--forge-ash) !important;
+    font-family: 'Outfit', sans-serif;
+    font-weight: 600;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 0.75rem 1rem !important;
+    border-bottom: 2px solid var(--forge-ember) !important;
+}
+
+tbody td {
+    padding: 0.65rem 1rem !important;
+    border-color: var(--forge-ash-warm) !important;
+}
+
+tbody tr:hover {
+    background: var(--forge-ash) !important;
+}
+
+[data-bs-theme="dark"] tbody tr:hover {
+    background: var(--forge-ash-warm) !important;
+}
+
+/* Bold cells (benchmark winners) */
+td strong {
+    color: var(--forge-ember);
+    font-weight: 700;
+}
+
+[data-bs-theme="dark"] td strong {
+    color: var(--forge-ember-light);
+}
+
+/* ---------- Sidebar / TOC ---------- */
+.toc .nav-link {
+    font-size: 0.875rem;
+    color: var(--forge-graphite);
+    padding: 0.35rem 0.75rem;
+    border-left: 2px solid transparent;
+    border-radius: 0;
+    transition: all 0.15s ease;
+}
+
+.toc .nav-link:hover {
+    color: var(--forge-ember);
+    border-left-color: var(--forge-ash-warm);
+}
+
+.toc .nav-link.active {
+    color: var(--forge-ember) !important;
+    font-weight: 600;
+    border-left-color: var(--forge-ember) !important;
+    background: transparent;
+}
+
+/* ---------- Article Content ---------- */
+article h2 {
+    margin-top: 2.5rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--forge-ash-warm);
+}
+
+article h2:first-of-type {
+    margin-top: 1.5rem;
+}
+
+/* Alert / Admonition boxes */
+.alert, .NOTE, .TIP, .WARNING, .IMPORTANT, .CAUTION {
+    border-radius: 8px;
+    border-left: 4px solid var(--forge-ember);
+    font-size: 0.9rem;
+}
+
+/* Links */
+a {
+    color: var(--bs-link-color);
+    text-decoration: none;
+    transition: color 0.15s ease;
+}
+
+a:hover {
+    color: var(--bs-link-hover-color);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    text-decoration-thickness: 1.5px;
+}
+
+/* ---------- Footer ---------- */
+footer {
+    background: var(--forge-anvil) !important;
+    border-top: 1px solid var(--forge-graphite) !important;
+    color: var(--forge-smoke) !important;
+    padding: 1.25rem 0;
+    font-size: 0.85rem;
+    font-family: 'DM Sans', sans-serif;
+}
+
+footer .flex-fill {
+    color: var(--forge-smoke) !important;
+}
+
+/* ---------- Scrollbar (Webkit) ---------- */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--forge-ash);
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--forge-smoke);
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--forge-ember);
+}
+
+/* ---------- Selection ---------- */
+::selection {
+    background: rgba(232, 118, 10, 0.2);
+    color: inherit;
+}
+
+/* ---------- Transitions ---------- */
+* {
+    scroll-behavior: smooth;
+}
+
+/* Smooth theme transitions */
+body,
+header.bg-body,
+footer,
+pre,
+code,
+table,
+.toc .nav-link {
+    transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+
+/* ---------- Responsive ---------- */
+@media (max-width: 768px) {
+    [data-layout="landing"] h1 {
+        font-size: 2.25rem;
+    }
+
+    [data-layout="landing"] article {
+        padding-top: 2rem;
+    }
 }
