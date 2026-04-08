@@ -24,7 +24,7 @@ namespace TestNamespace
         public partial IReadOnlyList<Dst> ForgeDsts(IEnumerable<Src> source);
     }
 }";
-        var (diagnostics, trees) = SourceGeneratorTests.RunGenerator(source);
+        var (diagnostics, trees) = TestHelper.RunGenerator(source);
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
         var generatedCode = string.Join("\n", trees.Select(t => t.GetText().ToString()));
         // Should generate foreach+List pattern
@@ -52,7 +52,7 @@ namespace TestNamespace
         public partial Dst[] ForgeDsts(IReadOnlyList<Src> source);
     }
 }";
-        var (diagnostics, trees) = SourceGeneratorTests.RunGenerator(source);
+        var (diagnostics, trees) = TestHelper.RunGenerator(source);
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
         var generatedCode = string.Join("\n", trees.Select(t => t.GetText().ToString()));
         // Pre-sized array with indexed assignment
@@ -79,7 +79,7 @@ namespace TestNamespace
         public partial Dst[] ForgeDsts(IEnumerable<Src> source);
     }
 }";
-        var (diagnostics, trees) = SourceGeneratorTests.RunGenerator(source);
+        var (diagnostics, trees) = TestHelper.RunGenerator(source);
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
         var generatedCode = string.Join("\n", trees.Select(t => t.GetText().ToString()));
         // IEnumerable source → Select+ToArray fallback
@@ -106,7 +106,7 @@ namespace TestNamespace
         public partial List<Dst> ForgeDstList(Src[] source);
     }
 }";
-        var (diagnostics, trees) = SourceGeneratorTests.RunGenerator(source);
+        var (diagnostics, trees) = TestHelper.RunGenerator(source);
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
         var generatedCode = string.Join("\n", trees.Select(t => t.GetText().ToString()));
         // Pre-sized List from array source
@@ -133,7 +133,7 @@ namespace TestNamespace
         public partial IEnumerable<Dst> ForgeDstsLazy(IEnumerable<Src> source);
     }
 }";
-        var (diagnostics, trees) = SourceGeneratorTests.RunGenerator(source);
+        var (diagnostics, trees) = TestHelper.RunGenerator(source);
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
         var generatedCode = string.Join("\n", trees.Select(t => t.GetText().ToString()));
         // Lazy Select projection
@@ -161,7 +161,7 @@ namespace TestNamespace
         public partial HashSet<Dst> ForgeDstSet(IEnumerable<Src> source);
     }
 }";
-        var (diagnostics, trees) = SourceGeneratorTests.RunGenerator(source);
+        var (diagnostics, trees) = TestHelper.RunGenerator(source);
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
         var generatedCode = string.Join("\n", trees.Select(t => t.GetText().ToString()));
         Assert.Contains("new global::System.Collections.Generic.HashSet<TestNamespace.Dst>()", generatedCode);
@@ -189,7 +189,7 @@ namespace TestNamespace
         public partial IReadOnlyList<Dst> ForgeAll(IEnumerable<Src> source);
     }
 }";
-        var (diagnostics, trees) = SourceGeneratorTests.RunGenerator(source);
+        var (diagnostics, trees) = TestHelper.RunGenerator(source);
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
         var generatedCode = string.Join("\n", trees.Select(t => t.GetText().ToString()));
         // Must call ForgeItem (discovered by type), not ForgeAll (by name)
@@ -215,7 +215,7 @@ namespace TestNamespace
         public partial IReadOnlyList<Dst> ForgeDsts(IEnumerable<Src> source);
     }
 }";
-        var (diagnostics, _) = SourceGeneratorTests.RunGenerator(source);
+        var (diagnostics, _) = TestHelper.RunGenerator(source);
         var fm0041 = diagnostics.Where(d => d.Id == "FM0041").ToList();
         Assert.NotEmpty(fm0041);
         Assert.Contains("ForgeDsts", fm0041[0].GetMessage());
@@ -242,7 +242,7 @@ namespace TestNamespace
         public partial IReadOnlyList<Dst> ForgeDsts(IEnumerable<Src> source);
     }
 }";
-        var (diagnostics, _) = SourceGeneratorTests.RunGenerator(source);
+        var (diagnostics, _) = TestHelper.RunGenerator(source);
         var fm0042 = diagnostics.Where(d => d.Id == "FM0042").ToList();
         Assert.NotEmpty(fm0042);
         Assert.Contains("ForgeDsts", fm0042[0].GetMessage());
@@ -267,7 +267,7 @@ namespace TestNamespace
         public partial IReadOnlyList<Dst> ForgeDsts(IEnumerable<Src> source);
     }
 }";
-        var (diagnostics, trees) = SourceGeneratorTests.RunGenerator(source);
+        var (diagnostics, trees) = TestHelper.RunGenerator(source);
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
         var generatedCode = string.Join("\n", trees.Select(t => t.GetText().ToString()));
         Assert.Contains("throw new global::System.ArgumentNullException", generatedCode);
@@ -299,7 +299,7 @@ namespace TestNamespace
         public partial IReadOnlyList<Dst> ForgeDsts(IEnumerable<Src> source);
     }
 }";
-        var (diagnostics, trees) = SourceGeneratorTests.RunGenerator(source);
+        var (diagnostics, trees) = TestHelper.RunGenerator(source);
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
         var generatedCode = string.Join("\n", trees.Select(t => t.GetText().ToString()));
         // Should use converter, not element method iteration
@@ -326,7 +326,7 @@ namespace TestNamespace
         public partial ReadOnlyCollection<Dst> ForgeDsts(List<Src> source);
     }
 }";
-        var (diagnostics, trees) = SourceGeneratorTests.RunGenerator(source);
+        var (diagnostics, trees) = TestHelper.RunGenerator(source);
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
         var generatedCode = string.Join("\n", trees.Select(t => t.GetText().ToString()));
         Assert.Contains("AsReadOnly()", generatedCode);
@@ -354,7 +354,7 @@ namespace TestNamespace
         public partial List<Dst> ForgeDsts(IEnumerable<Src> source);
     }
 }";
-        var (diagnostics, trees) = SourceGeneratorTests.RunGenerator(source);
+        var (diagnostics, trees) = TestHelper.RunGenerator(source);
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
         var generatedCode = string.Join("\n", trees.Select(t => t.GetText().ToString()));
         // Default NullHandling is ReturnNull
@@ -380,7 +380,7 @@ namespace TestNamespace
         public partial List<Dst> ForgeDsts(List<Src> source);
     }
 }";
-        var (diagnostics, trees) = SourceGeneratorTests.RunGenerator(source);
+        var (diagnostics, trees) = TestHelper.RunGenerator(source);
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
         var generatedCode = string.Join("\n", trees.Select(t => t.GetText().ToString()));
         // Pre-sized list from List source
@@ -406,7 +406,7 @@ namespace TestNamespace
         public partial List<Dst> ForgeDsts(IEnumerable<Src> source);
     }
 }";
-        var (diagnostics, trees) = SourceGeneratorTests.RunGenerator(source);
+        var (diagnostics, trees) = TestHelper.RunGenerator(source);
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
         var generatedCode = string.Join("\n", trees.Select(t => t.GetText().ToString()));
         // No pre-sizing — IEnumerable has no cheap count
