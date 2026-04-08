@@ -1,5 +1,10 @@
 # ForgeMap
 
+[![CI](https://github.com/superyyrrzz/ForgeMap/actions/workflows/ci.yml/badge.svg)](https://github.com/superyyrrzz/ForgeMap/actions/workflows/ci.yml)
+[![NuGet](https://img.shields.io/nuget/v/ForgeMap.svg)](https://www.nuget.org/packages/ForgeMap)
+[![NuGet Downloads](https://img.shields.io/nuget/dt/ForgeMap.svg)](https://www.nuget.org/packages/ForgeMap)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/superyyrrzz/ForgeMap/blob/main/LICENSE)
+
 A lightweight, MIT-licensed, source-generator-based object transformation library for .NET. ForgeMap generates type conversion code at compile time, providing zero-reflection runtime execution with compile-time type safety.
 
 ## Features
@@ -74,6 +79,7 @@ See [SPEC.md](docs/SPEC.md) for the full specification.
 | **v1.2** | Null-safe property assignment: `NullPropertyHandling` with 4 strategies, three-tier config |
 | **v1.3** | Auto-wiring nested & collection mappings, abstract destination dispatch for `[ForgeAllDerived]` |
 | **v1.4** | Nested existing-target mapping, automatic string↔enum conversion, `[ConvertWith]` custom type converters |
+| **v1.5** | CoalesceToNew null handling, collection type coercion, standalone collection methods, `[AfterForge]` migration diagnostics |
 
 ## License
 
