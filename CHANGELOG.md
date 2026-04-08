@@ -6,7 +6,7 @@
 
 - **CoalesceToNew null-property handling** (Feature 1) — New `NullPropertyHandling.CoalesceToNew` strategy that coalesces null destination properties to `new T()` instead of skipping them. Includes FM0038 diagnostic for types lacking an accessible parameterless constructor.
 
-- **Collection type coercion** (Feature 2) — The generator now automatically coerces collection types (e.g., `List<T>` to `IReadOnlyList<T>`, `Dictionary<K,V>` to `IDictionary<K,V>`) when the destination expects a compatible interface. Adds FM0039 (info) and FM0040 (warning) diagnostics for coercion reporting.
+- **Collection type coercion** (Feature 2) — The generator now automatically coerces collection types (e.g., `List<T>` to `IReadOnlyList<T>`, `Dictionary<K,V>` to `IDictionary<K,V>`) when the destination expects a compatible interface. Adds FM0039 (disabled informational) and FM0040 (warning) diagnostics for coercion reporting.
 
 - **Standalone collection mapping methods** (Feature 3) — Support for dedicated collection-level forge methods (`IEnumerable<TDest> ForgeAll(IEnumerable<TSrc>)`) that are auto-discovered from element-level forge methods. Adds FM0041 and FM0042 diagnostics for missing or ambiguous element mappings.
 
