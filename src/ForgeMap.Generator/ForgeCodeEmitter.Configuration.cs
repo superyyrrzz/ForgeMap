@@ -9,11 +9,21 @@ namespace ForgeMap.Generator;
 
 internal sealed partial class ForgeCodeEmitter
 {
+    private System.Collections.Immutable.ImmutableArray<AttributeData> GetCachedAttributes(IMethodSymbol method)
+    {
+        if (!_methodAttributesCache.TryGetValue(method, out var attrs))
+        {
+            attrs = method.GetAttributes();
+            _methodAttributesCache[method] = attrs;
+        }
+        return attrs;
+    }
+
     private IEnumerable<AttributeData> GetMethodAttributes(IMethodSymbol method, INamedTypeSymbol? attributeSymbol)
     {
         if (attributeSymbol == null)
             yield break;
-        foreach (var attr in method.GetAttributes())
+        foreach (var attr in GetCachedAttributes(method))
         {
             if (SymbolEqualityComparer.Default.Equals(attr.AttributeClass, attributeSymbol))
                 yield return attr;
@@ -212,36 +222,52 @@ internal sealed partial class ForgeCodeEmitter
     /// </summary>
     private IMethodSymbol? FindBaseForgeMethod(INamedTypeSymbol forgerType, INamedTypeSymbol baseSourceType, INamedTypeSymbol baseDestType)
     {
-        var methods = forgerType.GetMembers()
-            .OfType<IMethodSymbol>()
-            .Where(m => m.IsPartialDefinition);
+        var partialMethods = GetPartialMethods(forgerType);
 
         // Prefer return-style: non-void return, single parameter (source), return type = dest
         // Use stable ordering by name for deterministic resolution when multiple candidates exist
-        var returnStyle = methods
-            .Where(m =>
-                !m.ReturnsVoid &&
+        IMethodSymbol? returnStyle = null;
+        string? returnStyleName = null;
+        foreach (var m in partialMethods)
+        {
+            if (!m.ReturnsVoid &&
                 m.Parameters.Length == 1 &&
                 SymbolEqualityComparer.Default.Equals(m.Parameters[0].Type, baseSourceType) &&
                 SymbolEqualityComparer.Default.Equals(m.ReturnType, baseDestType))
-            .OrderBy(m => m.Name, StringComparer.Ordinal)
-            .FirstOrDefault();
+            {
+                if (returnStyle == null || string.Compare(m.Name, returnStyleName, StringComparison.Ordinal) < 0)
+                {
+                    returnStyle = m;
+                    returnStyleName = m.Name;
+                }
+            }
+        }
 
         if (returnStyle != null)
             return returnStyle;
 
         // Fall back to ForgeInto-style: void return, two parameters where the destination
         // parameter is marked with [UseExistingValue] and matches baseDestType
-        return methods
-            .Where(m =>
-                m.ReturnsVoid &&
+        IMethodSymbol? intoStyle = null;
+        string? intoStyleName = null;
+        foreach (var m in partialMethods)
+        {
+            if (m.ReturnsVoid &&
                 m.Parameters.Length == 2 &&
                 SymbolEqualityComparer.Default.Equals(m.Parameters[0].Type, baseSourceType) &&
                 m.Parameters.Any(p =>
                     SymbolEqualityComparer.Default.Equals(p.Type, baseDestType) &&
                     HasUseExistingValueAttribute(p)))
-            .OrderBy(m => m.Name, StringComparer.Ordinal)
-            .FirstOrDefault();
+            {
+                if (intoStyle == null || string.Compare(m.Name, intoStyleName, StringComparison.Ordinal) < 0)
+                {
+                    intoStyle = m;
+                    intoStyleName = m.Name;
+                }
+            }
+        }
+
+        return intoStyle;
     }
 
     /// <summary>

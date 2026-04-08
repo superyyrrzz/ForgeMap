@@ -1,0 +1,58 @@
+name: Compile-Time Benchmarks
+
+on:
+  workflow_dispatch:
+    inputs:
+      scales:
+        description: 'Comma-separated scale tiers (mapping class counts)'
+        default: '10,50,100'
+      iterations:
+        description: 'Build iterations per scale/mapper'
+        default: '5'
+      scenarios:
+        description: 'Comma-separated scenarios: Flat, Nested, Collection, Mixed'
+        default: 'Flat,Nested,Collection,Mixed'
+  schedule:
+    - cron: '17 6 * * 1'  # weekly on Monday ~6:17am UTC
+
+env:
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
+  DOTNET_NOLOGO: true
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: |
+            9.0.x
+            10.0.x
+
+      - name: Run compile benchmarks
+        shell: pwsh
+        env:
+          BENCH_SCALES: ${{ github.event.inputs.scales || '10,50,100' }}
+          BENCH_SCENARIOS: ${{ github.event.inputs.scenarios || 'Flat,Nested,Collection,Mixed' }}
+          BENCH_ITERATIONS: ${{ github.event.inputs.iterations || '5' }}
+        run: |
+          $scales = $env:BENCH_SCALES -split ',' | ForEach-Object { [int]$_.Trim() }
+          $scenarios = ($env:BENCH_SCENARIOS -split ',' | ForEach-Object { $_.Trim() })
+          $iterations = [int]$env:BENCH_ITERATIONS
+          ./benchmarks/ForgeMap.CompileBenchmarks/Run-CompileBenchmarks.ps1 `
+            -Scales $scales `
+            -Scenarios $scenarios `
+            -Iterations $iterations
+
+      - name: Upload results
+        uses: actions/upload-artifact@v7
+        with:
+          name: compile-benchmark-results
+          path: benchmarks/ForgeMap.CompileBenchmarks/COMPILE_BENCHMARK_RESULTS.md
+          retention-days: 30

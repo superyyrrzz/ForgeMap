@@ -29,6 +29,50 @@ internal sealed partial class ForgeCodeEmitter
     private readonly ForgerConfig _assemblyDefaults;
     private ForgerConfig _config = null!;
 
+    // Cache: pre-computed partial method lists per forger type, avoiding repeated GetMembers() scans
+    private readonly Dictionary<INamedTypeSymbol, List<IMethodSymbol>> _partialMethodsCache =
+        new(SymbolEqualityComparer.Default);
+
+    // Cache: FindAutoWireForgeMethodCandidates results keyed by (forger, source, dest) types
+    private readonly Dictionary<(INamedTypeSymbol, ITypeSymbol, ITypeSymbol), List<IMethodSymbol>> _autoWireCache =
+        new(ForgeMethodCandidateKeyComparer.Instance);
+
+    // Cache: method.GetAttributes() results to avoid repeated ImmutableArray creation
+    private readonly Dictionary<IMethodSymbol, System.Collections.Immutable.ImmutableArray<AttributeData>> _methodAttributesCache =
+        new(SymbolEqualityComparer.Default);
+
+    private sealed class ForgeMethodCandidateKeyComparer : IEqualityComparer<(INamedTypeSymbol, ITypeSymbol, ITypeSymbol)>
+    {
+        public static readonly ForgeMethodCandidateKeyComparer Instance = new();
+        public bool Equals((INamedTypeSymbol, ITypeSymbol, ITypeSymbol) x, (INamedTypeSymbol, ITypeSymbol, ITypeSymbol) y) =>
+            SymbolEqualityComparer.Default.Equals(x.Item1, y.Item1) &&
+            SymbolEqualityComparer.Default.Equals(x.Item2, y.Item2) &&
+            SymbolEqualityComparer.Default.Equals(x.Item3, y.Item3);
+        public int GetHashCode((INamedTypeSymbol, ITypeSymbol, ITypeSymbol) obj) =>
+            unchecked(
+                SymbolEqualityComparer.Default.GetHashCode(obj.Item1) * 31 * 31 +
+                SymbolEqualityComparer.Default.GetHashCode(obj.Item2) * 31 +
+                SymbolEqualityComparer.Default.GetHashCode(obj.Item3));
+    }
+
+    /// <summary>
+    /// Gets the list of partial method definitions for a forger type, cached per type.
+    /// </summary>
+    private List<IMethodSymbol> GetPartialMethods(INamedTypeSymbol forgerType)
+    {
+        if (!_partialMethodsCache.TryGetValue(forgerType, out var methods))
+        {
+            methods = new List<IMethodSymbol>();
+            foreach (var member in forgerType.GetMembers())
+            {
+                if (member is IMethodSymbol m && m.IsPartialDefinition)
+                    methods.Add(m);
+            }
+            _partialMethodsCache[forgerType] = methods;
+        }
+        return methods;
+    }
+
     public ForgeCodeEmitter(Compilation compilation, ForgerConfig assemblyDefaults)
     {
         _ignoreAttributeSymbol = compilation.GetTypeByMetadataName("ForgeMap.IgnoreAttribute");
