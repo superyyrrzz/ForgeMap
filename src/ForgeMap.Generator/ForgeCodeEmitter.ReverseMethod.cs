@@ -83,6 +83,141 @@ internal sealed partial class ForgeCodeEmitter
             // Nested paths can't be reversed (would need to unflatten)
         }
 
+        // Emit FM0012, FM0015, FM0026 diagnostics and build reverse ForgeWith mappings
+        var reverseForgeWithMappings = ValidateReverseForgeConfig(
+            forwardMethod, forwardSourceType, forwardDestType,
+            forwardIgnored, forwardPropertyMappings, forwardResolverMappings,
+            forwardForgeWithMappings, forger, context);
+
+        // Now generate the reverse method body using the same GenerateForgeMethod pattern
+        // but with reversed types and mappings
+        var sb = new StringBuilder();
+        var sourceParam = "source";
+
+        // Method signature
+        var accessibility = GetAccessibilityKeyword(forwardMethod.DeclaredAccessibility);
+        sb.AppendLine($"        {accessibility} {reverseDestType.ToDisplayString()} {forwardMethod.Name}({reverseSourceType.ToDisplayString()} {sourceParam})");
+        sb.AppendLine("        {");
+
+        // Null check (for reference types and Nullable<T>)
+        if (reverseSourceType.IsReferenceType ||
+            reverseSourceType.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T)
+        {
+            var nullReturn = reverseDestType.IsValueType ? "default" : "null!";
+            sb.AppendLine(GenerateNullCheck(sourceParam, nullReturn));
+            sb.AppendLine();
+        }
+
+        // Get mappable properties
+        var sourceProperties = GetMappableProperties(reverseSourceType);
+        var destProperties = GetMappableProperties(reverseDestType);
+
+        // Determine constructor strategy for the reverse destination
+        var (chosenCtor, ctorParamMappings) = ResolveConstructor(
+            reverseDestType, reverseSourceType, sourceProperties, reversePropertyMappings, context, forwardMethod, forger);
+
+        // Track which destination properties are covered by constructor parameters
+        var ctorCoveredDestProps = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (ctorParamMappings != null)
+        {
+            foreach (var mapping in ctorParamMappings)
+                ctorCoveredDestProps.Add(mapping.DestPropertyName);
+        }
+
+        // Empty resolver mappings for reverse (ForgeFrom is not reversed)
+        var emptyResolverMappings = new Dictionary<string, string>(StringComparer.Ordinal);
+        // Don't pass reverseForgeWithMappings to GeneratePropertyAssignment (it can't find the reverse
+        // partial method via FindForgingMethod since it's auto-generated). We'll handle them inline.
+        var emptyForgeWithMappings = new Dictionary<string, string>(StringComparer.Ordinal);
+
+        if (chosenCtor != null && ctorParamMappings != null && chosenCtor.Parameters.Length > 0)
+        {
+            sb.AppendLine($"            var result = new {reverseDestType.ToDisplayString()}(");
+
+            for (int i = 0; i < ctorParamMappings.Count; i++)
+            {
+                var mapping = ctorParamMappings[i];
+                var separator = i < ctorParamMappings.Count - 1 ? "," : "";
+                var expr = GenerateCtorParamExpression(
+                    mapping.SourceExpression, mapping.SourcePropertyType, mapping.DestPropertyType,
+                    mapping.DestPropertyName, reverseDestType.ToDisplayString(),
+                    new Dictionary<string, int>(StringComparer.Ordinal), context, forwardMethod);
+                sb.AppendLine($"                {mapping.CtorParamName}: {expr}{separator}");
+            }
+
+            var remainingDestProps = destProperties
+                .Where(p => p.SetMethod != null && p.SetMethod.DeclaredAccessibility >= Accessibility.Internal && !p.SetMethod.IsInitOnly && !ctorCoveredDestProps.Contains(p.Name))
+                .ToList();
+
+            var initAssignments = new List<(string Name, string Expr)>();
+            foreach (var destProp in remainingDestProps)
+            {
+                if (reverseIgnored.Contains(destProp.Name))
+                    continue;
+
+                var assignment = GenerateReversePropertyAssignment(
+                    destProp, sourceParam, reverseSourceType, sourceProperties,
+                    reversePropertyMappings, emptyResolverMappings, emptyForgeWithMappings,
+                    reverseForgeWithMappings, reverseIgnored, forger, context, forwardMethod);
+
+                if (assignment != null)
+                    initAssignments.Add((destProp.Name, assignment));
+            }
+
+            if (initAssignments.Count > 0)
+            {
+                sb.AppendLine("            )");
+                sb.AppendLine("            {");
+                foreach (var (name, expr) in initAssignments)
+                    sb.AppendLine($"                {name} = {expr},");
+                sb.AppendLine("            };");
+            }
+            else
+            {
+                sb.AppendLine("            );");
+            }
+
+            sb.AppendLine("            return result;");
+        }
+        else
+        {
+            sb.AppendLine($"            return new {reverseDestType.ToDisplayString()}");
+            sb.AppendLine("            {");
+
+            foreach (var destProp in destProperties.Where(p => p.SetMethod != null && p.SetMethod.DeclaredAccessibility >= Accessibility.Internal))
+            {
+                var assignment = GenerateReversePropertyAssignment(
+                    destProp, sourceParam, reverseSourceType, sourceProperties,
+                    reversePropertyMappings, emptyResolverMappings, emptyForgeWithMappings,
+                    reverseForgeWithMappings, reverseIgnored, forger, context, forwardMethod);
+
+                if (assignment != null)
+                    sb.AppendLine($"                {destProp.Name} = {assignment},");
+            }
+
+            sb.AppendLine("            };");
+        }
+
+        sb.AppendLine("        }");
+
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Validates reverse forge configuration by emitting FM0012/FM0015/FM0026 diagnostics
+    /// and building the reverse [ForgeWith] mappings dictionary.
+    /// </summary>
+    private Dictionary<string, string> ValidateReverseForgeConfig(
+        IMethodSymbol forwardMethod,
+        INamedTypeSymbol forwardSourceType,
+        INamedTypeSymbol forwardDestType,
+        HashSet<string> forwardIgnored,
+        Dictionary<string, string> forwardPropertyMappings,
+        Dictionary<string, string> forwardResolverMappings,
+        Dictionary<string, string> forwardForgeWithMappings,
+        ForgerInfo forger,
+        SourceProductionContext context)
+    {
         // Emit FM0012 warnings for [ForgeFrom] properties
         foreach (var kvp in forwardResolverMappings)
         {
@@ -204,30 +339,30 @@ internal sealed partial class ForgeCodeEmitter
                 if (forwardForgeWithMappings.ContainsKey(destProp.Name)) continue;
 
                 // Find the matching source property by name (convention) or [ForgeProperty]
-                ITypeSymbol? forwardSourcePropType = null;
+                ITypeSymbol? forwardSourcePropType2 = null;
                 if (forwardPropertyMappings.TryGetValue(destProp.Name, out var mappedSourcePath))
                 {
-                    forwardSourcePropType = ResolvePathLeafType(mappedSourcePath, forwardSourceType);
+                    forwardSourcePropType2 = ResolvePathLeafType(mappedSourcePath, forwardSourceType);
                 }
                 else
                 {
                     var matchingProp = forwardSourceProps.FirstOrDefault(sp =>
                         string.Equals(sp.Name, destProp.Name, _config.PropertyNameComparison));
                     if (matchingProp != null)
-                        forwardSourcePropType = matchingProp.Type;
+                        forwardSourcePropType2 = matchingProp.Type;
                 }
 
-                if (forwardSourcePropType == null) continue;
+                if (forwardSourcePropType2 == null) continue;
 
                 // Check if forward direction would auto-wire this property
-                if (IsScalarType(forwardSourcePropType) || IsScalarType(destProp.Type)) continue;
-                if (CanAssign(forwardSourcePropType, destProp.Type)) continue;
+                if (IsScalarType(forwardSourcePropType2) || IsScalarType(destProp.Type)) continue;
+                if (CanAssign(forwardSourcePropType2, destProp.Type)) continue;
 
-                var forwardCandidates = FindAutoWireForgeMethodCandidates(forger.Symbol, forwardSourcePropType, destProp.Type);
+                var forwardCandidates = FindAutoWireForgeMethodCandidates(forger.Symbol, forwardSourcePropType2, destProp.Type);
                 if (forwardCandidates.Count == 1)
                 {
                     // Property is auto-wired forward — check for reverse forge method
-                    var reverseCandidates = FindReverseForgeMethodCandidates(forger.Symbol, destProp.Type, forwardSourcePropType);
+                    var reverseCandidates = FindReverseForgeMethodCandidates(forger.Symbol, destProp.Type, forwardSourcePropType2);
                     if (reverseCandidates.Count == 0)
                     {
                         var forwardCandidate = forwardCandidates[0];
@@ -243,7 +378,7 @@ internal sealed partial class ForgeCodeEmitter
                 else if (forwardCandidates.Count == 0)
                 {
                     // Check if this would be resolved by inline collection auto-wiring
-                    var srcElemType = GetCollectionElementType(forwardSourcePropType);
+                    var srcElemType = GetCollectionElementType(forwardSourcePropType2);
                     var destElemType = GetCollectionElementType(destProp.Type);
                     if (srcElemType != null && destElemType != null)
                     {
@@ -269,118 +404,7 @@ internal sealed partial class ForgeCodeEmitter
             }
         }
 
-        // Now generate the reverse method body using the same GenerateForgeMethod pattern
-        // but with reversed types and mappings
-        var sb = new StringBuilder();
-        var sourceParam = "source";
-
-        // Method signature
-        var accessibility = GetAccessibilityKeyword(forwardMethod.DeclaredAccessibility);
-        sb.AppendLine($"        {accessibility} {reverseDestType.ToDisplayString()} {forwardMethod.Name}({reverseSourceType.ToDisplayString()} {sourceParam})");
-        sb.AppendLine("        {");
-
-        // Null check (for reference types and Nullable<T>)
-        if (reverseSourceType.IsReferenceType ||
-            reverseSourceType.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T)
-        {
-            var nullReturn = reverseDestType.IsValueType ? "default" : "null!";
-            sb.AppendLine(GenerateNullCheck(sourceParam, nullReturn));
-            sb.AppendLine();
-        }
-
-        // Get mappable properties
-        var sourceProperties = GetMappableProperties(reverseSourceType);
-        var destProperties = GetMappableProperties(reverseDestType);
-
-        // Determine constructor strategy for the reverse destination
-        var (chosenCtor, ctorParamMappings) = ResolveConstructor(
-            reverseDestType, reverseSourceType, sourceProperties, reversePropertyMappings, context, forwardMethod, forger);
-
-        // Track which destination properties are covered by constructor parameters
-        var ctorCoveredDestProps = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        if (ctorParamMappings != null)
-        {
-            foreach (var mapping in ctorParamMappings)
-                ctorCoveredDestProps.Add(mapping.DestPropertyName);
-        }
-
-        // Empty resolver mappings for reverse (ForgeFrom is not reversed)
-        var emptyResolverMappings = new Dictionary<string, string>(StringComparer.Ordinal);
-        // Don't pass reverseForgeWithMappings to GeneratePropertyAssignment (it can't find the reverse
-        // partial method via FindForgingMethod since it's auto-generated). We'll handle them inline.
-        var emptyForgeWithMappings = new Dictionary<string, string>(StringComparer.Ordinal);
-
-        if (chosenCtor != null && ctorParamMappings != null && chosenCtor.Parameters.Length > 0)
-        {
-            sb.AppendLine($"            var result = new {reverseDestType.ToDisplayString()}(");
-
-            for (int i = 0; i < ctorParamMappings.Count; i++)
-            {
-                var mapping = ctorParamMappings[i];
-                var separator = i < ctorParamMappings.Count - 1 ? "," : "";
-                var expr = GenerateCtorParamExpression(
-                    mapping.SourceExpression, mapping.SourcePropertyType, mapping.DestPropertyType,
-                    mapping.DestPropertyName, reverseDestType.ToDisplayString(),
-                    new Dictionary<string, int>(StringComparer.Ordinal), context, forwardMethod);
-                sb.AppendLine($"                {mapping.CtorParamName}: {expr}{separator}");
-            }
-
-            var remainingDestProps = destProperties
-                .Where(p => p.SetMethod != null && p.SetMethod.DeclaredAccessibility >= Accessibility.Internal && !p.SetMethod.IsInitOnly && !ctorCoveredDestProps.Contains(p.Name))
-                .ToList();
-
-            var initAssignments = new List<(string Name, string Expr)>();
-            foreach (var destProp in remainingDestProps)
-            {
-                if (reverseIgnored.Contains(destProp.Name))
-                    continue;
-
-                var assignment = GenerateReversePropertyAssignment(
-                    destProp, sourceParam, reverseSourceType, sourceProperties,
-                    reversePropertyMappings, emptyResolverMappings, emptyForgeWithMappings,
-                    reverseForgeWithMappings, reverseIgnored, forger, context, forwardMethod);
-
-                if (assignment != null)
-                    initAssignments.Add((destProp.Name, assignment));
-            }
-
-            if (initAssignments.Count > 0)
-            {
-                sb.AppendLine("            )");
-                sb.AppendLine("            {");
-                foreach (var (name, expr) in initAssignments)
-                    sb.AppendLine($"                {name} = {expr},");
-                sb.AppendLine("            };");
-            }
-            else
-            {
-                sb.AppendLine("            );");
-            }
-
-            sb.AppendLine("            return result;");
-        }
-        else
-        {
-            sb.AppendLine($"            return new {reverseDestType.ToDisplayString()}");
-            sb.AppendLine("            {");
-
-            foreach (var destProp in destProperties.Where(p => p.SetMethod != null && p.SetMethod.DeclaredAccessibility >= Accessibility.Internal))
-            {
-                var assignment = GenerateReversePropertyAssignment(
-                    destProp, sourceParam, reverseSourceType, sourceProperties,
-                    reversePropertyMappings, emptyResolverMappings, emptyForgeWithMappings,
-                    reverseForgeWithMappings, reverseIgnored, forger, context, forwardMethod);
-
-                if (assignment != null)
-                    sb.AppendLine($"                {destProp.Name} = {assignment},");
-            }
-
-            sb.AppendLine("            };");
-        }
-
-        sb.AppendLine("        }");
-
-        return sb.ToString();
+        return reverseForgeWithMappings;
     }
 
     /// <summary>
