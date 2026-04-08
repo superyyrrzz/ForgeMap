@@ -18,7 +18,7 @@ pwsh ./Run-CompileBenchmarks.ps1
 # Custom scales and iterations
 pwsh ./Run-CompileBenchmarks.ps1 -Scales 10,50 -Iterations 3
 
-# Generate models only (useful for debugging)
+# Generate models only (useful for inspecting generated source; does not build)
 pwsh ./Generate-Models.ps1 -Count 25
 ```
 
