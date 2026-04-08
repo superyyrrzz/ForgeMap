@@ -440,3 +440,26 @@ table,
         padding-top: 2rem;
     }
 }
+
+/* ---------- Reduced Motion ---------- */
+@media (prefers-reduced-motion: reduce) {
+    html {
+        scroll-behavior: auto;
+    }
+
+    body,
+    header.bg-body,
+    footer,
+    pre,
+    code,
+    table,
+    .toc .nav-link,
+    .navbar-brand,
+    .navbar .nav-link,
+    header .btn,
+    header .dropdown-toggle,
+    header .form-control,
+    #logo {
+        transition: none;
+    }
+}
