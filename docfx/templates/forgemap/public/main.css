@@ -52,7 +52,7 @@
     --forge-ash-warm: #242b36;
     --forge-smoke: #6b7280;
     --forge-white: #0f141b;
-    --forge-anvil: #f0ede8;
+    --forge-anvil: #141a22;
 
     --bs-primary: var(--forge-ember);
     --bs-primary-rgb: 240, 144, 48;
@@ -63,7 +63,7 @@
     --bs-body-color: var(--forge-steel);
     --bs-code-color: var(--forge-ember-light);
     --bs-border-color: var(--forge-ash-warm);
-    --bs-heading-color: var(--forge-anvil);
+    --bs-heading-color: #f0ede8;
 }
 
 /* ---------- Base Typography ---------- */
@@ -226,7 +226,7 @@ pre {
     border-radius: 8px;
     border: 1px solid var(--forge-ash-warm);
     position: relative;
-    overflow: hidden;
+    overflow: auto;
 }
 
 [data-bs-theme="light"] pre {
