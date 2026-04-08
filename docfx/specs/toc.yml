@@ -1,0 +1,18 @@
+- name: Overview
+  href: index.md
+- name: Core Specification (v1.0)
+  href: ../../docs/SPEC.md
+- name: v1.1 — Inheritance
+  href: ../../docs/SPEC-v1.1-inheritance.md
+- name: v1.2 — Null Property Handling
+  href: ../../docs/SPEC-v1.2-null-property-handling.md
+- name: v1.3 — Auto-Wiring
+  href: ../../docs/SPEC-v1.3-auto-wiring.md
+- name: v1.4 — Advanced Mapping
+  href: ../../docs/SPEC-v1.4-advanced-mapping.md
+- name: v1.5 — Advanced Mapping
+  href: ../../docs/SPEC-v1.5-advanced-mapping.md
+- name: v1.6 — Advanced Mapping (Planned)
+  href: ../../docs/SPEC-v1.6-advanced-mapping.md
+- name: ForgeMap vs AutoMapper & Mapperly
+  href: ../../docs/ForgeMap-vs-AutoMapper-and-Mapperly.md

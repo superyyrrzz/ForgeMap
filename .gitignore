@@ -58,6 +58,9 @@ Thumbs.db
 # Verify snapshots that are not committed
 *.received.*
 
+# DocFX
+docfx/_site/
+
 # Claude Code local settings
 .claude/settings.local.json
 .claude/**/settings.local.json

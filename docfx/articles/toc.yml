@@ -1,0 +1,6 @@
+- name: Getting Started
+  href: getting-started/toc.yml
+- name: Reference
+  href: reference/toc.yml
+- name: Migration
+  href: migration/toc.yml

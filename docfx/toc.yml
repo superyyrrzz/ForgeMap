@@ -1,0 +1,9 @@
+- name: Docs
+  href: articles/
+  homepage: articles/getting-started/quick-start.md
+- name: API Reference
+  href: api/
+  homepage: api/index.md
+- name: Specifications
+  href: specs/
+  homepage: specs/index.md
