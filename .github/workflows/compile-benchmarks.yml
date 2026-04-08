@@ -37,10 +37,14 @@ jobs:
 
       - name: Run compile benchmarks
         shell: pwsh
+        env:
+          BENCH_SCALES: ${{ github.event.inputs.scales || '10,50,100' }}
+          BENCH_SCENARIOS: ${{ github.event.inputs.scenarios || 'Flat,Nested,Collection,Mixed' }}
+          BENCH_ITERATIONS: ${{ github.event.inputs.iterations || '5' }}
         run: |
-          $scales = "${{ github.event.inputs.scales || '10,50,100' }}" -split ',' | ForEach-Object { [int]$_.Trim() }
-          $scenarios = ("${{ github.event.inputs.scenarios || 'Flat,Nested,Collection,Mixed' }}" -split ',' | ForEach-Object { $_.Trim() })
-          $iterations = [int]"${{ github.event.inputs.iterations || '5' }}"
+          $scales = $env:BENCH_SCALES -split ',' | ForEach-Object { [int]$_.Trim() }
+          $scenarios = ($env:BENCH_SCENARIOS -split ',' | ForEach-Object { $_.Trim() })
+          $iterations = [int]$env:BENCH_ITERATIONS
           ./benchmarks/ForgeMap.CompileBenchmarks/Run-CompileBenchmarks.ps1 `
             -Scales $scales `
             -Scenarios $scenarios `
