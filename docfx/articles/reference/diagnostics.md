@@ -8,7 +8,7 @@ ForgeMap reports diagnostics at compile time to help you catch mapping issues ea
 |----------|---------|
 | **Error** | Build fails. The mapping cannot be generated. |
 | **Warning** | Build succeeds but the mapping may be incorrect. |
-| **Info** | Informational. Disabled by default; enable with `<WarningsAsErrors>` or `#pragma`. |
+| **Info** | Informational. Most are disabled by default; enable with `<WarningsAsErrors>` or `#pragma`. |
 
 ## Suppressing Diagnostics
 
@@ -227,7 +227,7 @@ These fire when custom resolvers or nested mappings cannot be resolved.
 |---|---|
 | **Severity** | Info |
 | **Message** | Inherited configuration for property '{0}' is overridden by an explicit attribute on the derived forge method |
-| **Notes** | Informational — confirms that your explicit attribute takes precedence over the inherited one. |
+| **Notes** | Enabled by default. Informational — confirms that your explicit attribute takes precedence over the inherited one. |
 
 ### FM0022 — [ForgeAllDerived] found no derived forge methods
 

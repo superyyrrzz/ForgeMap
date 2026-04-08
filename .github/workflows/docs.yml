@@ -7,6 +7,7 @@ on:
       - 'docfx/**'
       - 'docs/**'
       - 'src/ForgeMap.Abstractions/**'
+      - 'src/ForgeMap.Generator/**'
       - '.github/workflows/docs.yml'
   pull_request:
     branches: [main]
@@ -14,6 +15,7 @@ on:
       - 'docfx/**'
       - 'docs/**'
       - 'src/ForgeMap.Abstractions/**'
+      - 'src/ForgeMap.Generator/**'
       - '.github/workflows/docs.yml'
   workflow_dispatch:
 
@@ -42,7 +44,7 @@ jobs:
           dotnet-version: 10.0.x
 
       - name: Install DocFX
-        run: dotnet tool install -g docfx
+        run: dotnet tool install -g docfx --version 2.78.5
 
       - name: Build docs
         run: docfx docfx/docfx.json
