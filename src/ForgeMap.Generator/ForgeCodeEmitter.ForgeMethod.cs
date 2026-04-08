@@ -138,72 +138,10 @@ internal sealed partial class ForgeCodeEmitter
         // [ForgeAllDerived] — polymorphic dispatch is-cascade
         if (hasForgeAllDerived)
         {
-            var derivedMethods = DiscoverDerivedForgeMethods(method, sourceType, destinationType, forger);
-            var isAbstractOrInterface = destinationType.IsAbstract || destinationType.TypeKind == TypeKind.Interface;
-
-            if (derivedMethods.Count == 0)
-            {
-                // FM0022: no derived forge methods found — use abstract-specific message when applicable
-                ReportDiagnosticIfNotSuppressed(context,
-                    DiagnosticDescriptors.ForgeAllDerivedNoDerivedMethods,
-                    method.Locations.FirstOrDefault(),
-                    method.Name,
-                    isAbstractOrInterface
-                        ? "dispatch-only body has no base-type fallback \u2014 all non-null inputs will throw NotSupportedException"
-                        : "polymorphic dispatch will only map the base type");
-            }
-            else
-            {
-                sb.AppendLine("            // Polymorphic dispatch — most-derived types checked first");
-
-                // Normalize identifiers so that `@foo` and `foo` are treated as the same name in C#
-                static string NormalizeIdentifier(string name) =>
-                    name.Length > 0 && name[0] == '@' ? name.Substring(1) : name;
-
-                var usedNames = new HashSet<string>(StringComparer.Ordinal)
-                {
-                    NormalizeIdentifier(sourceParam),
-                    NormalizeIdentifier("result")
-                };
-                foreach (var derived in derivedMethods)
-                {
-                    var derivedSourceDisplay = derived.Parameters[0].Type.ToDisplayString();
-                    var displayName = GenerateSafeVariableName(derived.Parameters[0].Type);
-                    var baseName = NormalizeIdentifier(displayName);
-                    var varName = baseName;
-                    if (!usedNames.Add(varName))
-                    {
-                        var suffix = 2;
-                        do { varName = baseName + suffix++; } while (!usedNames.Add(varName));
-                    }
-                    // Re-apply @ escaping if the original name needed it and no suffix was added
-                    var finalName = (displayName.Length > 0 && displayName[0] == '@' && varName == baseName)
-                        ? displayName
-                        : varName;
-                    sb.AppendLine($"            if ({sourceParam} is {derivedSourceDisplay} {finalName}) return {method.Name}({finalName});");
-                }
-                sb.AppendLine();
-
-                // FM0024: warn about abstract/interface destination — unmatched subtypes throw at runtime
-                if (isAbstractOrInterface)
-                {
-                    ReportDiagnosticIfNotSuppressed(context,
-                        DiagnosticDescriptors.ForgeAllDerivedAbstractDestination,
-                        method.Locations.FirstOrDefault(),
-                        destinationType.ToDisplayString());
-                }
-            }
-
-            // Abstract/interface destinations: dispatch-only body with throw fallback — no base-type mapping
-            if (isAbstractOrInterface)
-            {
-                var destDisplayName = destinationType.ToDisplayString();
-                sb.AppendLine($"            throw new global::System.NotSupportedException(");
-                sb.AppendLine($"                $\"No forge mapping for source type '{{({sourceParam}).GetType().FullName}}' \" +");
-                sb.AppendLine($"                $\"to non-instantiable destination type '{destDisplayName}'.\");");
-                sb.AppendLine("        }");
+            var earlyReturn = GenerateForgeAllDerivedDispatch(
+                sb, method, sourceType, sourceParam, destinationType, forger, context);
+            if (earlyReturn)
                 return sb.ToString();
-            }
         }
 
         // [BeforeForge] callbacks
@@ -232,207 +170,370 @@ internal sealed partial class ForgeCodeEmitter
 
         if (chosenCtor != null && ctorParamMappings != null && chosenCtor.Parameters.Length > 0)
         {
-            // Constructor mapping: generate new Dest(param1: expr1, param2: expr2) { Prop = value, ... }
-            // Using object initializer syntax so init-only properties work too
-
-            // Emit pre-construction blocks for inline collection ctor params
-            foreach (var mapping in ctorParamMappings)
-            {
-                if (mapping.PreConstructionBlock != null)
-                    sb.AppendLine(mapping.PreConstructionBlock);
-            }
-
-            // Collect remaining property assignments for object initializer
-            var remainingDestProps = destProperties
-                .Where(p => p.SetMethod != null && p.SetMethod.DeclaredAccessibility >= Accessibility.Internal && !ctorCoveredDestProps.Contains(p.Name))
-                .ToList();
-
-            var initAssignments = new List<(string Name, string Expr)>();
-            var skipNullAssignmentsForCtor = new List<(string DestPropName, string SourceExpr, string LocalVarName, string? AssignExpr)>();
-            var postConstructionCollectionsForCtor = new List<(string DestPropName, string Block)>();
-            var preConstructionBlocksForCtor = new List<string>();
-            foreach (var destProp in remainingDestProps)
-            {
-                if (ignoredProperties.Contains(destProp.Name))
-                    continue;
-
-                var assignment = GeneratePropertyAssignment(
-                    destProp, sourceParam, sourceType, sourceProperties,
-                    propertyMappings, resolverMappings, forgeWithMappings, ignoredProperties, forger, context, method,
-                    nullPropertyHandlingOverrides, skipNullAssignmentsForCtor,
-                    postConstructionCollectionsForCtor, preConstructionBlocksForCtor);
-
-                if (assignment != null)
-                    initAssignments.Add((destProp.Name, assignment));
-            }
-
-            // Emit pre-construction blocks for init-only collection properties
-            foreach (var block in preConstructionBlocksForCtor)
-                sb.AppendLine(block);
-
-            sb.AppendLine($"            var result = new {destinationType.ToDisplayString()}(");
-
-            for (int i = 0; i < ctorParamMappings.Count; i++)
-            {
-                var mapping = ctorParamMappings[i];
-                var separator = i < ctorParamMappings.Count - 1 ? "," : "";
-                var expr = GenerateCtorParamExpression(
-                    mapping.SourceExpression, mapping.SourcePropertyType, mapping.DestPropertyType,
-                    mapping.DestPropertyName, destinationType.ToDisplayString(),
-                    nullPropertyHandlingOverrides, context, method);
-                sb.AppendLine($"                {mapping.CtorParamName}: {expr}{separator}");
-            }
-
-            if (initAssignments.Count > 0)
-            {
-                sb.AppendLine("            )");
-                sb.AppendLine("            {");
-                foreach (var (name, expr) in initAssignments)
-                    sb.AppendLine($"                {name} = {expr},");
-                sb.AppendLine("            };");
-            }
-            else
-            {
-                sb.AppendLine("            );");
-            }
-
-            // SkipNull properties — emit separate if-guard statements after the initializer
-            foreach (var (destName, srcExpr, localVar, assignExpr) in skipNullAssignmentsForCtor)
-            {
-                sb.AppendLine($"            if ({srcExpr} is {{ }} {localVar})");
-                sb.AppendLine($"            {{");
-                sb.AppendLine($"                result.{destName} = {assignExpr ?? localVar};");
-                sb.AppendLine($"            }}");
-            }
-
-            // Post-construction collection mappings
-            foreach (var (destName, block) in postConstructionCollectionsForCtor)
-                sb.AppendLine(block);
-
-            // [AfterForge] callbacks
-            foreach (var hookName in afterForgeHooks)
-            {
-                sb.AppendLine($"            {hookName}({sourceParam}, result);");
-            }
-
-            sb.AppendLine("            return result;");
+            GenerateCtorPlusInitializer(
+                sb, destinationType, sourceType, sourceParam, sourceProperties, destProperties,
+                ctorParamMappings, ctorCoveredDestProps, ignoredProperties, propertyMappings,
+                resolverMappings, forgeWithMappings, nullPropertyHandlingOverrides,
+                afterForgeHooks, forger, context, method);
         }
         else if (hasAfterForge)
         {
-            // When AfterForge hooks exist, we need a variable to pass to the hooks
-            var skipNullAssignmentsAfterForge = new List<(string DestPropName, string SourceExpr, string LocalVarName, string? AssignExpr)>();
-            var postConstructionCollectionsAfterForge = new List<(string DestPropName, string Block)>();
-            var preConstructionBlocksAfterForge = new List<string>();
-
-            var afterForgeAssignments = new List<(string Name, string Expr)>();
-            foreach (var destProp in destProperties.Where(p => p.SetMethod != null && p.SetMethod.DeclaredAccessibility >= Accessibility.Internal))
-            {
-                var assignment = GeneratePropertyAssignment(
-                    destProp, sourceParam, sourceType, sourceProperties,
-                    propertyMappings, resolverMappings, forgeWithMappings, ignoredProperties, forger, context, method,
-                    nullPropertyHandlingOverrides, skipNullAssignmentsAfterForge,
-                    postConstructionCollectionsAfterForge, preConstructionBlocksAfterForge);
-
-                if (assignment != null)
-                    afterForgeAssignments.Add((destProp.Name, assignment));
-            }
-
-            // Emit pre-construction blocks for init-only collection properties
-            foreach (var block in preConstructionBlocksAfterForge)
-                sb.AppendLine(block);
-
-            sb.AppendLine($"            var result = new {destinationType.ToDisplayString()}");
-            sb.AppendLine("            {");
-
-            foreach (var (name, expr) in afterForgeAssignments)
-                sb.AppendLine($"                {name} = {expr},");
-
-            sb.AppendLine("            };");
-
-            // SkipNull properties — emit separate if-guard statements
-            foreach (var (destName, srcExpr, localVar, assignExpr) in skipNullAssignmentsAfterForge)
-            {
-                sb.AppendLine($"            if ({srcExpr} is {{ }} {localVar})");
-                sb.AppendLine($"            {{");
-                sb.AppendLine($"                result.{destName} = {assignExpr ?? localVar};");
-                sb.AppendLine($"            }}");
-            }
-
-            // Post-construction collection mappings
-            foreach (var (destName, block) in postConstructionCollectionsAfterForge)
-                sb.AppendLine(block);
-
-            // [AfterForge] callbacks
-            foreach (var hookName in afterForgeHooks)
-            {
-                sb.AppendLine($"            {hookName}({sourceParam}, result);");
-            }
-
-            sb.AppendLine("            return result;");
+            GenerateObjInitWithAfterForge(
+                sb, destinationType, sourceType, sourceParam, sourceProperties, destProperties,
+                ignoredProperties, propertyMappings, resolverMappings, forgeWithMappings,
+                nullPropertyHandlingOverrides, afterForgeHooks, forger, context, method);
         }
         else
         {
-            // Object initializer pattern
-            var skipNullAssignmentsPlain = new List<(string DestPropName, string SourceExpr, string LocalVarName, string? AssignExpr)>();
-            var postConstructionCollectionsPlain = new List<(string DestPropName, string Block)>();
-            var preConstructionBlocksPlain = new List<string>();
-            var plainAssignments = new List<(string Name, string Expr)>();
-
-            foreach (var destProp in destProperties.Where(p => p.SetMethod != null && p.SetMethod.DeclaredAccessibility >= Accessibility.Internal))
-            {
-                var assignment = GeneratePropertyAssignment(
-                    destProp, sourceParam, sourceType, sourceProperties,
-                    propertyMappings, resolverMappings, forgeWithMappings, ignoredProperties, forger, context, method,
-                    nullPropertyHandlingOverrides, skipNullAssignmentsPlain,
-                    postConstructionCollectionsPlain, preConstructionBlocksPlain);
-
-                if (assignment != null)
-                    plainAssignments.Add((destProp.Name, assignment));
-            }
-
-            var needsResultVar = skipNullAssignmentsPlain.Count > 0 ||
-                postConstructionCollectionsPlain.Count > 0 ||
-                preConstructionBlocksPlain.Count > 0;
-
-            if (needsResultVar)
-            {
-                // Emit pre-construction blocks for init-only collection properties
-                foreach (var block in preConstructionBlocksPlain)
-                    sb.AppendLine(block);
-
-                sb.AppendLine($"            var result = new {destinationType.ToDisplayString()}");
-                sb.AppendLine("            {");
-                foreach (var (name, expr) in plainAssignments)
-                    sb.AppendLine($"                {name} = {expr},");
-                sb.AppendLine("            };");
-
-                foreach (var (destName, srcExpr, localVar, assignExpr) in skipNullAssignmentsPlain)
-                {
-                    sb.AppendLine($"            if ({srcExpr} is {{ }} {localVar})");
-                    sb.AppendLine($"            {{");
-                    sb.AppendLine($"                result.{destName} = {assignExpr ?? localVar};");
-                    sb.AppendLine($"            }}");
-                }
-
-                // Post-construction collection mappings
-                foreach (var (destName, block) in postConstructionCollectionsPlain)
-                    sb.AppendLine(block);
-
-                sb.AppendLine("            return result;");
-            }
-            else
-            {
-                sb.AppendLine($"            return new {destinationType.ToDisplayString()}");
-                sb.AppendLine("            {");
-                foreach (var (name, expr) in plainAssignments)
-                    sb.AppendLine($"                {name} = {expr},");
-                sb.AppendLine("            };");
-            }
+            GenerateSimpleObjectInit(
+                sb, destinationType, sourceType, sourceParam, sourceProperties, destProperties,
+                ignoredProperties, propertyMappings, resolverMappings, forgeWithMappings,
+                nullPropertyHandlingOverrides, forger, context, method);
         }
 
         sb.AppendLine("        }");
 
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// Generates the [ForgeAllDerived] polymorphic dispatch is-cascade.
+    /// Returns true if the method body is complete (abstract/interface destination), false if base-type mapping should follow.
+    /// </summary>
+    private bool GenerateForgeAllDerivedDispatch(
+        StringBuilder sb,
+        IMethodSymbol method,
+        INamedTypeSymbol sourceType,
+        string sourceParam,
+        INamedTypeSymbol destinationType,
+        ForgerInfo forger,
+        SourceProductionContext context)
+    {
+        var derivedMethods = DiscoverDerivedForgeMethods(method, sourceType, destinationType, forger);
+        var isAbstractOrInterface = destinationType.IsAbstract || destinationType.TypeKind == TypeKind.Interface;
+
+        if (derivedMethods.Count == 0)
+        {
+            // FM0022: no derived forge methods found — use abstract-specific message when applicable
+            ReportDiagnosticIfNotSuppressed(context,
+                DiagnosticDescriptors.ForgeAllDerivedNoDerivedMethods,
+                method.Locations.FirstOrDefault(),
+                method.Name,
+                isAbstractOrInterface
+                    ? "dispatch-only body has no base-type fallback \u2014 all non-null inputs will throw NotSupportedException"
+                    : "polymorphic dispatch will only map the base type");
+        }
+        else
+        {
+            sb.AppendLine("            // Polymorphic dispatch — most-derived types checked first");
+
+            // Normalize identifiers so that `@foo` and `foo` are treated as the same name in C#
+            static string NormalizeIdentifier(string name) =>
+                name.Length > 0 && name[0] == '@' ? name.Substring(1) : name;
+
+            var usedNames = new HashSet<string>(StringComparer.Ordinal)
+            {
+                NormalizeIdentifier(sourceParam),
+                NormalizeIdentifier("result")
+            };
+            foreach (var derived in derivedMethods)
+            {
+                var derivedSourceDisplay = derived.Parameters[0].Type.ToDisplayString();
+                var displayName = GenerateSafeVariableName(derived.Parameters[0].Type);
+                var baseName = NormalizeIdentifier(displayName);
+                var varName = baseName;
+                if (!usedNames.Add(varName))
+                {
+                    var suffix = 2;
+                    do { varName = baseName + suffix++; } while (!usedNames.Add(varName));
+                }
+                // Re-apply @ escaping if the original name needed it and no suffix was added
+                var finalName = (displayName.Length > 0 && displayName[0] == '@' && varName == baseName)
+                    ? displayName
+                    : varName;
+                sb.AppendLine($"            if ({sourceParam} is {derivedSourceDisplay} {finalName}) return {method.Name}({finalName});");
+            }
+            sb.AppendLine();
+
+            // FM0024: warn about abstract/interface destination — unmatched subtypes throw at runtime
+            if (isAbstractOrInterface)
+            {
+                ReportDiagnosticIfNotSuppressed(context,
+                    DiagnosticDescriptors.ForgeAllDerivedAbstractDestination,
+                    method.Locations.FirstOrDefault(),
+                    destinationType.ToDisplayString());
+            }
+        }
+
+        // Abstract/interface destinations: dispatch-only body with throw fallback — no base-type mapping
+        if (isAbstractOrInterface)
+        {
+            var destDisplayName = destinationType.ToDisplayString();
+            sb.AppendLine($"            throw new global::System.NotSupportedException(");
+            sb.AppendLine($"                $\"No forge mapping for source type '{{({sourceParam}).GetType().FullName}}' \" +");
+            sb.AppendLine($"                $\"to non-instantiable destination type '{destDisplayName}'.\");");
+            sb.AppendLine("        }");
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Generates the constructor + object initializer construction path for GenerateForgeMethod.
+    /// </summary>
+    private void GenerateCtorPlusInitializer(
+        StringBuilder sb,
+        INamedTypeSymbol destinationType,
+        INamedTypeSymbol sourceType,
+        string sourceParam,
+        IEnumerable<IPropertySymbol> sourceProperties,
+        IEnumerable<IPropertySymbol> destProperties,
+        List<CtorParamMapping> ctorParamMappings,
+        HashSet<string> ctorCoveredDestProps,
+        HashSet<string> ignoredProperties,
+        Dictionary<string, string> propertyMappings,
+        Dictionary<string, string> resolverMappings,
+        Dictionary<string, string> forgeWithMappings,
+        Dictionary<string, int> nullPropertyHandlingOverrides,
+        List<string> afterForgeHooks,
+        ForgerInfo forger,
+        SourceProductionContext context,
+        IMethodSymbol method)
+    {
+        // Constructor mapping: generate new Dest(param1: expr1, param2: expr2) { Prop = value, ... }
+        // Using object initializer syntax so init-only properties work too
+
+        // Emit pre-construction blocks for inline collection ctor params
+        foreach (var mapping in ctorParamMappings)
+        {
+            if (mapping.PreConstructionBlock != null)
+                sb.AppendLine(mapping.PreConstructionBlock);
+        }
+
+        // Collect remaining property assignments for object initializer
+        var remainingDestProps = destProperties
+            .Where(p => p.SetMethod != null && p.SetMethod.DeclaredAccessibility >= Accessibility.Internal && !ctorCoveredDestProps.Contains(p.Name))
+            .ToList();
+
+        var initAssignments = new List<(string Name, string Expr)>();
+        var skipNullAssignmentsForCtor = new List<(string DestPropName, string SourceExpr, string LocalVarName, string? AssignExpr)>();
+        var postConstructionCollectionsForCtor = new List<(string DestPropName, string Block)>();
+        var preConstructionBlocksForCtor = new List<string>();
+        foreach (var destProp in remainingDestProps)
+        {
+            if (ignoredProperties.Contains(destProp.Name))
+                continue;
+
+            var assignment = GeneratePropertyAssignment(
+                destProp, sourceParam, sourceType, sourceProperties,
+                propertyMappings, resolverMappings, forgeWithMappings, ignoredProperties, forger, context, method,
+                nullPropertyHandlingOverrides, skipNullAssignmentsForCtor,
+                postConstructionCollectionsForCtor, preConstructionBlocksForCtor);
+
+            if (assignment != null)
+                initAssignments.Add((destProp.Name, assignment));
+        }
+
+        // Emit pre-construction blocks for init-only collection properties
+        foreach (var block in preConstructionBlocksForCtor)
+            sb.AppendLine(block);
+
+        sb.AppendLine($"            var result = new {destinationType.ToDisplayString()}(");
+
+        for (int i = 0; i < ctorParamMappings.Count; i++)
+        {
+            var mapping = ctorParamMappings[i];
+            var separator = i < ctorParamMappings.Count - 1 ? "," : "";
+            var expr = GenerateCtorParamExpression(
+                mapping.SourceExpression, mapping.SourcePropertyType, mapping.DestPropertyType,
+                mapping.DestPropertyName, destinationType.ToDisplayString(),
+                nullPropertyHandlingOverrides, context, method);
+            sb.AppendLine($"                {mapping.CtorParamName}: {expr}{separator}");
+        }
+
+        if (initAssignments.Count > 0)
+        {
+            sb.AppendLine("            )");
+            sb.AppendLine("            {");
+            foreach (var (name, expr) in initAssignments)
+                sb.AppendLine($"                {name} = {expr},");
+            sb.AppendLine("            };");
+        }
+        else
+        {
+            sb.AppendLine("            );");
+        }
+
+        // SkipNull properties — emit separate if-guard statements after the initializer
+        foreach (var (destName, srcExpr, localVar, assignExpr) in skipNullAssignmentsForCtor)
+        {
+            sb.AppendLine($"            if ({srcExpr} is {{ }} {localVar})");
+            sb.AppendLine($"            {{");
+            sb.AppendLine($"                result.{destName} = {assignExpr ?? localVar};");
+            sb.AppendLine($"            }}");
+        }
+
+        // Post-construction collection mappings
+        foreach (var (destName, block) in postConstructionCollectionsForCtor)
+            sb.AppendLine(block);
+
+        // [AfterForge] callbacks
+        foreach (var hookName in afterForgeHooks)
+        {
+            sb.AppendLine($"            {hookName}({sourceParam}, result);");
+        }
+
+        sb.AppendLine("            return result;");
+    }
+
+    /// <summary>
+    /// Generates the object initializer construction path when [AfterForge] hooks are present.
+    /// </summary>
+    private void GenerateObjInitWithAfterForge(
+        StringBuilder sb,
+        INamedTypeSymbol destinationType,
+        INamedTypeSymbol sourceType,
+        string sourceParam,
+        IEnumerable<IPropertySymbol> sourceProperties,
+        IEnumerable<IPropertySymbol> destProperties,
+        HashSet<string> ignoredProperties,
+        Dictionary<string, string> propertyMappings,
+        Dictionary<string, string> resolverMappings,
+        Dictionary<string, string> forgeWithMappings,
+        Dictionary<string, int> nullPropertyHandlingOverrides,
+        List<string> afterForgeHooks,
+        ForgerInfo forger,
+        SourceProductionContext context,
+        IMethodSymbol method)
+    {
+        // When AfterForge hooks exist, we need a variable to pass to the hooks
+        var skipNullAssignmentsAfterForge = new List<(string DestPropName, string SourceExpr, string LocalVarName, string? AssignExpr)>();
+        var postConstructionCollectionsAfterForge = new List<(string DestPropName, string Block)>();
+        var preConstructionBlocksAfterForge = new List<string>();
+
+        var afterForgeAssignments = new List<(string Name, string Expr)>();
+        foreach (var destProp in destProperties.Where(p => p.SetMethod != null && p.SetMethod.DeclaredAccessibility >= Accessibility.Internal))
+        {
+            var assignment = GeneratePropertyAssignment(
+                destProp, sourceParam, sourceType, sourceProperties,
+                propertyMappings, resolverMappings, forgeWithMappings, ignoredProperties, forger, context, method,
+                nullPropertyHandlingOverrides, skipNullAssignmentsAfterForge,
+                postConstructionCollectionsAfterForge, preConstructionBlocksAfterForge);
+
+            if (assignment != null)
+                afterForgeAssignments.Add((destProp.Name, assignment));
+        }
+
+        // Emit pre-construction blocks for init-only collection properties
+        foreach (var block in preConstructionBlocksAfterForge)
+            sb.AppendLine(block);
+
+        sb.AppendLine($"            var result = new {destinationType.ToDisplayString()}");
+        sb.AppendLine("            {");
+
+        foreach (var (name, expr) in afterForgeAssignments)
+            sb.AppendLine($"                {name} = {expr},");
+
+        sb.AppendLine("            };");
+
+        // SkipNull properties — emit separate if-guard statements
+        foreach (var (destName, srcExpr, localVar, assignExpr) in skipNullAssignmentsAfterForge)
+        {
+            sb.AppendLine($"            if ({srcExpr} is {{ }} {localVar})");
+            sb.AppendLine($"            {{");
+            sb.AppendLine($"                result.{destName} = {assignExpr ?? localVar};");
+            sb.AppendLine($"            }}");
+        }
+
+        // Post-construction collection mappings
+        foreach (var (destName, block) in postConstructionCollectionsAfterForge)
+            sb.AppendLine(block);
+
+        // [AfterForge] callbacks
+        foreach (var hookName in afterForgeHooks)
+        {
+            sb.AppendLine($"            {hookName}({sourceParam}, result);");
+        }
+
+        sb.AppendLine("            return result;");
+    }
+
+    /// <summary>
+    /// Generates the simple object initializer construction path (no constructor params, no AfterForge hooks).
+    /// </summary>
+    private void GenerateSimpleObjectInit(
+        StringBuilder sb,
+        INamedTypeSymbol destinationType,
+        INamedTypeSymbol sourceType,
+        string sourceParam,
+        IEnumerable<IPropertySymbol> sourceProperties,
+        IEnumerable<IPropertySymbol> destProperties,
+        HashSet<string> ignoredProperties,
+        Dictionary<string, string> propertyMappings,
+        Dictionary<string, string> resolverMappings,
+        Dictionary<string, string> forgeWithMappings,
+        Dictionary<string, int> nullPropertyHandlingOverrides,
+        ForgerInfo forger,
+        SourceProductionContext context,
+        IMethodSymbol method)
+    {
+        // Object initializer pattern
+        var skipNullAssignmentsPlain = new List<(string DestPropName, string SourceExpr, string LocalVarName, string? AssignExpr)>();
+        var postConstructionCollectionsPlain = new List<(string DestPropName, string Block)>();
+        var preConstructionBlocksPlain = new List<string>();
+        var plainAssignments = new List<(string Name, string Expr)>();
+
+        foreach (var destProp in destProperties.Where(p => p.SetMethod != null && p.SetMethod.DeclaredAccessibility >= Accessibility.Internal))
+        {
+            var assignment = GeneratePropertyAssignment(
+                destProp, sourceParam, sourceType, sourceProperties,
+                propertyMappings, resolverMappings, forgeWithMappings, ignoredProperties, forger, context, method,
+                nullPropertyHandlingOverrides, skipNullAssignmentsPlain,
+                postConstructionCollectionsPlain, preConstructionBlocksPlain);
+
+            if (assignment != null)
+                plainAssignments.Add((destProp.Name, assignment));
+        }
+
+        var needsResultVar = skipNullAssignmentsPlain.Count > 0 ||
+            postConstructionCollectionsPlain.Count > 0 ||
+            preConstructionBlocksPlain.Count > 0;
+
+        if (needsResultVar)
+        {
+            // Emit pre-construction blocks for init-only collection properties
+            foreach (var block in preConstructionBlocksPlain)
+                sb.AppendLine(block);
+
+            sb.AppendLine($"            var result = new {destinationType.ToDisplayString()}");
+            sb.AppendLine("            {");
+            foreach (var (name, expr) in plainAssignments)
+                sb.AppendLine($"                {name} = {expr},");
+            sb.AppendLine("            };");
+
+            foreach (var (destName, srcExpr, localVar, assignExpr) in skipNullAssignmentsPlain)
+            {
+                sb.AppendLine($"            if ({srcExpr} is {{ }} {localVar})");
+                sb.AppendLine($"            {{");
+                sb.AppendLine($"                result.{destName} = {assignExpr ?? localVar};");
+                sb.AppendLine($"            }}");
+            }
+
+            // Post-construction collection mappings
+            foreach (var (destName, block) in postConstructionCollectionsPlain)
+                sb.AppendLine(block);
+
+            sb.AppendLine("            return result;");
+        }
+        else
+        {
+            sb.AppendLine($"            return new {destinationType.ToDisplayString()}");
+            sb.AppendLine("            {");
+            foreach (var (name, expr) in plainAssignments)
+                sb.AppendLine($"                {name} = {expr},");
+            sb.AppendLine("            };");
+        }
     }
 
     /// <summary>

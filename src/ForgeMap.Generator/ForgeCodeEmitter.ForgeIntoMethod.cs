@@ -65,457 +65,11 @@ internal sealed partial class ForgeCodeEmitter
 
         foreach (var destProp in destProperties)
         {
-            // Skip ignored properties
-            if (ignoredProperties.Contains(destProp.Name))
-                continue;
-
-            // Handle ExistingTarget properties — update nested object in place
-            if (existingTargetProperties.TryGetValue(destProp.Name, out var existingTargetCfg))
-            {
-                var etBlock = GenerateExistingTargetBlock(
-                    destProp, existingTargetCfg, sourceParam, destParam,
-                    sourceProperties, sourceNamedType, propertyMappings,
-                    nullPropertyHandlingOverrides, forger, context, method);
-                if (etBlock != null)
-                {
-                    sb.AppendLine(etBlock);
-                    continue;
-                }
-                // null means scalar or Replace collection — fall through to normal assignment
-            }
-
-            // Check if this property has a resolver from [ForgeFrom]
-            if (resolverMappings.TryGetValue(destProp.Name, out var resolverMethodName))
-            {
-                // Find the source property path for this destination (if mapped via [ForgeProperty])
-                string? sourcePropPath = null;
-                ITypeSymbol? sourcePathLeafType = null;
-
-                if (propertyMappings.TryGetValue(destProp.Name, out sourcePropPath))
-                {
-                    // Resolve the leaf type for the full path (handles nested paths like "Customer.Name")
-                    sourcePathLeafType = ResolvePathLeafType(sourcePropPath, sourceNamedType);
-                }
-                else
-                {
-                    // Try to find by same name
-                    var matchingSourceProp = sourceProperties.FirstOrDefault(sp =>
-                        string.Equals(sp.Name, destProp.Name, _config.PropertyNameComparison));
-                    if (matchingSourceProp != null)
-                    {
-                        sourcePropPath = matchingSourceProp.Name;
-                        sourcePathLeafType = matchingSourceProp.Type;
-                    }
-                }
-
-                // Find the resolver method - pass leaf type directly for proper overload selection
-                var resolverMethod = FindResolverMethod(forger.Symbol, resolverMethodName, sourceType, sourcePathLeafType);
-
-                if (resolverMethod == null)
-                {
-                    ReportDiagnosticIfNotSuppressed(context,
-                        DiagnosticDescriptors.ResolverMethodNotFound,
-                        method.Locations.FirstOrDefault(),
-                        resolverMethodName);
-                    continue;
-                }
-
-                var resolverParamType = resolverMethod.Parameters[0].Type;
-                string resolverCall;
-
-                if (SymbolEqualityComparer.Default.Equals(resolverParamType, sourceType) ||
-                    CanAssign(sourceType, resolverParamType))
-                {
-                    resolverCall = $"{resolverMethod.Name}({sourceParam})";
-                }
-                else if (sourcePropPath != null && sourcePathLeafType != null &&
-                         CanAssign(sourcePathLeafType, resolverParamType))
-                {
-                    // Pass the source property value - use null-info to handle nullable expressions
-                    var (sourceExpr, hasNullConditional) = GenerateSourceExpressionWithNullInfo(sourceParam, sourcePropPath, sourceNamedType);
-
-                    // Handle Nullable<T> to T conversion with explicit cast
-                    // Also handle lifted value types from null-conditional (e.g., source.Customer?.Age becomes int?)
-                    var isLiftedValueType = hasNullConditional && sourcePathLeafType.IsValueType && GetNullableUnderlyingType(sourcePathLeafType) == null;
-                    if (IsNullableToNonNullableValueType(sourcePathLeafType, resolverParamType) || isLiftedValueType)
-                    {
-                        resolverCall = $"{resolverMethod.Name}(({resolverParamType.ToDisplayString()}){sourceExpr}!)";
-                    }
-                    else
-                    {
-                        // Add null-forgiving if expression is nullable (from null-conditional or nullable ref type)
-                        // but resolver param is non-nullable
-                        var isNullableExpr = hasNullConditional || sourcePathLeafType.NullableAnnotation == NullableAnnotation.Annotated;
-                        var nullForgiving = isNullableExpr && resolverParamType.NullableAnnotation != NullableAnnotation.Annotated ? "!" : "";
-                        resolverCall = $"{resolverMethod.Name}({sourceExpr}{nullForgiving})";
-                    }
-                }
-                else
-                {
-                    ReportDiagnosticIfNotSuppressed(context,
-                        DiagnosticDescriptors.InvalidResolverSignature,
-                        method.Locations.FirstOrDefault(),
-                        resolverMethodName);
-                    continue;
-                }
-
-                sb.AppendLine($"            {destParam}.{destProp.Name} = {resolverCall};");
-                continue;
-            }
-
-            // Check if this property has a [ForgeWith] mapping for nested object forging
-            if (forgeWithMappings.TryGetValue(destProp.Name, out var forgingMethodName))
-            {
-                string? forgeWithSourcePropName = null;
-                if (propertyMappings.TryGetValue(destProp.Name, out var mappedSource))
-                {
-                    forgeWithSourcePropName = mappedSource;
-                }
-                else
-                {
-                    var matchingSourceProp = sourceProperties.FirstOrDefault(sp =>
-                        string.Equals(sp.Name, destProp.Name, _config.PropertyNameComparison));
-                    if (matchingSourceProp != null)
-                        forgeWithSourcePropName = matchingSourceProp.Name;
-                }
-
-                if (forgeWithSourcePropName != null)
-                {
-                    var sourcePropertyType = ResolvePathLeafType(forgeWithSourcePropName, sourceNamedType);
-                    if (sourcePropertyType != null)
-                    {
-                        var nestedForgeMethod = FindForgingMethod(forger.Symbol, forgingMethodName, sourcePropertyType, destProp.Type);
-                        if (nestedForgeMethod != null)
-                        {
-                            var (sourceExpr, _) = GenerateSourceExpressionWithNullInfo(sourceParam, forgeWithSourcePropName, sourceNamedType);
-                            if (sourcePropertyType.IsReferenceType)
-                            {
-                                var localVarName = $"__forgeWith_{destProp.Name}";
-                                sb.AppendLine($"            if ({sourceExpr} is {{ }} {localVarName})");
-                                sb.AppendLine($"                {destParam}.{destProp.Name} = {nestedForgeMethod.Name}({localVarName});");
-                                sb.AppendLine($"            else");
-                                string nullAssign;
-                                if (destProp.Type.IsValueType)
-                                {
-                                    nullAssign = "default";
-                                }
-                                else
-                                {
-                                    var strategy = ResolveNullPropertyHandling(destProp.Name, nullPropertyHandlingOverrides);
-                                    if (strategy == 4) // CoalesceToNew
-                                    {
-                                        ValidateCoalesceToNew(destProp.Type, context, method);
-                                        var newExpr = GenerateCoalesceNewExpression(destProp.Type, method);
-                                        nullAssign = newExpr ?? "null!";
-                                    }
-                                    else
-                                    {
-                                        nullAssign = "null!";
-                                    }
-                                }
-                                sb.AppendLine($"                {destParam}.{destProp.Name} = {nullAssign};");
-                            }
-                            else
-                            {
-                                sb.AppendLine($"            {destParam}.{destProp.Name} = {nestedForgeMethod.Name}({sourceExpr});");
-                            }
-                            continue;
-                        }
-                    }
-                }
-
-                ReportDiagnosticIfNotSuppressed(context,
-                    DiagnosticDescriptors.ResolverMethodNotFound,
-                    method.Locations.FirstOrDefault(),
-                    forgingMethodName);
-                continue;
-            }
-
-            // Check if this property has a mapping from [ForgeProperty]
-            if (propertyMappings.TryGetValue(destProp.Name, out var sourcePropName))
-            {
-                var (sourceExpr, hasNullConditional) = GenerateSourceExpressionWithNullInfo(sourceParam, sourcePropName, sourceNamedType);
-                var sourceLeafType = ResolvePathLeafType(sourcePropName, sourceNamedType);
-                // When null-conditional lifts a non-nullable value type to Nullable<T>, cast back
-                var isLiftedValueType = hasNullConditional && sourceLeafType != null && sourceLeafType.IsValueType && GetNullableUnderlyingType(sourceLeafType) == null;
-                // Try compatible enum cast first — pass isLifted so it generates correct nullable handling
-                if (sourceLeafType != null)
-                {
-                    var enumCast = TryGenerateCompatibleEnumCast(sourceLeafType, destProp.Type, sourceExpr, isLifted: isLiftedValueType);
-                    if (enumCast != null)
-                    {
-                        sb.AppendLine($"            {destParam}.{destProp.Name} = {enumCast};");
-                        continue;
-                    }
-                }
-                if (isLiftedValueType && destProp.Type.IsValueType && GetNullableUnderlyingType(destProp.Type) == null)
-                {
-                    sb.AppendLine($"            {destParam}.{destProp.Name} = ({destProp.Type.ToDisplayString()})({sourceExpr})!;");
-                }
-                else if (sourceLeafType != null && IsNullableToNonNullableReferenceType(sourceLeafType, destProp.Type))
-                {
-                    var strategy = ResolveNullPropertyHandling(destProp.Name, nullPropertyHandlingOverrides);
-                    ReportFM0007(context, method, sourceNamedType.Name, sourcePropName, destProp.ContainingType.Name, destProp.Name);
-                    if (strategy == 4) ValidateCoalesceToNew(destProp.Type, context, method);
-                    if (strategy == 1) // SkipNull
-                    {
-                        var localVar = GenerateSafeVariableName(destProp.Type) + "_" + destProp.Name;
-                        sb.AppendLine($"            if ({sourceExpr} is {{ }} {localVar})");
-                        sb.AppendLine($"            {{");
-                        sb.AppendLine($"                {destParam}.{destProp.Name} = {localVar};");
-                        sb.AppendLine($"            }}");
-                    }
-                    else
-                    {
-                        var handledExpr = ApplyNullPropertyHandlingExpression(
-                            sourceExpr, destProp.Type, destProp.Name,
-                            destProp.ContainingType.Name, strategy, method);
-                        sb.AppendLine($"            {destParam}.{destProp.Name} = {handledExpr ?? $"{sourceExpr}!"};");
-                    }
-                }
-                else
-                {
-                    // Check if leaf type is assignable first
-                    if (sourceLeafType != null && !CanAssign(sourceLeafType, destProp.Type)
-                        && !IsCompatibleEnumPair(sourceLeafType, destProp.Type)
-                        && !(_config.StringToEnum != 2 && IsStringToEnumPair(sourceLeafType, destProp.Type))
-                        && !IsEnumToStringPair(sourceLeafType, destProp.Type))
-                    {
-                        // Try auto-wire for non-assignable leaf types
-                        if (_config.AutoWireNestedMappings)
-                        {
-                            // Try inline collection auto-wire first
-                            var collBlock = TryAutoWireCollectionInlineStatements(
-                                destProp, sourceLeafType, sourceExpr,
-                                destParam, forger, context, method, nullPropertyHandlingOverrides);
-                            if (collBlock != null)
-                            {
-                                sb.AppendLine(collBlock);
-                            }
-                            else
-                            {
-                                var autoWireResult = TryAutoWireForgeMethod(
-                                    destProp, sourceLeafType, sourceExpr,
-                                    forger, context, method, nullPropertyHandlingOverrides);
-                                if (autoWireResult != null)
-                                    sb.AppendLine($"            {destParam}.{destProp.Name} = {autoWireResult};");
-                            }
-                        }
-                        // If auto-wire didn't resolve, skip — property stays unmapped
-                    }
-                    else
-                    {
-                        // String→enum conversion for explicit [ForgeProperty] path
-                        if (sourceLeafType != null && _config.StringToEnum != 2 && IsStringToEnumPair(sourceLeafType, destProp.Type))
-                        {
-                            // Check if SkipNull applies for nullable source → non-nullable enum
-                            if (sourceLeafType.NullableAnnotation == NullableAnnotation.Annotated
-                                && GetNullableUnderlyingType(destProp.Type) == null)
-                            {
-                                var strategy2 = ResolveNullPropertyHandling(destProp.Name, nullPropertyHandlingOverrides);
-                                if (strategy2 == 1) // SkipNull — wrap with if-guard
-                                {
-                                    var localVar = "__strVal_" + SanitizeVarName(destProp.Name);
-                                    sb.AppendLine($"            if ({sourceExpr} is {{ }} {localVar})");
-                                    sb.AppendLine($"            {{");
-                                    // Generate conversion using the non-nullable local var
-                                    var innerExpr = TryGenerateStringToEnumConversion(
-                                        sourceLeafType.WithNullableAnnotation(NullableAnnotation.NotAnnotated), destProp.Type, localVar,
-                                        destProp.Name, destProp.ContainingType.Name,
-                                        nullPropertyHandlingOverrides, context, method);
-                                    if (innerExpr != null)
-                                        sb.AppendLine($"                {destParam}.{destProp.Name} = {innerExpr};");
-                                    sb.AppendLine($"            }}");
-                                    continue;
-                                }
-                            }
-
-                            var enumConvExpr = TryGenerateStringToEnumConversion(
-                                sourceLeafType, destProp.Type, sourceExpr,
-                                destProp.Name, destProp.ContainingType.Name,
-                                nullPropertyHandlingOverrides, context, method);
-                            if (enumConvExpr != null)
-                            {
-                                sb.AppendLine($"            {destParam}.{destProp.Name} = {enumConvExpr};");
-                                continue;
-                            }
-                        }
-
-                        // Enum→string conversion for explicit [ForgeProperty] path
-                        if (sourceLeafType != null && IsEnumToStringPair(sourceLeafType, destProp.Type))
-                        {
-                            var enumStrExpr = GenerateEnumToStringExpression(sourceLeafType, sourceExpr);
-                            // Handle nullable enum → non-nullable string
-                            if (GetNullableUnderlyingType(sourceLeafType) != null
-                                && destProp.Type.NullableAnnotation != NullableAnnotation.Annotated)
-                            {
-                                var strategy2 = ResolveNullPropertyHandling(destProp.Name, nullPropertyHandlingOverrides);
-                                if (strategy2 == 1) // SkipNull
-                                {
-                                    var localVar = "__enumStr_" + destProp.Name;
-                                    sb.AppendLine($"            if ({enumStrExpr} is {{ }} {localVar})");
-                                    sb.AppendLine($"            {{");
-                                    sb.AppendLine($"                {destParam}.{destProp.Name} = {localVar};");
-                                    sb.AppendLine($"            }}");
-                                }
-                                else
-                                {
-                                    var handledExpr = ApplyNullPropertyHandlingExpression(
-                                        enumStrExpr, destProp.Type, destProp.Name,
-                                        destProp.ContainingType.Name, strategy2, method);
-                                    sb.AppendLine($"            {destParam}.{destProp.Name} = {handledExpr ?? $"{enumStrExpr}!"};");
-                                }
-                            }
-                            else
-                            {
-                                sb.AppendLine($"            {destParam}.{destProp.Name} = {enumStrExpr};");
-                            }
-                            continue;
-                        }
-
-                        // Add null-forgiving operator if we used null-conditional and dest is non-nullable
-                        var nullForgiving = hasNullConditional && destProp.Type.NullableAnnotation != NullableAnnotation.Annotated ? "!" : "";
-                        sb.AppendLine($"            {destParam}.{destProp.Name} = {sourceExpr}{nullForgiving};");
-                    }
-                }
-                continue;
-            }
-
-            var sourceProp = sourceProperties.FirstOrDefault(sp =>
-                string.Equals(sp.Name, destProp.Name, _config.PropertyNameComparison));
-
-            if (sourceProp != null && CanAssign(sourceProp.Type, destProp.Type))
-            {
-                // Handle Nullable<T> to T conversion using explicit cast which throws if null
-                if (IsNullableToNonNullableValueType(sourceProp.Type, destProp.Type))
-                {
-                    sb.AppendLine($"            {destParam}.{destProp.Name} = ({destProp.Type.ToDisplayString()}){sourceParam}.{sourceProp.Name}!;");
-                }
-                else if (IsNullableToNonNullableReferenceType(sourceProp.Type, destProp.Type))
-                {
-                    var strategy = ResolveNullPropertyHandling(destProp.Name, nullPropertyHandlingOverrides);
-                    ReportFM0007(context, method, sourceNamedType.Name, sourceProp.Name, destProp.ContainingType.Name, destProp.Name);
-                    var sourceExprConv = $"{sourceParam}.{sourceProp.Name}";
-                    if (strategy == 4) ValidateCoalesceToNew(destProp.Type, context, method);
-                    if (strategy == 1) // SkipNull
-                    {
-                        var localVar = GenerateSafeVariableName(destProp.Type) + "_" + destProp.Name;
-                        sb.AppendLine($"            if ({sourceExprConv} is {{ }} {localVar})");
-                        sb.AppendLine($"            {{");
-                        sb.AppendLine($"                {destParam}.{destProp.Name} = {localVar};");
-                        sb.AppendLine($"            }}");
-                    }
-                    else
-                    {
-                        var handledExpr = ApplyNullPropertyHandlingExpression(
-                            sourceExprConv, destProp.Type, destProp.Name,
-                            destProp.ContainingType.Name, strategy, method);
-                        sb.AppendLine($"            {destParam}.{destProp.Name} = {handledExpr ?? $"{sourceExprConv}!"};");
-                    }
-                }
-                else
-                {
-                    sb.AppendLine($"            {destParam}.{destProp.Name} = {sourceParam}.{sourceProp.Name};");
-                }
-            }
-            else if (sourceProp != null)
-            {
-                // Compatible enum cast: EnumA -> EnumB (different namespaces, same members)
-                var enumCastExpr = TryGenerateCompatibleEnumCast(sourceProp.Type, destProp.Type, $"{sourceParam}.{sourceProp.Name}");
-                if (enumCastExpr != null)
-                    sb.AppendLine($"            {destParam}.{destProp.Name} = {enumCastExpr};");
-                // String→enum auto-conversion
-                else if (_config.StringToEnum != 2 && IsStringToEnumPair(sourceProp.Type, destProp.Type))
-                {
-                    var srcExpr = $"{sourceParam}.{sourceProp.Name}";
-                    // Check if SkipNull applies for nullable source → non-nullable enum
-                    if (sourceProp.Type.NullableAnnotation == NullableAnnotation.Annotated
-                        && GetNullableUnderlyingType(destProp.Type) == null)
-                    {
-                        var strategy = ResolveNullPropertyHandling(destProp.Name, nullPropertyHandlingOverrides);
-                        if (strategy == 1) // SkipNull — wrap with if-guard
-                        {
-                            var localVar = "__strVal_" + SanitizeVarName(destProp.Name);
-                            sb.AppendLine($"            if ({srcExpr} is {{ }} {localVar})");
-                            sb.AppendLine($"            {{");
-                            var innerExpr = TryGenerateStringToEnumConversion(
-                                sourceProp.Type.WithNullableAnnotation(NullableAnnotation.NotAnnotated), destProp.Type, localVar,
-                                destProp.Name, destProp.ContainingType.Name,
-                                nullPropertyHandlingOverrides, context, method);
-                            if (innerExpr != null)
-                                sb.AppendLine($"                {destParam}.{destProp.Name} = {innerExpr};");
-                            sb.AppendLine($"            }}");
-                        }
-                        else
-                        {
-                            var enumConvExpr = TryGenerateStringToEnumConversion(
-                                sourceProp.Type, destProp.Type, srcExpr,
-                                destProp.Name, destProp.ContainingType.Name,
-                                nullPropertyHandlingOverrides, context, method);
-                            if (enumConvExpr != null)
-                                sb.AppendLine($"            {destParam}.{destProp.Name} = {enumConvExpr};");
-                        }
-                    }
-                    else
-                    {
-                        var enumConvExpr = TryGenerateStringToEnumConversion(
-                            sourceProp.Type, destProp.Type, srcExpr,
-                            destProp.Name, destProp.ContainingType.Name,
-                            nullPropertyHandlingOverrides, context, method);
-                        if (enumConvExpr != null)
-                            sb.AppendLine($"            {destParam}.{destProp.Name} = {enumConvExpr};");
-                    }
-                }
-                // Enum→string auto-conversion
-                else if (IsEnumToStringPair(sourceProp.Type, destProp.Type))
-                {
-                    var enumStrExpr = GenerateEnumToStringExpression(sourceProp.Type, $"{sourceParam}.{sourceProp.Name}");
-                    // Handle nullable enum → non-nullable string
-                    if (GetNullableUnderlyingType(sourceProp.Type) != null
-                        && destProp.Type.NullableAnnotation != NullableAnnotation.Annotated)
-                    {
-                        var strategy = ResolveNullPropertyHandling(destProp.Name, nullPropertyHandlingOverrides);
-                        if (strategy == 1) // SkipNull
-                        {
-                            var localVar = "__enumStr_" + destProp.Name;
-                            sb.AppendLine($"            if ({enumStrExpr} is {{ }} {localVar})");
-                            sb.AppendLine($"            {{");
-                            sb.AppendLine($"                {destParam}.{destProp.Name} = {localVar};");
-                            sb.AppendLine($"            }}");
-                        }
-                        else
-                        {
-                            var handledExpr = ApplyNullPropertyHandlingExpression(
-                                enumStrExpr, destProp.Type, destProp.Name,
-                                destProp.ContainingType.Name, strategy);
-                            sb.AppendLine($"            {destParam}.{destProp.Name} = {handledExpr ?? $"{enumStrExpr}!"};");
-                        }
-                    }
-                    else
-                    {
-                        sb.AppendLine($"            {destParam}.{destProp.Name} = {enumStrExpr};");
-                    }
-                }
-                else if (_config.AutoWireNestedMappings)
-                {
-                    // Try inline collection auto-wire first
-                    var collBlock = TryAutoWireCollectionInlineStatements(
-                        destProp, sourceProp.Type, $"{sourceParam}.{sourceProp.Name}",
-                        destParam, forger, context, method, nullPropertyHandlingOverrides);
-                    if (collBlock != null)
-                    {
-                        sb.AppendLine(collBlock);
-                    }
-                    else
-                    {
-                        var autoWireResult = TryAutoWireForgeMethod(
-                            destProp, sourceProp.Type, $"{sourceParam}.{sourceProp.Name}",
-                            forger, context, method, nullPropertyHandlingOverrides);
-                        if (autoWireResult != null)
-                            sb.AppendLine($"            {destParam}.{destProp.Name} = {autoWireResult};");
-                    }
-                }
-            }
+            GenerateForgeIntoPropertyAssignment(
+                sb, destProp, sourceParam, destParam, sourceType, sourceNamedType,
+                sourceProperties, ignoredProperties, existingTargetProperties,
+                propertyMappings, resolverMappings, forgeWithMappings,
+                nullPropertyHandlingOverrides, forger, context, method);
         }
 
         // [AfterForge] callbacks
@@ -529,6 +83,481 @@ internal sealed partial class ForgeCodeEmitter
         sb.AppendLine("        }");
 
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// Generates the assignment code for a single destination property in a ForgeInto method.
+    /// Handles the full priority chain: ExistingTarget → ForgeFrom → ForgeWith → ForgeProperty → auto-wire.
+    /// </summary>
+    private void GenerateForgeIntoPropertyAssignment(
+        StringBuilder sb,
+        IPropertySymbol destProp,
+        string sourceParam,
+        string destParam,
+        ITypeSymbol sourceType,
+        INamedTypeSymbol sourceNamedType,
+        IEnumerable<IPropertySymbol> sourceProperties,
+        HashSet<string> ignoredProperties,
+        Dictionary<string, ExistingTargetConfig> existingTargetProperties,
+        Dictionary<string, string> propertyMappings,
+        Dictionary<string, string> resolverMappings,
+        Dictionary<string, string> forgeWithMappings,
+        Dictionary<string, int> nullPropertyHandlingOverrides,
+        ForgerInfo forger,
+        SourceProductionContext context,
+        IMethodSymbol method)
+    {
+        // Skip ignored properties
+        if (ignoredProperties.Contains(destProp.Name))
+            return;
+
+        // Handle ExistingTarget properties — update nested object in place
+        if (existingTargetProperties.TryGetValue(destProp.Name, out var existingTargetCfg))
+        {
+            var etBlock = GenerateExistingTargetBlock(
+                destProp, existingTargetCfg, sourceParam, destParam,
+                sourceProperties, sourceNamedType, propertyMappings,
+                nullPropertyHandlingOverrides, forger, context, method);
+            if (etBlock != null)
+            {
+                sb.AppendLine(etBlock);
+                return;
+            }
+            // null means scalar or Replace collection — fall through to normal assignment
+        }
+
+        // Check if this property has a resolver from [ForgeFrom]
+        if (resolverMappings.TryGetValue(destProp.Name, out var resolverMethodName))
+        {
+            // Find the source property path for this destination (if mapped via [ForgeProperty])
+            string? sourcePropPath = null;
+            ITypeSymbol? sourcePathLeafType = null;
+
+            if (propertyMappings.TryGetValue(destProp.Name, out sourcePropPath))
+            {
+                // Resolve the leaf type for the full path (handles nested paths like "Customer.Name")
+                sourcePathLeafType = ResolvePathLeafType(sourcePropPath, sourceNamedType);
+            }
+            else
+            {
+                // Try to find by same name
+                var matchingSourceProp = sourceProperties.FirstOrDefault(sp =>
+                    string.Equals(sp.Name, destProp.Name, _config.PropertyNameComparison));
+                if (matchingSourceProp != null)
+                {
+                    sourcePropPath = matchingSourceProp.Name;
+                    sourcePathLeafType = matchingSourceProp.Type;
+                }
+            }
+
+            // Find the resolver method - pass leaf type directly for proper overload selection
+            var resolverMethod = FindResolverMethod(forger.Symbol, resolverMethodName, sourceType, sourcePathLeafType);
+
+            if (resolverMethod == null)
+            {
+                ReportDiagnosticIfNotSuppressed(context,
+                    DiagnosticDescriptors.ResolverMethodNotFound,
+                    method.Locations.FirstOrDefault(),
+                    resolverMethodName);
+                return;
+            }
+
+            var resolverParamType = resolverMethod.Parameters[0].Type;
+            string resolverCall;
+
+            if (SymbolEqualityComparer.Default.Equals(resolverParamType, sourceType) ||
+                CanAssign(sourceType, resolverParamType))
+            {
+                resolverCall = $"{resolverMethod.Name}({sourceParam})";
+            }
+            else if (sourcePropPath != null && sourcePathLeafType != null &&
+                     CanAssign(sourcePathLeafType, resolverParamType))
+            {
+                // Pass the source property value - use null-info to handle nullable expressions
+                var (sourceExpr, hasNullConditional) = GenerateSourceExpressionWithNullInfo(sourceParam, sourcePropPath, sourceNamedType);
+
+                // Handle Nullable<T> to T conversion with explicit cast
+                // Also handle lifted value types from null-conditional (e.g., source.Customer?.Age becomes int?)
+                var isLiftedValueType = hasNullConditional && sourcePathLeafType.IsValueType && GetNullableUnderlyingType(sourcePathLeafType) == null;
+                if (IsNullableToNonNullableValueType(sourcePathLeafType, resolverParamType) || isLiftedValueType)
+                {
+                    resolverCall = $"{resolverMethod.Name}(({resolverParamType.ToDisplayString()}){sourceExpr}!)";
+                }
+                else
+                {
+                    // Add null-forgiving if expression is nullable (from null-conditional or nullable ref type)
+                    // but resolver param is non-nullable
+                    var isNullableExpr = hasNullConditional || sourcePathLeafType.NullableAnnotation == NullableAnnotation.Annotated;
+                    var nullForgiving = isNullableExpr && resolverParamType.NullableAnnotation != NullableAnnotation.Annotated ? "!" : "";
+                    resolverCall = $"{resolverMethod.Name}({sourceExpr}{nullForgiving})";
+                }
+            }
+            else
+            {
+                ReportDiagnosticIfNotSuppressed(context,
+                    DiagnosticDescriptors.InvalidResolverSignature,
+                    method.Locations.FirstOrDefault(),
+                    resolverMethodName);
+                return;
+            }
+
+            sb.AppendLine($"            {destParam}.{destProp.Name} = {resolverCall};");
+            return;
+        }
+
+        // Check if this property has a [ForgeWith] mapping for nested object forging
+        if (forgeWithMappings.TryGetValue(destProp.Name, out var forgingMethodName))
+        {
+            string? forgeWithSourcePropName = null;
+            if (propertyMappings.TryGetValue(destProp.Name, out var mappedSource))
+            {
+                forgeWithSourcePropName = mappedSource;
+            }
+            else
+            {
+                var matchingSourceProp = sourceProperties.FirstOrDefault(sp =>
+                    string.Equals(sp.Name, destProp.Name, _config.PropertyNameComparison));
+                if (matchingSourceProp != null)
+                    forgeWithSourcePropName = matchingSourceProp.Name;
+            }
+
+            if (forgeWithSourcePropName != null)
+            {
+                var sourcePropertyType = ResolvePathLeafType(forgeWithSourcePropName, sourceNamedType);
+                if (sourcePropertyType != null)
+                {
+                    var nestedForgeMethod = FindForgingMethod(forger.Symbol, forgingMethodName, sourcePropertyType, destProp.Type);
+                    if (nestedForgeMethod != null)
+                    {
+                        var (sourceExpr, _) = GenerateSourceExpressionWithNullInfo(sourceParam, forgeWithSourcePropName, sourceNamedType);
+                        if (sourcePropertyType.IsReferenceType)
+                        {
+                            var localVarName = $"__forgeWith_{destProp.Name}";
+                            sb.AppendLine($"            if ({sourceExpr} is {{ }} {localVarName})");
+                            sb.AppendLine($"                {destParam}.{destProp.Name} = {nestedForgeMethod.Name}({localVarName});");
+                            sb.AppendLine($"            else");
+                            string nullAssign;
+                            if (destProp.Type.IsValueType)
+                            {
+                                nullAssign = "default";
+                            }
+                            else
+                            {
+                                var strategy = ResolveNullPropertyHandling(destProp.Name, nullPropertyHandlingOverrides);
+                                if (strategy == 4) // CoalesceToNew
+                                {
+                                    ValidateCoalesceToNew(destProp.Type, context, method);
+                                    var newExpr = GenerateCoalesceNewExpression(destProp.Type, method);
+                                    nullAssign = newExpr ?? "null!";
+                                }
+                                else
+                                {
+                                    nullAssign = "null!";
+                                }
+                            }
+                            sb.AppendLine($"                {destParam}.{destProp.Name} = {nullAssign};");
+                        }
+                        else
+                        {
+                            sb.AppendLine($"            {destParam}.{destProp.Name} = {nestedForgeMethod.Name}({sourceExpr});");
+                        }
+                        return;
+                    }
+                }
+            }
+
+            ReportDiagnosticIfNotSuppressed(context,
+                DiagnosticDescriptors.ResolverMethodNotFound,
+                method.Locations.FirstOrDefault(),
+                forgingMethodName);
+            return;
+        }
+
+        // Check if this property has a mapping from [ForgeProperty]
+        if (propertyMappings.TryGetValue(destProp.Name, out var sourcePropName))
+        {
+            var (sourceExpr2, hasNullConditional2) = GenerateSourceExpressionWithNullInfo(sourceParam, sourcePropName, sourceNamedType);
+            var sourceLeafType = ResolvePathLeafType(sourcePropName, sourceNamedType);
+            // When null-conditional lifts a non-nullable value type to Nullable<T>, cast back
+            var isLiftedValueType = hasNullConditional2 && sourceLeafType != null && sourceLeafType.IsValueType && GetNullableUnderlyingType(sourceLeafType) == null;
+            // Try compatible enum cast first — pass isLifted so it generates correct nullable handling
+            if (sourceLeafType != null)
+            {
+                var enumCast = TryGenerateCompatibleEnumCast(sourceLeafType, destProp.Type, sourceExpr2, isLifted: isLiftedValueType);
+                if (enumCast != null)
+                {
+                    sb.AppendLine($"            {destParam}.{destProp.Name} = {enumCast};");
+                    return;
+                }
+            }
+            if (isLiftedValueType && destProp.Type.IsValueType && GetNullableUnderlyingType(destProp.Type) == null)
+            {
+                sb.AppendLine($"            {destParam}.{destProp.Name} = ({destProp.Type.ToDisplayString()})({sourceExpr2})!;");
+            }
+            else if (sourceLeafType != null && IsNullableToNonNullableReferenceType(sourceLeafType, destProp.Type))
+            {
+                var strategy = ResolveNullPropertyHandling(destProp.Name, nullPropertyHandlingOverrides);
+                ReportFM0007(context, method, sourceNamedType.Name, sourcePropName, destProp.ContainingType.Name, destProp.Name);
+                if (strategy == 4) ValidateCoalesceToNew(destProp.Type, context, method);
+                if (strategy == 1) // SkipNull
+                {
+                    var localVar = GenerateSafeVariableName(destProp.Type) + "_" + destProp.Name;
+                    sb.AppendLine($"            if ({sourceExpr2} is {{ }} {localVar})");
+                    sb.AppendLine($"            {{");
+                    sb.AppendLine($"                {destParam}.{destProp.Name} = {localVar};");
+                    sb.AppendLine($"            }}");
+                }
+                else
+                {
+                    var handledExpr = ApplyNullPropertyHandlingExpression(
+                        sourceExpr2, destProp.Type, destProp.Name,
+                        destProp.ContainingType.Name, strategy, method);
+                    sb.AppendLine($"            {destParam}.{destProp.Name} = {handledExpr ?? $"{sourceExpr2}!"};");
+                }
+            }
+            else
+            {
+                // Check if leaf type is assignable first
+                if (sourceLeafType != null && !CanAssign(sourceLeafType, destProp.Type)
+                    && !IsCompatibleEnumPair(sourceLeafType, destProp.Type)
+                    && !(_config.StringToEnum != 2 && IsStringToEnumPair(sourceLeafType, destProp.Type))
+                    && !IsEnumToStringPair(sourceLeafType, destProp.Type))
+                {
+                    // Try auto-wire for non-assignable leaf types
+                    if (_config.AutoWireNestedMappings)
+                    {
+                        // Try inline collection auto-wire first
+                        var collBlock = TryAutoWireCollectionInlineStatements(
+                            destProp, sourceLeafType, sourceExpr2,
+                            destParam, forger, context, method, nullPropertyHandlingOverrides);
+                        if (collBlock != null)
+                        {
+                            sb.AppendLine(collBlock);
+                        }
+                        else
+                        {
+                            var autoWireResult = TryAutoWireForgeMethod(
+                                destProp, sourceLeafType, sourceExpr2,
+                                forger, context, method, nullPropertyHandlingOverrides);
+                            if (autoWireResult != null)
+                                sb.AppendLine($"            {destParam}.{destProp.Name} = {autoWireResult};");
+                        }
+                    }
+                    // If auto-wire didn't resolve, skip — property stays unmapped
+                }
+                else
+                {
+                    // String→enum conversion for explicit [ForgeProperty] path
+                    if (sourceLeafType != null && _config.StringToEnum != 2 && IsStringToEnumPair(sourceLeafType, destProp.Type))
+                    {
+                        // Check if SkipNull applies for nullable source → non-nullable enum
+                        if (sourceLeafType.NullableAnnotation == NullableAnnotation.Annotated
+                            && GetNullableUnderlyingType(destProp.Type) == null)
+                        {
+                            var strategy2 = ResolveNullPropertyHandling(destProp.Name, nullPropertyHandlingOverrides);
+                            if (strategy2 == 1) // SkipNull — wrap with if-guard
+                            {
+                                var localVar = "__strVal_" + SanitizeVarName(destProp.Name);
+                                sb.AppendLine($"            if ({sourceExpr2} is {{ }} {localVar})");
+                                sb.AppendLine($"            {{");
+                                // Generate conversion using the non-nullable local var
+                                var innerExpr = TryGenerateStringToEnumConversion(
+                                    sourceLeafType.WithNullableAnnotation(NullableAnnotation.NotAnnotated), destProp.Type, localVar,
+                                    destProp.Name, destProp.ContainingType.Name,
+                                    nullPropertyHandlingOverrides, context, method);
+                                if (innerExpr != null)
+                                    sb.AppendLine($"                {destParam}.{destProp.Name} = {innerExpr};");
+                                sb.AppendLine($"            }}");
+                                return;
+                            }
+                        }
+
+                        var enumConvExpr = TryGenerateStringToEnumConversion(
+                            sourceLeafType, destProp.Type, sourceExpr2,
+                            destProp.Name, destProp.ContainingType.Name,
+                            nullPropertyHandlingOverrides, context, method);
+                        if (enumConvExpr != null)
+                        {
+                            sb.AppendLine($"            {destParam}.{destProp.Name} = {enumConvExpr};");
+                            return;
+                        }
+                    }
+
+                    // Enum→string conversion for explicit [ForgeProperty] path
+                    if (sourceLeafType != null && IsEnumToStringPair(sourceLeafType, destProp.Type))
+                    {
+                        var enumStrExpr = GenerateEnumToStringExpression(sourceLeafType, sourceExpr2);
+                        // Handle nullable enum → non-nullable string
+                        if (GetNullableUnderlyingType(sourceLeafType) != null
+                            && destProp.Type.NullableAnnotation != NullableAnnotation.Annotated)
+                        {
+                            var strategy2 = ResolveNullPropertyHandling(destProp.Name, nullPropertyHandlingOverrides);
+                            if (strategy2 == 1) // SkipNull
+                            {
+                                var localVar = "__enumStr_" + destProp.Name;
+                                sb.AppendLine($"            if ({enumStrExpr} is {{ }} {localVar})");
+                                sb.AppendLine($"            {{");
+                                sb.AppendLine($"                {destParam}.{destProp.Name} = {localVar};");
+                                sb.AppendLine($"            }}");
+                            }
+                            else
+                            {
+                                var handledExpr = ApplyNullPropertyHandlingExpression(
+                                    enumStrExpr, destProp.Type, destProp.Name,
+                                    destProp.ContainingType.Name, strategy2, method);
+                                sb.AppendLine($"            {destParam}.{destProp.Name} = {handledExpr ?? $"{enumStrExpr}!"};");
+                            }
+                        }
+                        else
+                        {
+                            sb.AppendLine($"            {destParam}.{destProp.Name} = {enumStrExpr};");
+                        }
+                        return;
+                    }
+
+                    // Add null-forgiving operator if we used null-conditional and dest is non-nullable
+                    var nullForgiving = hasNullConditional2 && destProp.Type.NullableAnnotation != NullableAnnotation.Annotated ? "!" : "";
+                    sb.AppendLine($"            {destParam}.{destProp.Name} = {sourceExpr2}{nullForgiving};");
+                }
+            }
+            return;
+        }
+
+        var sourceProp = sourceProperties.FirstOrDefault(sp =>
+            string.Equals(sp.Name, destProp.Name, _config.PropertyNameComparison));
+
+        if (sourceProp != null && CanAssign(sourceProp.Type, destProp.Type))
+        {
+            // Handle Nullable<T> to T conversion using explicit cast which throws if null
+            if (IsNullableToNonNullableValueType(sourceProp.Type, destProp.Type))
+            {
+                sb.AppendLine($"            {destParam}.{destProp.Name} = ({destProp.Type.ToDisplayString()}){sourceParam}.{sourceProp.Name}!;");
+            }
+            else if (IsNullableToNonNullableReferenceType(sourceProp.Type, destProp.Type))
+            {
+                var strategy = ResolveNullPropertyHandling(destProp.Name, nullPropertyHandlingOverrides);
+                ReportFM0007(context, method, sourceNamedType.Name, sourceProp.Name, destProp.ContainingType.Name, destProp.Name);
+                var sourceExprConv = $"{sourceParam}.{sourceProp.Name}";
+                if (strategy == 4) ValidateCoalesceToNew(destProp.Type, context, method);
+                if (strategy == 1) // SkipNull
+                {
+                    var localVar = GenerateSafeVariableName(destProp.Type) + "_" + destProp.Name;
+                    sb.AppendLine($"            if ({sourceExprConv} is {{ }} {localVar})");
+                    sb.AppendLine($"            {{");
+                    sb.AppendLine($"                {destParam}.{destProp.Name} = {localVar};");
+                    sb.AppendLine($"            }}");
+                }
+                else
+                {
+                    var handledExpr = ApplyNullPropertyHandlingExpression(
+                        sourceExprConv, destProp.Type, destProp.Name,
+                        destProp.ContainingType.Name, strategy, method);
+                    sb.AppendLine($"            {destParam}.{destProp.Name} = {handledExpr ?? $"{sourceExprConv}!"};");
+                }
+            }
+            else
+            {
+                sb.AppendLine($"            {destParam}.{destProp.Name} = {sourceParam}.{sourceProp.Name};");
+            }
+        }
+        else if (sourceProp != null)
+        {
+            // Compatible enum cast: EnumA -> EnumB (different namespaces, same members)
+            var enumCastExpr = TryGenerateCompatibleEnumCast(sourceProp.Type, destProp.Type, $"{sourceParam}.{sourceProp.Name}");
+            if (enumCastExpr != null)
+                sb.AppendLine($"            {destParam}.{destProp.Name} = {enumCastExpr};");
+            // String→enum auto-conversion
+            else if (_config.StringToEnum != 2 && IsStringToEnumPair(sourceProp.Type, destProp.Type))
+            {
+                var srcExpr = $"{sourceParam}.{sourceProp.Name}";
+                // Check if SkipNull applies for nullable source → non-nullable enum
+                if (sourceProp.Type.NullableAnnotation == NullableAnnotation.Annotated
+                    && GetNullableUnderlyingType(destProp.Type) == null)
+                {
+                    var strategy = ResolveNullPropertyHandling(destProp.Name, nullPropertyHandlingOverrides);
+                    if (strategy == 1) // SkipNull — wrap with if-guard
+                    {
+                        var localVar = "__strVal_" + SanitizeVarName(destProp.Name);
+                        sb.AppendLine($"            if ({srcExpr} is {{ }} {localVar})");
+                        sb.AppendLine($"            {{");
+                        var innerExpr = TryGenerateStringToEnumConversion(
+                            sourceProp.Type.WithNullableAnnotation(NullableAnnotation.NotAnnotated), destProp.Type, localVar,
+                            destProp.Name, destProp.ContainingType.Name,
+                            nullPropertyHandlingOverrides, context, method);
+                        if (innerExpr != null)
+                            sb.AppendLine($"                {destParam}.{destProp.Name} = {innerExpr};");
+                        sb.AppendLine($"            }}");
+                    }
+                    else
+                    {
+                        var enumConvExpr = TryGenerateStringToEnumConversion(
+                            sourceProp.Type, destProp.Type, srcExpr,
+                            destProp.Name, destProp.ContainingType.Name,
+                            nullPropertyHandlingOverrides, context, method);
+                        if (enumConvExpr != null)
+                            sb.AppendLine($"            {destParam}.{destProp.Name} = {enumConvExpr};");
+                    }
+                }
+                else
+                {
+                    var enumConvExpr = TryGenerateStringToEnumConversion(
+                        sourceProp.Type, destProp.Type, srcExpr,
+                        destProp.Name, destProp.ContainingType.Name,
+                        nullPropertyHandlingOverrides, context, method);
+                    if (enumConvExpr != null)
+                        sb.AppendLine($"            {destParam}.{destProp.Name} = {enumConvExpr};");
+                }
+            }
+            // Enum→string auto-conversion
+            else if (IsEnumToStringPair(sourceProp.Type, destProp.Type))
+            {
+                var enumStrExpr = GenerateEnumToStringExpression(sourceProp.Type, $"{sourceParam}.{sourceProp.Name}");
+                // Handle nullable enum → non-nullable string
+                if (GetNullableUnderlyingType(sourceProp.Type) != null
+                    && destProp.Type.NullableAnnotation != NullableAnnotation.Annotated)
+                {
+                    var strategy = ResolveNullPropertyHandling(destProp.Name, nullPropertyHandlingOverrides);
+                    if (strategy == 1) // SkipNull
+                    {
+                        var localVar = "__enumStr_" + destProp.Name;
+                        sb.AppendLine($"            if ({enumStrExpr} is {{ }} {localVar})");
+                        sb.AppendLine($"            {{");
+                        sb.AppendLine($"                {destParam}.{destProp.Name} = {localVar};");
+                        sb.AppendLine($"            }}");
+                    }
+                    else
+                    {
+                        var handledExpr = ApplyNullPropertyHandlingExpression(
+                            enumStrExpr, destProp.Type, destProp.Name,
+                            destProp.ContainingType.Name, strategy);
+                        sb.AppendLine($"            {destParam}.{destProp.Name} = {handledExpr ?? $"{enumStrExpr}!"};");
+                    }
+                }
+                else
+                {
+                    sb.AppendLine($"            {destParam}.{destProp.Name} = {enumStrExpr};");
+                }
+            }
+            else if (_config.AutoWireNestedMappings)
+            {
+                // Try inline collection auto-wire first
+                var collBlock = TryAutoWireCollectionInlineStatements(
+                    destProp, sourceProp.Type, $"{sourceParam}.{sourceProp.Name}",
+                    destParam, forger, context, method, nullPropertyHandlingOverrides);
+                if (collBlock != null)
+                {
+                    sb.AppendLine(collBlock);
+                }
+                else
+                {
+                    var autoWireResult = TryAutoWireForgeMethod(
+                        destProp, sourceProp.Type, $"{sourceParam}.{sourceProp.Name}",
+                        forger, context, method, nullPropertyHandlingOverrides);
+                    if (autoWireResult != null)
+                        sb.AppendLine($"            {destParam}.{destProp.Name} = {autoWireResult};");
+                }
+            }
+        }
     }
 
     /// <summary>

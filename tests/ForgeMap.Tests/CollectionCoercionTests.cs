@@ -23,7 +23,7 @@ namespace TestNamespace
         public partial Dest Forge(Source source);
     }
 }";
-        var (diagnostics, trees) = SourceGeneratorTests.RunGenerator(source);
+        var (diagnostics, trees) = TestHelper.RunGenerator(source);
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
         var generatedCode = string.Join("\n", trees.Select(t => t.GetText().ToString()));
         Assert.Contains("new global::System.Collections.Generic.HashSet<string>", generatedCode);
@@ -47,7 +47,7 @@ namespace TestNamespace
         public partial Dest Forge(Source source);
     }
 }";
-        var (diagnostics, trees) = SourceGeneratorTests.RunGenerator(source);
+        var (diagnostics, trees) = TestHelper.RunGenerator(source);
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
         var generatedCode = string.Join("\n", trees.Select(t => t.GetText().ToString()));
         Assert.Contains("new global::System.Collections.Generic.List<string>", generatedCode);
@@ -71,7 +71,7 @@ namespace TestNamespace
         public partial Dest Forge(Source source);
     }
 }";
-        var (diagnostics, trees) = SourceGeneratorTests.RunGenerator(source);
+        var (diagnostics, trees) = TestHelper.RunGenerator(source);
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
         var generatedCode = string.Join("\n", trees.Select(t => t.GetText().ToString()));
         Assert.Contains("ToArray", generatedCode);
@@ -96,7 +96,7 @@ namespace TestNamespace
         public partial Dest Forge(Source source);
     }
 }";
-        var (diagnostics, trees) = SourceGeneratorTests.RunGenerator(source);
+        var (diagnostics, trees) = TestHelper.RunGenerator(source);
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
         var generatedCode = string.Join("\n", trees.Select(t => t.GetText().ToString()));
         Assert.Contains("AsReadOnly()", generatedCode);
@@ -120,7 +120,7 @@ namespace TestNamespace
         public partial Dest Forge(Source source);
     }
 }";
-        var (diagnostics, trees) = SourceGeneratorTests.RunGenerator(source);
+        var (diagnostics, trees) = TestHelper.RunGenerator(source);
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
         var generatedCode = string.Join("\n", trees.Select(t => t.GetText().ToString()));
         // Array implements IReadOnlyList<T>, so direct assignment (no coercion needed)
@@ -146,7 +146,7 @@ namespace TestNamespace
         public partial Dest Forge(Source source);
     }
 }";
-        var (diagnostics, trees) = SourceGeneratorTests.RunGenerator(source);
+        var (diagnostics, trees) = TestHelper.RunGenerator(source);
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
         var generatedCode = string.Join("\n", trees.Select(t => t.GetText().ToString()));
         Assert.Contains("ReadOnlyDictionary", generatedCode);
@@ -171,7 +171,7 @@ namespace TestNamespace
         public partial Dest Forge(Source source);
     }
 }";
-        var (diagnostics, trees) = SourceGeneratorTests.RunGenerator(source);
+        var (diagnostics, trees) = TestHelper.RunGenerator(source);
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
         var generatedCode = string.Join("\n", trees.Select(t => t.GetText().ToString()));
         Assert.Contains("ReadOnlyDictionary", generatedCode);
@@ -196,7 +196,7 @@ namespace TestNamespace
         public partial Dest Forge(Source source);
     }
 }";
-        var (diagnostics, trees) = SourceGeneratorTests.RunGenerator(source);
+        var (diagnostics, trees) = TestHelper.RunGenerator(source);
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
         var generatedCode = string.Join("\n", trees.Select(t => t.GetText().ToString()));
         Assert.Contains("new global::System.Collections.Generic.Dictionary<string, int>", generatedCode);
@@ -220,7 +220,7 @@ namespace TestNamespace
         public partial Dest Forge(Source source);
     }
 }";
-        var (diagnostics, _) = SourceGeneratorTests.RunGenerator(source);
+        var (diagnostics, _) = TestHelper.RunGenerator(source);
         var fm0040 = diagnostics.Where(d => d.Id == "FM0040").ToList();
         Assert.NotEmpty(fm0040);
     }
@@ -246,7 +246,7 @@ namespace TestNamespace
         public partial ItemDst Forge(ItemSrc source);
     }
 }";
-        var (diagnostics, trees) = SourceGeneratorTests.RunGenerator(source);
+        var (diagnostics, trees) = TestHelper.RunGenerator(source);
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
         var generatedCode = string.Join("\n", trees.Select(t => t.GetText().ToString()));
         Assert.Contains("HashSet", generatedCode);
@@ -271,7 +271,7 @@ namespace TestNamespace
         public partial Dest Forge(Source source);
     }
 }";
-        var (diagnostics, trees) = SourceGeneratorTests.RunGenerator(source);
+        var (diagnostics, trees) = TestHelper.RunGenerator(source);
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
         var generatedCode = string.Join("\n", trees.Select(t => t.GetText().ToString()));
         // The coercion generates a HashSet from source, with empty fallback for null
@@ -301,7 +301,7 @@ namespace TestNamespace
         public partial Dest Forge(Source source);
     }
 }";
-        var (diagnostics, trees) = SourceGeneratorTests.RunGenerator(source);
+        var (diagnostics, trees) = TestHelper.RunGenerator(source);
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
         var generatedCode = string.Join("\n", trees.Select(t => t.GetText().ToString()));
         Assert.Contains("new global::System.Collections.Generic.HashSet<string>", generatedCode);
