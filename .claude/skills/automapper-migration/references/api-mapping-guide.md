@@ -524,9 +524,8 @@ public partial class OrderForger
 
 ```csharp
 // BEFORE (AutoMapper)
-// AutoMapper creates a default destination object when the source member is null,
-// effectively behaving like "null → new TDestination()". Some projects make this
-// explicit with conditional mapping or AfterMap hooks:
+// AutoMapper assigns null through by default for nested members. Some projects
+// add AfterMap hooks or custom resolvers to ensure certain properties are never null:
 CreateMap<Config, ConfigDto>()
     .AfterMap((s, d) => d.Settings ??= new SettingsDto());
 

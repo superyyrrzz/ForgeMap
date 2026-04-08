@@ -92,7 +92,7 @@ v1.5 adds compile-time diagnostics that catch common `[AfterForge]` mistakes dur
 
 | Diagnostic | Description | Migration action |
 |---|---|---|
-| FM0043 | `[AfterForge]` method not found or has wrong signature | Fix the method name or signature: `void Method(S source, D dest)` |
+| FM0043 | `[AfterForge]` method not found or has wrong signature | Fix the method name or signature: `void Method(S source, D dest)` for returning forge methods, or `void Method(S source, TTarget target)` for `ForgeInto` mutation methods |
 | FM0044 | `[AfterForge]` and `[ConvertWith]` are mutually exclusive | Remove one — `[ConvertWith]` takes full precedence and `[AfterForge]` cannot run |
 | FM0045 | `[AfterForge]` is not applicable to collection methods | Move post-mapping logic to the element-level forge method's `[AfterForge]`, or handle it at the call site |
 
