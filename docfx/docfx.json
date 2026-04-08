@@ -1,0 +1,83 @@
+{
+  "metadata": [
+    {
+      "src": [
+        {
+          "files": ["src/ForgeMap.Abstractions/ForgeMap.Abstractions.csproj"],
+          "src": ".."
+        }
+      ],
+      "dest": "api",
+      "includePrivateMembers": false,
+      "disableGitFeatures": false,
+      "filter": "filterConfig.yml",
+      "properties": {
+        "TargetFramework": "netstandard2.0"
+      }
+    }
+  ],
+  "build": {
+    "content": [
+      {
+        "files": ["api/**.yml", "api/index.md"]
+      },
+      {
+        "files": [
+          "articles/**/toc.yml",
+          "articles/**/*.md",
+          "specs/toc.yml",
+          "specs/index.md",
+          "toc.yml",
+          "*.md"
+        ]
+      },
+      {
+        "files": [
+          "SPEC.md",
+          "SPEC-v1.1-inheritance.md",
+          "SPEC-v1.2-null-property-handling.md",
+          "SPEC-v1.3-auto-wiring.md",
+          "SPEC-v1.4-advanced-mapping.md",
+          "SPEC-v1.5-advanced-mapping.md",
+          "SPEC-v1.6-advanced-mapping.md",
+          "ForgeMap-vs-AutoMapper-and-Mapperly.md"
+        ],
+        "src": "../docs",
+        "dest": "specs"
+      }
+    ],
+    "resource": [
+      {
+        "files": ["images/**"]
+      },
+      {
+        "files": ["icon.png"],
+        "src": "..",
+        "dest": "images"
+      }
+    ],
+    "output": "_site",
+    "template": ["default", "modern", "templates/forgemap"],
+    "globalMetadata": {
+      "_appTitle": "ForgeMap",
+      "_appName": "ForgeMap",
+      "_appLogoPath": "images/icon.png",
+      "_appFaviconPath": "images/icon.png",
+      "_enableSearch": true,
+      "_disableContribution": false,
+      "_gitContribute": {
+        "repo": "https://github.com/superyyrrzz/ForgeMap",
+        "branch": "main",
+        "apiSpecFolder": "docfx/api"
+      },
+      "_appFooter": "ForgeMap - MIT License",
+      "_enableNewTab": true
+    },
+    "fileMetadata": {
+      "_disableContribution": {
+        "api/**": true
+      }
+    },
+    "markdownEngineName": "markdig"
+  }
+}
