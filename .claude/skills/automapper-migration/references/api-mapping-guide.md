@@ -524,9 +524,11 @@ public partial class OrderForger
 
 ```csharp
 // BEFORE (AutoMapper)
-// AutoMapper assigns null through; some teams add custom resolvers to instantiate defaults
+// AutoMapper creates a default destination object when the source member is null,
+// effectively behaving like "null → new TDestination()". Some projects make this
+// explicit with conditional mapping or AfterMap hooks:
 CreateMap<Config, ConfigDto>()
-    .ForMember(d => d.Settings, o => o.NullSubstitute(new SettingsDto()));
+    .AfterMap((s, d) => d.Settings ??= new SettingsDto());
 
 // AFTER (ForgeMap v1.5+) — per-property CoalesceToNew for targeted behavior
 [ForgeMap]
