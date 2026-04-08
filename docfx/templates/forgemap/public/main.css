@@ -415,7 +415,7 @@ footer .flex-fill {
 }
 
 /* ---------- Transitions ---------- */
-* {
+html {
     scroll-behavior: smooth;
 }
 
