@@ -34,10 +34,13 @@ After installing, create a minimal forger to verify the generator is running:
 ```csharp
 using ForgeMap;
 
+public class Ping { public string Message { get; set; } }
+public class Pong { public string Message { get; set; } }
+
 [ForgeMap]
 public partial class TestForger
 {
-    public partial string Forge(int source);
+    public partial Pong Forge(Ping source);
 }
 ```
 
