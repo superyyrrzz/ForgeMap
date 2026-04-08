@@ -3,7 +3,7 @@
 [![CI](https://github.com/superyyrrzz/ForgeMap/actions/workflows/ci.yml/badge.svg)](https://github.com/superyyrrzz/ForgeMap/actions/workflows/ci.yml)
 [![NuGet](https://img.shields.io/nuget/v/ForgeMap.svg)](https://www.nuget.org/packages/ForgeMap)
 [![NuGet Downloads](https://img.shields.io/nuget/dt/ForgeMap.svg)](https://www.nuget.org/packages/ForgeMap)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/superyyrrzz/ForgeMap/blob/main/LICENSE)
 
 A lightweight, MIT-licensed, source-generator-based object transformation library for .NET. ForgeMap generates type conversion code at compile time, providing zero-reflection runtime execution with compile-time type safety.
 
