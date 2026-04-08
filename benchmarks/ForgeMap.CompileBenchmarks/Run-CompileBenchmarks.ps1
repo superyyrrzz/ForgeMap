@@ -25,7 +25,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $scriptDir = $PSScriptRoot
-$repoRoot = Resolve-Path (Join-Path $scriptDir '..\..') | Select-Object -ExpandProperty Path
+$repoRoot = Resolve-Path (Join-Path $scriptDir '..' '..') | Select-Object -ExpandProperty Path
 
 if (-not $OutputFile) {
     $OutputFile = Join-Path $scriptDir 'COMPILE_BENCHMARK_RESULTS.md'
