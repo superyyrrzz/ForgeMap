@@ -1,0 +1,44 @@
+name: Runtime Benchmarks
+
+on:
+  workflow_dispatch:
+    inputs:
+      filter:
+        description: 'BenchmarkDotNet filter (e.g. *Simple*, *Collection*). Leave empty for all.'
+        default: '*'
+  schedule:
+    - cron: '43 6 * * 1'  # weekly on Monday ~6:43am UTC
+
+env:
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
+  DOTNET_NOLOGO: true
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: |
+            9.0.x
+            10.0.x
+
+      - name: Run runtime benchmarks
+        run: >
+          dotnet run -c Release
+          --project benchmarks/ForgeMap.Benchmarks/ForgeMap.Benchmarks.csproj
+          -- --filter '${{ github.event.inputs.filter || '*' }}'
+          --artifacts benchmarks/ForgeMap.Benchmarks/BenchmarkDotNet.Artifacts
+
+      - name: Upload results
+        uses: actions/upload-artifact@v7
+        with:
+          name: runtime-benchmark-results
+          path: benchmarks/ForgeMap.Benchmarks/BenchmarkDotNet.Artifacts/results/
+          retention-days: 30
