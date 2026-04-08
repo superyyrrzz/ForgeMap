@@ -38,7 +38,7 @@ public partial class AppForger
 Key points:
 - `[ForgeProperty]` renames: `UserId` → `Id`
 - `[ForgeFrom]` computes: `DisplayName` from a resolver method
-- `PasswordHash` is not mapped because `UserDto` has no matching property — ForgeMap emits an FM0005 info diagnostic
+- `PasswordHash` is not mapped because `UserDto` has no matching property — ForgeMap emits an FM0005 warning
 
 ## Ignoring Properties
 
