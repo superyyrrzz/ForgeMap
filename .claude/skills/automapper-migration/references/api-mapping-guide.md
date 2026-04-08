@@ -138,7 +138,7 @@ When `[ForgeAllDerived]` is on a base forge method, collection forge methods for
 | AutoMapper | ForgeMap | Notes |
 |---|---|---|
 | `.BeforeMap((s,d) => ...)` | `[BeforeForge(nameof(MethodName))]` | `void Method(S source)` |
-| `.AfterMap((s,d) => ...)` | `[AfterForge(nameof(MethodName))]` | `void Method(S source, D dest)` |
+| `.AfterMap((s,d) => ...)` | `[AfterForge(nameof(MethodName))]` | `void Method(S source, D dest)`. v1.5+ diagnostics: FM0043 (method not found/wrong signature), FM0044 (mutually exclusive with `[ConvertWith]`), FM0045 (not applicable to collection methods) |
 
 ## Null Handling
 
@@ -157,6 +157,7 @@ Controls how nullable-to-non-nullable **reference type** property assignments an
 |---|---|---|
 | Default (assigns null through / `AllowNullDestinationValues = true`) | `NullPropertyHandling.NullForgiving` (default) | `target.X = source.X!;` — same runtime behavior as AutoMapper (for both property assignments and ctor parameters) |
 | `AllowNullCollections = false` | `NullPropertyHandling.CoalesceToDefault` | **Not a strict 1:1.** AutoMapper's setting is collection-only; `CoalesceToDefault` applies to all nullable-ref → non-nullable-ref properties where a default can be generated (`string` → `""`, arrays/concrete types with parameterless ctor → `new T()`). Other reference types fall back to `NullForgiving`. For collection-only coalescing, use per-property `[ForgeProperty(..., NullPropertyHandling = NullPropertyHandling.CoalesceToDefault)]` on the collection members only. |
+| Null → default-constructed object | `NullPropertyHandling.CoalesceToNew` (v1.5+) | Coalesces null to `new T()` for reference types with parameterless constructors (FM0038 if missing). For strings/arrays/collection interfaces, uses type-appropriate defaults (`""`, `Array.Empty<T>()`, empty collection). Key difference from `CoalesceToDefault`: also applies when a property is mapped via a forge method (emitting `new TDest()` instead of skipping the call). |
 | `.NullSubstitute(value)` per property | `[ForgeFrom]` resolver returning the substitute | No direct attribute; resolver has full control |
 | No equivalent | `NullPropertyHandling.SkipNull` | `if (source.X is { } v) target.X = v;` — destination keeps its initialized value; falls back to `NullForgiving` for constructor parameters (can't omit required args) and init-only properties (can't conditionally assign after initialization) |
 | No equivalent | `NullPropertyHandling.ThrowException` | `target.X = source.X ?? throw new ArgumentNullException(...)` — fail-fast |
@@ -183,6 +184,8 @@ Controls how nullable-to-non-nullable **reference type** property assignments an
 |---|---|---|
 | Auto collection mapping | Auto-generated when `GenerateCollectionMappings = true` on `[assembly: ForgeMapDefaults(...)]` (assembly-level, default `true`) | Supports `List<T>`, `IList<T>`, `ICollection<T>`, `IReadOnlyList<T>`, `IReadOnlyCollection<T>`, `HashSet<T>`, arrays, `IEnumerable<T>` |
 | Auto nested collection mapping | Auto-wired inline (v1.3+, `AutoWireNestedMappings = true`) when element forge method exists | Same collection types as above — no explicit collection forge method needed |
+| Collection type coercion | Automatic (v1.5+) | Concrete collection types auto-coerce to compatible interfaces (e.g., `List<T>` → `IReadOnlyList<T>`, `Dictionary<K,V>` → `IDictionary<K,V>`). FM0040 warns when no known coercion exists |
+| Standalone collection mapping | User declares partial method, generator implements (v1.5+) | Declare a partial method with collection parameter and return types (e.g., `partial IReadOnlyList<TDest> ForgeAll(IEnumerable<TSrc> source)`). The generator discovers the matching element-level forge method by type and implements the body. FM0041 for missing element mapping, FM0042 for ambiguous matches |
 | `.ProjectTo<D>(config)` | Not supported (compile-time only) | ForgeMap is source-generated, not queryable |
 
 ## DI Registration
@@ -207,7 +210,7 @@ Controls how nullable-to-non-nullable **reference type** property assignments an
 
 | AutoMapper | ForgeMap | Notes |
 |---|---|---|
-| `AssertConfigurationIsValid()` | Compiler diagnostics (FM0001–FM0037) | Compile-time diagnostics (errors, warnings, and info), not runtime |
+| `AssertConfigurationIsValid()` | Compiler diagnostics (FM0001–FM0045) | Compile-time diagnostics (errors, warnings, and info), not runtime |
 | Unmapped property warnings | FM0005: Unmapped source property | Configurable via `SuppressDiagnostics` |
 
 ## Case-Insensitive Matching
@@ -515,4 +518,47 @@ public partial class OrderForger
 // Items collection is synced by Id: existing items updated via ForgeInto,
 // new items created via Forge when available, missing items removed.
 // NOTE: Sync requires the destination to be List<T> specifically.
+```
+
+### Pattern 13: CoalesceToNew null handling
+
+```csharp
+// BEFORE (AutoMapper)
+// AutoMapper assigns null through by default for nested members. Some projects
+// add AfterMap hooks or custom resolvers to ensure certain properties are never null:
+CreateMap<Config, ConfigDto>()
+    .AfterMap((s, d) => d.Settings ??= new SettingsDto());
+
+// AFTER (ForgeMap v1.5+) — per-property CoalesceToNew for targeted behavior
+[ForgeMap]
+public partial class ConfigForger
+{
+    [ForgeProperty(nameof(Config.Settings), nameof(ConfigDto.Settings),
+        NullPropertyHandling = NullPropertyHandling.CoalesceToNew)]
+    public partial ConfigDto Forge(Config source);
+}
+// Only the Settings property gets new T() on null — other properties are unaffected.
+// Requires accessible parameterless constructor on SettingsDto (FM0038).
+// Use forger-wide [ForgeMap(NullPropertyHandling = CoalesceToNew)] only when ALL
+// nullable-ref → non-nullable-ref properties should get new T() on null.
+```
+
+### Pattern 14: Standalone collection mapping
+
+```csharp
+// BEFORE (AutoMapper)
+var dtos = mapper.Map<List<UserDto>>(users);
+
+// AFTER (ForgeMap v1.5+) — declare partial method, generator implements
+[ForgeMap]
+public partial class UserForger
+{
+    public partial UserDto Forge(User source);
+    public partial IReadOnlyList<UserDto> ForgeAll(IEnumerable<User> source);
+    // The generator discovers Forge(User) by type match and implements ForgeAll's body.
+    // Method name is user-controlled (ForgeAll is a convention, not required).
+    // Call: var dtos = forger.ForgeAll(users);
+}
+// FM0041 if no matching element forge method exists.
+// FM0042 if multiple element methods match ambiguously.
 ```

@@ -14,7 +14,7 @@ It contains exact API mappings between AutoMapper and ForgeMap. Consult it for e
 
 ## Hard rules
 
-- **Minimum ForgeMap version: 1.4.0.** Always install the latest release from NuGet (`dotnet add package ForgeMap`). The migration skill assumes all features up to v1.4 are available.
+- **Minimum ForgeMap version: 1.5.0.** Always install the latest release from NuGet (`dotnet add package ForgeMap`). The migration skill assumes all features up to v1.5 are available.
 - **NEVER write manual mapping code.** If ForgeMap can't support a required mapping, **stop and report the gap.** File an issue on `superyyrrzz/ForgeMap` with title `[Migration] <description>` and let the user decide.
 - **No git operations.** Do not run any git commands (checkout, commit, push, branch, etc.). The developer controls their own git workflow.
 
@@ -48,6 +48,8 @@ return source switch
 - **Case-sensitive by default** (AutoMapper is case-insensitive). Use `PropertyMatching = PropertyMatching.ByNameCaseInsensitive` if needed.
 - **Nested maps are auto-wired by default (v1.3+).** When `AutoWireNestedMappings = true` (default), the generator searches for a forge method in the same forger class with matching source parameter and return type — no `[ForgeWith]` needed. Disable per-forger or assembly-wide with `AutoWireNestedMappings = false`.
 - **Collection properties are auto-wired inline (v1.3+).** When an element forge method exists, collections (`List`, `IList`, `ICollection`, `IReadOnlyList`, `IReadOnlyCollection`, `HashSet`, arrays, `IEnumerable`) are mapped inline automatically. Explicit collection forge methods still take precedence if declared.
+- **Collection type coercion (v1.5+).** The generator automatically coerces concrete collection types to compatible interfaces (e.g., `List<T>` → `IReadOnlyList<T>`, `Dictionary<K,V>` → `IDictionary<K,V>`). No manual conversion needed when the destination expects a collection interface. FM0040 warns if no known coercion is available.
+- **Standalone collection mapping methods (v1.5+).** Declare a partial method with collection parameter and return types, and the generator auto-discovers the matching element-level forge method to implement the body. This provides a typed alternative to manual `.Select(x => forger.Forge(x)).ToList()` calls — call `forger.ForgeAll(items)` instead. For concrete return types (`List<T>`, arrays, etc.), the method eagerly materializes; for `IEnumerable<T>` returns, it generates a lazy `Select`. FM0041 reports missing element mappings and FM0042 reports ambiguous matches.
 - **No `ProjectTo<T>()`** — materialize first, then map. Warn user about perf implications.
 - **`[ConvertWith]` delegates to `ITypeConverter<TSource, TDest>` implementations (v1.4+).** Apply `[ConvertWith(typeof(MyConverter))]` to a forge method to delegate the entire conversion to the converter's `Convert` method. For type-based converters, the generator resolves the instance via: `IServiceScopeFactory` field → `IServiceProvider` field → parameterless constructor. Alternatively, use member-based references via `[ConvertWith(nameof(_field))]` to use a specific DI-injected field or property directly. When `[ConvertWith]` is present, it takes full precedence over `[ForgeProperty]`/`[ForgeFrom]`/`[ForgeWith]` (FM0036 warning).
 - **`[ForgeAllDerived]` supports abstract/interface destinations (v1.3+).** When the destination type is abstract or an interface, the generator emits a dispatch-only body (no instantiation) with a `NotSupportedException` fallback. Source-side auto-discovery still requires a class inheritance chain (interfaces not considered), and each derived method's return type must be assignable to the base destination type. Derived forge methods must be declared in the same forger class and share the same method name.
@@ -62,6 +64,7 @@ AutoMapper assigns null through by default (`AllowNullDestinationValues = true`)
 |---|---|
 | Default (assigns null through) | `NullPropertyHandling.NullForgiving` (default) — no configuration needed |
 | `AllowNullCollections = false` (null → empty collection) | `NullPropertyHandling.CoalesceToDefault` — but note this applies to **all** nullable-ref → non-nullable-ref properties (not just collections). Use per-property overrides if you only want collection-only coalescing. |
+| Null → default-constructed object | `NullPropertyHandling.CoalesceToNew` (v1.5+) — coalesces null to `new T()` for reference types with an accessible parameterless constructor (FM0038 error otherwise). For strings, arrays, and collection interfaces, uses type-appropriate defaults (`""`, `Array.Empty<T>()`, empty collection). The key difference from `CoalesceToDefault`: `CoalesceToNew` also applies when a property is mapped via a forge method (emitting `new TDest()` instead of skipping the forge call). |
 | `.NullSubstitute(value)` | `[ForgeFrom]` resolver returning the substitute value |
 
 **Three-tier configuration** — settings resolve per-property > per-forger > assembly default:
@@ -82,6 +85,16 @@ public partial class StrictForger { ... }
 **FM0007 is active** — the generator reports a warning for every direct nullable-ref → non-nullable-ref assignment it emits (mappings via `[ForgeFrom]` resolvers, `[ForgeWith]` nested forging, or auto-wired nested mappings do not trigger FM0007). If this is noisy during migration, suppress with `SuppressDiagnostics = new[] { "FM0007" }` on the forger class, or `<NoWarn>FM0007</NoWarn>` in `.csproj`.
 
 **`SkipNull` limitations** — `SkipNull` falls back to `NullForgiving` for constructor parameters (can't omit required args) and init-only properties (can't conditionally assign after initialization).
+
+## `[AfterForge]` migration diagnostics (v1.5+)
+
+v1.5 adds compile-time diagnostics that catch common `[AfterForge]` mistakes during migration:
+
+| Diagnostic | Description | Migration action |
+|---|---|---|
+| FM0043 | `[AfterForge]` method not found or has wrong signature | Fix the method name or signature: `void Method(S source, D dest)` for returning forge methods, or `void Method(S source, TTarget target)` for `ForgeInto` mutation methods |
+| FM0044 | `[AfterForge]` and `[ConvertWith]` are mutually exclusive | Remove one — `[ConvertWith]` takes full precedence and `[AfterForge]` cannot run |
+| FM0045 | `[AfterForge]` is not applicable to collection methods | Move post-mapping logic to the element-level forge method's `[AfterForge]`, or handle it at the call site |
 
 ## After migration ends
 
