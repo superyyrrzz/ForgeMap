@@ -66,7 +66,7 @@ The generated code is equivalent to:
 ```csharp
 public partial OrderDto Forge(OrderEntity source)
 {
-    if (source is null) return null;
+    if (source == null) return null!;
     return new OrderDto
     {
         Id = source.Id,
