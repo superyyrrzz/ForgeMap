@@ -11,6 +11,8 @@ internal sealed partial class ForgeCodeEmitter
 {
     private enum CollectionInlineKind { SingleExpression, MultiStatement }
 
+    private enum CodeEmissionMode { Expression, Statement }
+
     /// <summary>
     /// Tries to auto-wire a destination property by finding a matching forge method on the forger class.
     /// Returns the generated expression, or null if no unique match was found.
@@ -216,6 +218,49 @@ internal sealed partial class ForgeCodeEmitter
         List<(string DestPropName, string Block)>? postConstructionCollections,
         List<string>? preConstructionBlocks)
     {
+        return TryAutoWireCollectionInlineCore(
+            destProp, sourcePropertyType, sourceExpr, forger, context, method,
+            nullPropertyHandlingOverrides, CodeEmissionMode.Expression,
+            destVarName: null, postConstructionCollections, preConstructionBlocks);
+    }
+
+    /// <summary>
+    /// Tries to auto-wire a collection property inline for ForgeInto (statement) context.
+    /// Returns a complete block of statements, or null if not applicable.
+    /// </summary>
+    private string? TryAutoWireCollectionInlineStatements(
+        IPropertySymbol destProp,
+        ITypeSymbol sourcePropertyType,
+        string sourceExpr,
+        string destVarName,
+        ForgerInfo forger,
+        SourceProductionContext context,
+        IMethodSymbol method,
+        Dictionary<string, int> nullPropertyHandlingOverrides)
+    {
+        return TryAutoWireCollectionInlineCore(
+            destProp, sourcePropertyType, sourceExpr, forger, context, method,
+            nullPropertyHandlingOverrides, CodeEmissionMode.Statement,
+            destVarName, postConstructionCollections: null, preConstructionBlocks: null);
+    }
+
+    /// <summary>
+    /// Core implementation for auto-wiring collection properties inline.
+    /// Handles both Expression mode (object initializer context) and Statement mode (ForgeInto context).
+    /// </summary>
+    private string? TryAutoWireCollectionInlineCore(
+        IPropertySymbol destProp,
+        ITypeSymbol sourcePropertyType,
+        string sourceExpr,
+        ForgerInfo forger,
+        SourceProductionContext context,
+        IMethodSymbol method,
+        Dictionary<string, int> nullPropertyHandlingOverrides,
+        CodeEmissionMode mode,
+        string? destVarName,
+        List<(string DestPropName, string Block)>? postConstructionCollections,
+        List<string>? preConstructionBlocks)
+    {
         // Both source and dest must be collection types
         var srcElemType = GetCollectionElementType(sourcePropertyType);
         var destElemType = GetCollectionElementType(destProp.Type);
@@ -230,26 +275,43 @@ internal sealed partial class ForgeCodeEmitter
                 if (CanAssign(sourcePropertyType, destProp.Type))
                     return null; // already assignable
 
-                if (!SymbolEqualityComparer.Default.Equals(srcDict.Value.KeyType, destDict.Value.KeyType))
+                if (mode == CodeEmissionMode.Expression)
                 {
-                    ReportDiagnosticIfNotSuppressed(context,
-                        DiagnosticDescriptors.CollectionCoercionNotSupported,
-                        method.Locations.FirstOrDefault(),
-                        destProp.Name,
-                        sourcePropertyType.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat),
-                        destProp.Type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat));
-                    return null;
-                }
+                    if (!SymbolEqualityComparer.Default.Equals(srcDict.Value.KeyType, destDict.Value.KeyType))
+                    {
+                        ReportDiagnosticIfNotSuppressed(context,
+                            DiagnosticDescriptors.CollectionCoercionNotSupported,
+                            method.Locations.FirstOrDefault(),
+                            destProp.Name,
+                            sourcePropertyType.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat),
+                            destProp.Type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat));
+                        return null;
+                    }
 
-                if (!SymbolEqualityComparer.Default.Equals(srcDict.Value.ValueType, destDict.Value.ValueType))
+                    if (!SymbolEqualityComparer.Default.Equals(srcDict.Value.ValueType, destDict.Value.ValueType))
+                    {
+                        ReportDiagnosticIfNotSuppressed(context,
+                            DiagnosticDescriptors.CollectionCoercionNotSupported,
+                            method.Locations.FirstOrDefault(),
+                            destProp.Name,
+                            sourcePropertyType.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat),
+                            destProp.Type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat));
+                        return null;
+                    }
+                }
+                else // Statement mode — combined check
                 {
-                    ReportDiagnosticIfNotSuppressed(context,
-                        DiagnosticDescriptors.CollectionCoercionNotSupported,
-                        method.Locations.FirstOrDefault(),
-                        destProp.Name,
-                        sourcePropertyType.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat),
-                        destProp.Type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat));
-                    return null;
+                    if (!SymbolEqualityComparer.Default.Equals(srcDict.Value.KeyType, destDict.Value.KeyType) ||
+                        !SymbolEqualityComparer.Default.Equals(srcDict.Value.ValueType, destDict.Value.ValueType))
+                    {
+                        ReportDiagnosticIfNotSuppressed(context,
+                            DiagnosticDescriptors.CollectionCoercionNotSupported,
+                            method.Locations.FirstOrDefault(),
+                            destProp.Name,
+                            sourcePropertyType.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat),
+                            destProp.Type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat));
+                        return null;
+                    }
                 }
 
                 var dictCollLocal = $"__coll_{destProp.Name}";
@@ -264,17 +326,20 @@ internal sealed partial class ForgeCodeEmitter
                         sourcePropertyType.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat),
                         destProp.Type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat));
 
-                    return ApplyCoercionNullHandling(destProp, sourceExpr, dictCollLocal,
-                        dictExpr,
+                    return ApplyCoercionNullHandlingCore(destProp, sourceExpr, dictCollLocal,
+                        dictExpr, mode, destVarName,
                         nullPropertyHandlingOverrides, postConstructionCollections);
                 }
 
-                ReportDiagnosticIfNotSuppressed(context,
-                    DiagnosticDescriptors.CollectionCoercionNotSupported,
-                    method.Locations.FirstOrDefault(),
-                    destProp.Name,
-                    sourcePropertyType.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat),
-                    destProp.Type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat));
+                if (mode == CodeEmissionMode.Expression)
+                {
+                    ReportDiagnosticIfNotSuppressed(context,
+                        DiagnosticDescriptors.CollectionCoercionNotSupported,
+                        method.Locations.FirstOrDefault(),
+                        destProp.Name,
+                        sourcePropertyType.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat),
+                        destProp.Type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat));
+                }
             }
             return null;
         }
@@ -289,12 +354,12 @@ internal sealed partial class ForgeCodeEmitter
         if (elemCandidates.Count == 0)
         {
             // No element forge method. Check for pure container coercion (identical element types only).
-            // We require exact element type match — assignable-but-different types (e.g., string→object)
+            // We require exact element type match — assignable-but-different types (e.g., string->object)
             // would generate invalid code for invariant generic containers.
             if (!SymbolEqualityComparer.Default.Equals(srcElemType, destElemType))
                 return null;
 
-            // Already assignable containers → no coercion needed (CanAssign already handled this upstream)
+            // Already assignable containers -> no coercion needed (CanAssign already handled this upstream)
             if (CanAssign(sourcePropertyType, destProp.Type))
                 return null;
 
@@ -326,8 +391,8 @@ internal sealed partial class ForgeCodeEmitter
                         sourcePropertyType.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat),
                         destProp.Type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat));
 
-                    return ApplyCoercionNullHandling(destProp, sourceExpr, $"__coll_{destProp.Name}",
-                        dictExpr,
+                    return ApplyCoercionNullHandlingCore(destProp, sourceExpr, $"__coll_{destProp.Name}",
+                        dictExpr, mode, destVarName,
                         nullPropertyHandlingOverrides, postConstructionCollections);
                 }
             }
@@ -344,8 +409,8 @@ internal sealed partial class ForgeCodeEmitter
                     sourcePropertyType.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat),
                     destProp.Type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat));
 
-                return ApplyCoercionNullHandling(destProp, sourceExpr, seqCollLocal,
-                    coercionExpr,
+                return ApplyCoercionNullHandlingCore(destProp, sourceExpr, seqCollLocal,
+                    coercionExpr, mode, destVarName,
                     nullPropertyHandlingOverrides, postConstructionCollections);
             }
 
@@ -390,7 +455,7 @@ internal sealed partial class ForgeCodeEmitter
 
         if (inlineResult == null)
         {
-            // Fallback: coercion with element mapping (e.g., List<Src> → HashSet<Dest>)
+            // Fallback: coercion with element mapping
             var coercionExpr = TryGenerateCoercionWithElementMapping(
                 destProp.Type, destElemType, collLocal, elementMethod.Name);
             if (coercionExpr != null)
@@ -402,14 +467,35 @@ internal sealed partial class ForgeCodeEmitter
                     sourcePropertyType.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat),
                     destProp.Type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat));
 
-                return ApplyCoercionNullHandling(destProp, sourceExpr, collLocal,
-                    coercionExpr,
+                return ApplyCoercionNullHandlingCore(destProp, sourceExpr, collLocal,
+                    coercionExpr, mode, destVarName,
                     nullPropertyHandlingOverrides, postConstructionCollections);
             }
             return null;
         }
 
         var (kind, code) = inlineResult.Value;
+
+        if (mode == CodeEmissionMode.Expression)
+        {
+            return EmitCollectionResultExpression(destProp, sourceExpr, collLocal, strategy, kind, code,
+                postConstructionCollections, preConstructionBlocks);
+        }
+        else // Statement mode
+        {
+            return EmitCollectionResultStatements(destProp, sourceExpr, destVarName!, collLocal, strategy, kind, code);
+        }
+    }
+
+    /// <summary>
+    /// Emits the final collection result for Expression mode (object initializer context).
+    /// </summary>
+    private string? EmitCollectionResultExpression(
+        IPropertySymbol destProp, string sourceExpr, string collLocal, int strategy,
+        CollectionInlineKind kind, string code,
+        List<(string DestPropName, string Block)>? postConstructionCollections,
+        List<string>? preConstructionBlocks)
+    {
         var isInitOnly = destProp.SetMethod?.IsInitOnly == true;
 
         if (kind == CollectionInlineKind.SingleExpression)
@@ -499,6 +585,70 @@ internal sealed partial class ForgeCodeEmitter
 
             postConstructionCollections.Add((destProp.Name, postBlock.ToString()));
             return null;
+        }
+    }
+
+    /// <summary>
+    /// Emits the final collection result for Statement mode (ForgeInto context).
+    /// </summary>
+    private string EmitCollectionResultStatements(
+        IPropertySymbol destProp, string sourceExpr, string destVarName,
+        string collLocal, int strategy,
+        CollectionInlineKind kind, string code)
+    {
+        var resultVar = $"__collResult_{destProp.Name}";
+
+        if (kind == CollectionInlineKind.SingleExpression)
+        {
+            var nullFallback = GenerateCollectionNullFallback(destProp, strategy, sourceExpr);
+            if (strategy == 1) // SkipNull
+            {
+                return $"            if ({sourceExpr} is {{ }} {collLocal})\n" +
+                       $"            {{\n" +
+                       $"                {destVarName}.{destProp.Name} = {code};\n" +
+                       $"            }}";
+            }
+
+            return $"            {destVarName}.{destProp.Name} = {sourceExpr} is {{ }} {collLocal} ? {code} : {nullFallback};";
+        }
+        else
+        {
+            // Multi-statement
+            var sb = new StringBuilder();
+            if (strategy == 1) // SkipNull
+            {
+                sb.AppendLine($"            if ({sourceExpr} is {{ }} {collLocal})");
+                sb.AppendLine($"            {{");
+                sb.AppendLine(code);
+                sb.AppendLine($"                {destVarName}.{destProp.Name} = {resultVar};");
+                sb.Append($"            }}");
+            }
+            else
+            {
+                sb.AppendLine($"            if ({sourceExpr} is {{ }} {collLocal})");
+                sb.AppendLine($"            {{");
+                sb.AppendLine(code);
+                sb.AppendLine($"                {destVarName}.{destProp.Name} = {resultVar};");
+                sb.AppendLine($"            }}");
+                sb.AppendLine($"            else");
+                sb.AppendLine($"            {{");
+                if (strategy == 2 || strategy == 4) // CoalesceToDefault / CoalesceToNew
+                {
+                    var defaultExpr = GenerateEmptyCollectionExpression(destProp.Type) ?? GenerateCoalesceDefault(destProp.Type);
+                    sb.AppendLine($"                {destVarName}.{destProp.Name} = {defaultExpr ?? $"new {destProp.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}()"};");
+                }
+                else if (strategy == 3)
+                {
+                    sb.AppendLine($"                throw new global::System.ArgumentNullException(\"{destProp.Name}\", \"Cannot assign null source property '{sourceExpr}' to non-nullable destination '{destProp.ContainingType.Name}.{destProp.Name}'.\");");
+                }
+                else
+                {
+                    sb.AppendLine($"                {destVarName}.{destProp.Name} = null!;");
+                }
+                sb.Append($"            }}");
+            }
+
+            return sb.ToString();
         }
     }
 
@@ -647,240 +797,6 @@ internal sealed partial class ForgeCodeEmitter
         }
 
         return null;
-    }
-
-    /// <summary>
-    /// Tries to auto-wire a collection property inline for ForgeInto (statement) context.
-    /// Returns a complete block of statements, or null if not applicable.
-    /// </summary>
-    private string? TryAutoWireCollectionInlineStatements(
-        IPropertySymbol destProp,
-        ITypeSymbol sourcePropertyType,
-        string sourceExpr,
-        string destVarName,
-        ForgerInfo forger,
-        SourceProductionContext context,
-        IMethodSymbol method,
-        Dictionary<string, int> nullPropertyHandlingOverrides)
-    {
-        var srcElemType = GetCollectionElementType(sourcePropertyType);
-        var destElemType = GetCollectionElementType(destProp.Type);
-
-        // Dictionary coercion entry path
-        if (srcElemType == null || destElemType == null)
-        {
-            var srcDict = GetDictionaryKeyValueTypes(sourcePropertyType);
-            var destDict = GetDictionaryKeyValueTypes(destProp.Type);
-            if (srcDict != null && destDict != null)
-            {
-                if (CanAssign(sourcePropertyType, destProp.Type))
-                    return null;
-
-                if (!SymbolEqualityComparer.Default.Equals(srcDict.Value.KeyType, destDict.Value.KeyType) ||
-                    !SymbolEqualityComparer.Default.Equals(srcDict.Value.ValueType, destDict.Value.ValueType))
-                {
-                    ReportDiagnosticIfNotSuppressed(context,
-                        DiagnosticDescriptors.CollectionCoercionNotSupported,
-                        method.Locations.FirstOrDefault(),
-                        destProp.Name,
-                        sourcePropertyType.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat),
-                        destProp.Type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat));
-                    return null;
-                }
-
-                var dictCollLocal2 = $"__coll_{destProp.Name}";
-                var dictExpr = TryGenerateDictionaryCoercion(sourcePropertyType, destProp.Type,
-                    srcDict.Value.KeyType, srcDict.Value.ValueType, dictCollLocal2, destProp.Name);
-                if (dictExpr != null)
-                {
-                    ReportDiagnosticIfNotSuppressed(context,
-                        DiagnosticDescriptors.CollectionTypeCoerced,
-                        method.Locations.FirstOrDefault(),
-                        destProp.Name,
-                        sourcePropertyType.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat),
-                        destProp.Type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat));
-
-                    return ApplyCoercionNullHandlingStatements(destProp, sourceExpr, dictCollLocal2,
-                        dictExpr, destVarName, nullPropertyHandlingOverrides);
-                }
-            }
-            return null;
-        }
-
-        var collectionLevelCandidates = FindAutoWireForgeMethodCandidates(forger.Symbol, sourcePropertyType, destProp.Type);
-        if (collectionLevelCandidates.Count > 0)
-            return null;
-
-        var elemCandidates = FindAutoWireForgeMethodCandidates(forger.Symbol, srcElemType, destElemType);
-        if (elemCandidates.Count == 0)
-        {
-            // No element forge method. Check for pure container coercion (identical element types only).
-            if (!SymbolEqualityComparer.Default.Equals(srcElemType, destElemType))
-                return null;
-
-            if (CanAssign(sourcePropertyType, destProp.Type))
-                return null;
-
-            // Try dictionary coercion
-            var srcDict = GetDictionaryKeyValueTypes(sourcePropertyType);
-            var destDict = GetDictionaryKeyValueTypes(destProp.Type);
-            if (srcDict != null && destDict != null)
-            {
-                if (!SymbolEqualityComparer.Default.Equals(srcDict.Value.KeyType, destDict.Value.KeyType))
-                {
-                    ReportDiagnosticIfNotSuppressed(context,
-                        DiagnosticDescriptors.CollectionCoercionNotSupported,
-                        method.Locations.FirstOrDefault(),
-                        destProp.Name,
-                        sourcePropertyType.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat),
-                        destProp.Type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat));
-                    return null;
-                }
-
-                var dictExpr = TryGenerateDictionaryCoercion(sourcePropertyType, destProp.Type,
-                    srcDict.Value.KeyType, srcDict.Value.ValueType, $"__coll_{destProp.Name}", destProp.Name);
-                if (dictExpr != null)
-                {
-                    ReportDiagnosticIfNotSuppressed(context,
-                        DiagnosticDescriptors.CollectionTypeCoerced,
-                        method.Locations.FirstOrDefault(),
-                        destProp.Name,
-                        sourcePropertyType.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat),
-                        destProp.Type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat));
-
-                    return ApplyCoercionNullHandlingStatements(destProp, sourceExpr, $"__coll_{destProp.Name}",
-                        dictExpr, destVarName, nullPropertyHandlingOverrides);
-                }
-            }
-
-            // Try sequence coercion
-            var seqCollLocal2 = $"__coll_{destProp.Name}";
-            var coercionExpr = TryGenerateSequenceCoercion(sourcePropertyType, destProp.Type, srcElemType, seqCollLocal2);
-            if (coercionExpr != null)
-            {
-                ReportDiagnosticIfNotSuppressed(context,
-                    DiagnosticDescriptors.CollectionTypeCoerced,
-                    method.Locations.FirstOrDefault(),
-                    destProp.Name,
-                    sourcePropertyType.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat),
-                    destProp.Type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat));
-
-                return ApplyCoercionNullHandlingStatements(destProp, sourceExpr, seqCollLocal2,
-                    coercionExpr, destVarName, nullPropertyHandlingOverrides);
-            }
-
-            // FM0040 for unrecognized collection pair
-            if (srcDict != null || destDict != null ||
-                GetCollectionElementType(sourcePropertyType) != null)
-            {
-                ReportDiagnosticIfNotSuppressed(context,
-                    DiagnosticDescriptors.CollectionCoercionNotSupported,
-                    method.Locations.FirstOrDefault(),
-                    destProp.Name,
-                    sourcePropertyType.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat),
-                    destProp.Type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat));
-            }
-            return null;
-        }
-
-        if (elemCandidates.Count > 1)
-        {
-            ReportDiagnosticIfNotSuppressed(context,
-                DiagnosticDescriptors.AmbiguousAutoWire,
-                method.Locations.FirstOrDefault(),
-                destProp.Name, destProp.ContainingType.Name);
-            return null;
-        }
-
-        var elementMethod = elemCandidates[0];
-
-        ReportDiagnosticIfNotSuppressed(context,
-            DiagnosticDescriptors.PropertyAutoWired,
-            method.Locations.FirstOrDefault(),
-            destProp.Name, elementMethod.Name);
-
-        var strategy = ResolveNullPropertyHandling(destProp.Name, nullPropertyHandlingOverrides);
-        var collLocal = $"__coll_{destProp.Name}";
-
-        var inlineResult = GenerateInlineCollectionCode(
-            sourcePropertyType, destProp.Type, destElemType,
-            collLocal, destProp.Name, elementMethod);
-
-        if (inlineResult == null)
-        {
-            // Fallback: coercion with element mapping for ForgeInto context
-            var coercionExpr = TryGenerateCoercionWithElementMapping(
-                destProp.Type, destElemType, collLocal, elementMethod.Name);
-            if (coercionExpr != null)
-            {
-                ReportDiagnosticIfNotSuppressed(context,
-                    DiagnosticDescriptors.CollectionTypeCoerced,
-                    method.Locations.FirstOrDefault(),
-                    destProp.Name,
-                    sourcePropertyType.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat),
-                    destProp.Type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat));
-
-                return ApplyCoercionNullHandlingStatements(destProp, sourceExpr, collLocal,
-                    coercionExpr, destVarName, nullPropertyHandlingOverrides);
-            }
-            return null;
-        }
-
-        var (kind, code) = inlineResult.Value;
-        var resultVar = $"__collResult_{destProp.Name}";
-
-        if (kind == CollectionInlineKind.SingleExpression)
-        {
-            var nullFallback = GenerateCollectionNullFallback(destProp, strategy, sourceExpr);
-            if (strategy == 1) // SkipNull
-            {
-                return $"            if ({sourceExpr} is {{ }} {collLocal})\n" +
-                       $"            {{\n" +
-                       $"                {destVarName}.{destProp.Name} = {code};\n" +
-                       $"            }}";
-            }
-
-            return $"            {destVarName}.{destProp.Name} = {sourceExpr} is {{ }} {collLocal} ? {code} : {nullFallback};";
-        }
-        else
-        {
-            // Multi-statement
-            var sb = new StringBuilder();
-            if (strategy == 1) // SkipNull
-            {
-                sb.AppendLine($"            if ({sourceExpr} is {{ }} {collLocal})");
-                sb.AppendLine($"            {{");
-                sb.AppendLine(code);
-                sb.AppendLine($"                {destVarName}.{destProp.Name} = {resultVar};");
-                sb.Append($"            }}");
-            }
-            else
-            {
-                sb.AppendLine($"            if ({sourceExpr} is {{ }} {collLocal})");
-                sb.AppendLine($"            {{");
-                sb.AppendLine(code);
-                sb.AppendLine($"                {destVarName}.{destProp.Name} = {resultVar};");
-                sb.AppendLine($"            }}");
-                sb.AppendLine($"            else");
-                sb.AppendLine($"            {{");
-                if (strategy == 2 || strategy == 4) // CoalesceToDefault / CoalesceToNew
-                {
-                    var defaultExpr = GenerateEmptyCollectionExpression(destProp.Type) ?? GenerateCoalesceDefault(destProp.Type);
-                    sb.AppendLine($"                {destVarName}.{destProp.Name} = {defaultExpr ?? $"new {destProp.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}()"};");
-                }
-                else if (strategy == 3)
-                {
-                    sb.AppendLine($"                throw new global::System.ArgumentNullException(\"{destProp.Name}\", \"Cannot assign null source property '{sourceExpr}' to non-nullable destination '{destProp.ContainingType.Name}.{destProp.Name}'.\");");
-                }
-                else
-                {
-                    sb.AppendLine($"                {destVarName}.{destProp.Name} = null!;");
-                }
-                sb.Append($"            }}");
-            }
-
-            return sb.ToString();
-        }
     }
 
     /// <summary>
@@ -1049,60 +965,54 @@ internal sealed partial class ForgeCodeEmitter
     }
 
     /// <summary>
-    /// Applies null handling to a coercion expression in the object initializer context.
-    /// Reuses the same pattern as the element-mapping auto-wire path.
+    /// Core implementation for applying null handling to coercion expressions.
+    /// In Expression mode, returns an expression (or null when added to postConstructionCollections).
+    /// In Statement mode, returns a complete statement block.
     /// </summary>
-    private string? ApplyCoercionNullHandling(
+    private string? ApplyCoercionNullHandlingCore(
         IPropertySymbol destProp, string sourceExpr, string collLocal,
-        string coercionExpr,
+        string coercionExpr, CodeEmissionMode mode, string? destVarName,
         Dictionary<string, int> nullPropertyHandlingOverrides,
         List<(string DestPropName, string Block)>? postConstructionCollections)
     {
         var strategy = ResolveNullPropertyHandling(destProp.Name, nullPropertyHandlingOverrides);
-        var isInitOnly = destProp.SetMethod?.IsInitOnly == true;
-
-        // coercion expressions are always single-expression
-        var nullFallback = GenerateCollectionNullFallback(destProp, strategy, sourceExpr);
-        if (strategy == 1 && !isInitOnly && postConstructionCollections != null)
-        {
-            // SkipNull: post-construction if-guard
-            var block = new StringBuilder();
-            block.AppendLine($"            if ({sourceExpr} is {{ }} {collLocal})");
-            block.AppendLine($"            {{");
-            block.AppendLine($"                result.{destProp.Name} = {coercionExpr};");
-            block.Append($"            }}");
-            postConstructionCollections.Add((destProp.Name, block.ToString()));
-            return null;
-        }
-
-        if (isInitOnly && (strategy == 1))
-        {
-            // Init-only + SkipNull — must provide value, fall back to NullForgiving
-            return $"{sourceExpr} is {{ }} {collLocal} ? {coercionExpr} : null!";
-        }
-
-        return $"{sourceExpr} is {{ }} {collLocal} ? {coercionExpr} : {nullFallback}";
-    }
-
-    /// <summary>
-    /// Applies null handling to a coercion expression in the ForgeInto (statement) context.
-    /// </summary>
-    private string ApplyCoercionNullHandlingStatements(
-        IPropertySymbol destProp, string sourceExpr, string collLocal,
-        string coercionExpr, string destVarName,
-        Dictionary<string, int> nullPropertyHandlingOverrides)
-    {
-        var strategy = ResolveNullPropertyHandling(destProp.Name, nullPropertyHandlingOverrides);
         var nullFallback = GenerateCollectionNullFallback(destProp, strategy, sourceExpr);
 
-        if (strategy == 1) // SkipNull
+        if (mode == CodeEmissionMode.Expression)
         {
-            return $"            if ({sourceExpr} is {{ }} {collLocal})\n" +
-                   $"            {{\n" +
-                   $"                {destVarName}.{destProp.Name} = {coercionExpr};\n" +
-                   $"            }}";
-        }
+            var isInitOnly = destProp.SetMethod?.IsInitOnly == true;
 
-        return $"            {destVarName}.{destProp.Name} = {sourceExpr} is {{ }} {collLocal} ? {coercionExpr} : {nullFallback};";
+            if (strategy == 1 && !isInitOnly && postConstructionCollections != null)
+            {
+                // SkipNull: post-construction if-guard
+                var block = new StringBuilder();
+                block.AppendLine($"            if ({sourceExpr} is {{ }} {collLocal})");
+                block.AppendLine($"            {{");
+                block.AppendLine($"                result.{destProp.Name} = {coercionExpr};");
+                block.Append($"            }}");
+                postConstructionCollections.Add((destProp.Name, block.ToString()));
+                return null;
+            }
+
+            if (isInitOnly && (strategy == 1))
+            {
+                // Init-only + SkipNull — must provide value, fall back to NullForgiving
+                return $"{sourceExpr} is {{ }} {collLocal} ? {coercionExpr} : null!";
+            }
+
+            return $"{sourceExpr} is {{ }} {collLocal} ? {coercionExpr} : {nullFallback}";
+        }
+        else // Statement mode
+        {
+            if (strategy == 1) // SkipNull
+            {
+                return $"            if ({sourceExpr} is {{ }} {collLocal})\n" +
+                       $"            {{\n" +
+                       $"                {destVarName}.{destProp.Name} = {coercionExpr};\n" +
+                       $"            }}";
+            }
+
+            return $"            {destVarName}.{destProp.Name} = {sourceExpr} is {{ }} {collLocal} ? {coercionExpr} : {nullFallback};";
+        }
     }
 }
