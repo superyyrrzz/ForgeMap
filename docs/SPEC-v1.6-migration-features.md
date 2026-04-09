@@ -1,4 +1,4 @@
-# ForgeMap v1.6 Specification — Migration-Priority Features (Part 2)
+# ForgeMap v1.6 Specification — Migration-Priority Features
 
 ## Overview
 
@@ -42,13 +42,13 @@ private static FileType ResolveType(Source s)
 
 ### Design
 
-When converting `string` or `string?` to an enum type, the generator wraps the conversion in a `string.IsNullOrEmpty` guard. This applies to both `StringToEnum.Parse` and `StringToEnum.TryParse` modes. The guard returns `default(TEnum)` for null/empty strings.
+When converting `string` or `string?` to an enum type, the generator wraps the conversion in a `string.IsNullOrEmpty` guard. This applies to both `StringToEnumConversion.Parse` and `StringToEnumConversion.TryParse` modes. The guard returns `default(TEnum)` for null/empty strings.
 
 This is a behavioral change from v1.5 where `Enum.Parse` was called unconditionally. The new behavior is safer — `Enum.Parse(null)` and `Enum.Parse("")` are always errors, never intentional.
 
 ### Generated Code
 
-**`StringToEnum.Parse` (default):**
+**`StringToEnumConversion.Parse` (default):**
 
 ```csharp
 // v1.5: Enum.Parse throws on null/empty
@@ -60,12 +60,12 @@ dest.Type = string.IsNullOrEmpty(source.Type)
     : (FileType)global::System.Enum.Parse(typeof(FileType), source.Type, true);
 ```
 
-**`StringToEnum.TryParse`:**
+**`StringToEnumConversion.TryParse`:**
 
 ```csharp
-// v1.5: TryParse already handles null gracefully (returns false, default),
-// but empty string "" parses to 0 silently which may be surprising.
-// v1.6: explicit guard for consistency
+// v1.5: TryParse already handles null and empty gracefully (returns false, out = default),
+// but without an explicit guard the generated code structure differs from Parse mode.
+// v1.6: explicit guard for consistency across both modes
 dest.Type = !string.IsNullOrEmpty(source.Type)
     && global::System.Enum.TryParse<FileType>(source.Type, true, out var __enumVal_Type)
     ? __enumVal_Type
@@ -84,7 +84,7 @@ dest.Type = string.IsNullOrEmpty(source.Type!)
 
 // NullPropertyHandling.ThrowException + Parse
 dest.Type = source.Type is null
-    ? throw new global::System.ArgumentNullException("source.Type")
+    ? throw new global::System.ArgumentNullException(nameof(source.Type))
     : string.IsNullOrEmpty(source.Type)
         ? default(FileType)
         : (FileType)global::System.Enum.Parse(typeof(FileType), source.Type, true);
@@ -119,9 +119,9 @@ var __result = new Dest(
 
 | Feature | Interaction |
 |---------|-------------|
-| `StringToEnum.Parse` | Guard wraps `Enum.Parse` — returns `default(TEnum)` for null/empty instead of throwing |
-| `StringToEnum.TryParse` | Guard wraps `TryParse` — explicit `IsNullOrEmpty` check for consistency (empty string is no longer silently parsed to 0) |
-| `StringToEnum.None` | No change — auto-conversion disabled, guard not emitted |
+| `StringToEnumConversion.Parse` | Guard wraps `Enum.Parse` — returns `default(TEnum)` for null/empty instead of throwing |
+| `StringToEnumConversion.TryParse` | Guard wraps `TryParse` — explicit `IsNullOrEmpty` check for consistency with `Parse` mode |
+| `StringToEnumConversion.None` | No change — auto-conversion disabled, guard not emitted |
 | `NullPropertyHandling` | Works inside existing null-handling wrappers — the empty-string guard is an orthogonal concern |
 | `[ForgeProperty]` | Applies to explicitly mapped string→enum pairs |
 | `[ForgeFrom]` | Resolver takes precedence — guard not emitted when a resolver is defined |
@@ -140,7 +140,7 @@ var __result = new Dest(
 | `null` string → enum (Parse) | `ArgumentNullException` | `default(TEnum)` |
 | `""` string → enum (Parse) | `ArgumentException` | `default(TEnum)` |
 | `null` string → enum (TryParse) | `default(TEnum)` (TryParse returns false) | `default(TEnum)` (explicit guard) |
-| `""` string → enum (TryParse) | Parses to `(TEnum)0` silently | `default(TEnum)` (explicit guard) |
+| `""` string → enum (TryParse) | `default(TEnum)` (TryParse returns false) | `default(TEnum)` (explicit guard for consistency) |
 | Valid string → enum | `Enum.Parse` / `TryParse` as before | Unchanged |
 | `null` string → nullable enum | Follows `NullPropertyHandling` | `(TEnum?)null` |
 | `""` string → nullable enum | `ArgumentException` (Parse) | `(TEnum?)null` |
@@ -528,7 +528,7 @@ var __result = new Dest(
 
 Two common type mismatches still require manual methods despite ForgeMap's auto-mapping capabilities:
 
-**1. `DateTimeOffset → DateTime`**: Many APIs (Octokit.Webhooks, ASP.NET Core) use `DateTimeOffset`, while domain/DAO models use `DateTime`. The standard lossless conversion is `.UtcDateTime`.
+**1. `DateTimeOffset → DateTime`**: Many APIs (Octokit.Webhooks, ASP.NET Core) use `DateTimeOffset`, while domain/DAO models use `DateTime`. A common conversion is `.UtcDateTime`, which preserves the instant in time as a UTC `DateTime`.
 
 **2. Generic wrapper unwrapping (e.g., `StringEnum<T> → T`)**: Libraries like Octokit.Webhooks wrap enums in `StringEnum<T>` for JSON flexibility. The underlying value is accessible via `.Value`.
 
@@ -567,7 +567,7 @@ __result.ClosedAt = source.ClosedAt?.UtcDateTime ?? default!;
 __result.ClosedAt = source.ClosedAt?.UtcDateTime ?? default(DateTime);
 // ThrowException:
 __result.ClosedAt = source.ClosedAt?.UtcDateTime
-    ?? throw new global::System.ArgumentNullException("source.ClosedAt");
+    ?? throw new global::System.ArgumentNullException(nameof(source.ClosedAt));
 ```
 
 The reverse direction (`DateTime → DateTimeOffset`) is also supported via the implicit conversion (`new DateTimeOffset(dateTime)`):
@@ -608,12 +608,14 @@ __result.Type = source.Type?.Value ?? default(UserType);
 **Matching criteria for generic wrapper detection:**
 
 1. Source type must be a named type with exactly one type argument: `W<T>`
-2. Source type must have a public, non-static property named `Value`
-3. The `Value` property's return type must match the destination property type (or be assignable after stripping nullable annotations)
-4. The destination type must be `T` (the type argument of `W<T>`)
-5. Not triggered when the destination type is `W<T>` (same wrapper type — that's a direct assignment)
+2. Source type must be an allowlisted wrapper type. For v1.6, the built-in allowlist contains only `StringEnum<T>` (from `Octokit.Webhooks.Models`). Future versions may expand the allowlist or add an opt-in attribute for user-defined wrappers
+3. Source type must have a public, non-static property named `Value`
+4. The `Value` property's return type must match the destination property type (or be assignable after stripping nullable annotations)
+5. The destination type must be `T` (the type argument of `W<T>`)
+6. Not triggered when the destination type is `W<T>` (same wrapper type — that's a direct assignment)
+7. Explicitly excluded: `Nullable<T>` (handled by existing nullable logic) and `Lazy<T>` (`.Value` has side effects)
 
-This is intentionally narrow to avoid false positives. The `Value` property name is a well-established convention (`Nullable<T>.Value`, `StronglyTypedId<T>.Value`, `StringEnum<T>.Value`).
+This is intentionally narrow to avoid false positives and surprising runtime behavior. Types like `Lazy<T>` have `.Value` properties that trigger computation or throw, so a generic "any type with `.Value`" rule would be unsafe. Only known pure wrappers participate in auto-unwrapping.
 
 ### Precedence
 
@@ -653,10 +655,10 @@ Built-in type coercions slot into the existing property assignment priority:
 | `DateTimeOffset` → `DateTime` | `.UtcDateTime` |
 | `DateTimeOffset?` → `DateTime?` | `?.UtcDateTime` |
 | `DateTime` → `DateTimeOffset` | Direct assignment (implicit conversion) |
-| `Wrapper<T>` → `T` (with `.Value` property) | `.Value` |
+| `Wrapper<T>` → `T` (allowlisted wrapper with `.Value` property) | `.Value` |
 | `Wrapper<T>?` → `T?` | `?.Value` |
 | `T` → `Wrapper<T>` | Not auto-reversed — use `[ForgeProperty(ConvertWith = ...)]` |
-| No `.Value` property on wrapper type | No coercion — falls through to auto-wire |
+| No `.Value` property on wrapper type or not allowlisted | No coercion — falls through to auto-wire |
 
 ### Competitor Comparison
 
@@ -1033,7 +1035,7 @@ All v1.6 features work within the existing attribute surface (one new property o
 
 v1.6 introduces two behavioral changes that may affect existing forgers:
 
-1. **String→enum null/empty handling (Feature 1)** — `Enum.Parse` on null/empty strings now returns `default(TEnum)` instead of throwing. This is safer but may change behavior for projects that relied on the exception. For projects using `StringToEnum.TryParse`, empty strings (`""`) now return `default(TEnum)` instead of being silently parsed to `(TEnum)0` — this is more consistent but may change behavior if your enums have meaningful zero values. **To preserve v1.5 behavior**: use `[ForgeFrom]` with an explicit resolver that calls `Enum.Parse` without the guard.
+1. **String→enum null/empty handling (Feature 1)** — `Enum.Parse` on null/empty strings now returns `default(TEnum)` instead of throwing. This is safer but may change behavior for projects that relied on the exception. For projects using `StringToEnumConversion.TryParse`, the generated code now includes an explicit `IsNullOrEmpty` guard for consistency, though runtime behavior is unchanged since `TryParse` already returns `false` for null/empty. **To preserve v1.5 behavior**: use `[ForgeFrom]` with an explicit resolver that calls `Enum.Parse` without the guard.
 
 2. **Constructor preference for get-only types (Feature 5)** — The generator now prefers parameterized constructors when the destination type has get-only properties with matching source properties. This may activate constructor-based mapping for types that previously used the parameterless constructor. **To preserve v1.5 behavior**: set `ConstructorPreference = ConstructorPreference.PreferParameterless` on the forger or assembly.
 
@@ -1048,7 +1050,7 @@ v1.6 introduces two behavioral changes that may affect existing forgers:
 | Limitation | Reason | Workaround |
 |-----------|--------|------------|
 | Built-in type coercions are not user-extensible | Hard-coded to avoid combinatorial complexity; per-property `ConvertWith` covers custom cases | Use `[ForgeProperty(ConvertWith = ...)]` for any coercion not built in |
-| Generic wrapper unwrap only matches `.Value` property | Narrow detection to avoid false positives | Use `[ForgeProperty(ConvertWith = ...)]` for wrappers with different accessor names |
+| Generic wrapper unwrap only matches allowlisted types (v1.6: `StringEnum<T>`) | Narrow detection via allowlist to avoid side effects from types like `Lazy<T>` | Use `[ForgeProperty(ConvertWith = ...)]` for wrappers not on the allowlist |
 | Reverse direction not supported for `T → Wrapper<T>` | No general way to construct a wrapper from its inner value | Use explicit `[ForgeProperty(ConvertWith = ...)]` on the reverse method |
 | Constructor preference may select unexpected constructor | Auto-detection is based on get-only property coverage heuristic | Use `ConstructorPreference.PreferParameterless` to opt out |
 | String→enum empty-string guard always uses `default(TEnum)` | No configuration for custom empty-string behavior | Use `[ForgeFrom]` resolver for custom empty-string logic |
