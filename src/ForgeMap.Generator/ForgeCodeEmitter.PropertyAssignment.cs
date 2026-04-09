@@ -150,7 +150,33 @@ internal sealed partial class ForgeCodeEmitter
                 // DateTimeOffset→DateTime auto-coercion for [ForgeProperty] mapped properties
                 var dtoCoercionExpr = TryGenerateDateTimeOffsetToDateTimeCoercion(sourceLeafType, destProp.Type, sourceExpr);
                 if (dtoCoercionExpr != null)
+                {
+                    // If source is nullable DateTimeOffset? and dest is non-nullable DateTime,
+                    // route through NullPropertyHandling pipeline (except NullForgiving, where the
+                    // default source!.Value.UtcDateTime is already correct)
+                    var srcIsNullableDto = GetNullableUnderlyingType(sourceLeafType) != null;
+                    var dstIsNullableDto = GetNullableUnderlyingType(destProp.Type) != null;
+                    if (srcIsNullableDto && !dstIsNullableDto)
+                    {
+                        var strategy = ResolveNullPropertyHandling(destProp.Name, nullPropertyHandlingOverrides);
+                        if (strategy == 1 && skipNullAssignments != null) // SkipNull
+                        {
+                            if (destProp.SetMethod?.IsInitOnly == true)
+                                return dtoCoercionExpr;
+                            var localVar = "__dto_" + SanitizeVarName(destProp.Name);
+                            skipNullAssignments.Add((destProp.Name, sourceExpr, localVar, $"{localVar}.Value.UtcDateTime"));
+                            return null;
+                        }
+                        if (strategy != 0) // Not NullForgiving — apply CoalesceToDefault/ThrowException
+                        {
+                            var handledExpr = ApplyNullPropertyHandlingExpression(
+                                $"{sourceExpr}?.UtcDateTime", destProp.Type, destProp.Name,
+                                destProp.ContainingType.Name, strategy, method);
+                            if (handledExpr != null) return handledExpr;
+                        }
+                    }
                     return dtoCoercionExpr;
+                }
 
                 if (_config.AutoWireNestedMappings)
                 {
@@ -264,7 +290,32 @@ internal sealed partial class ForgeCodeEmitter
         {
             var convDtoCoercionExpr = TryGenerateDateTimeOffsetToDateTimeCoercion(sourceProp.Type, destProp.Type, $"{sourceParam}.{sourceProp.Name}");
             if (convDtoCoercionExpr != null)
+            {
+                // If source is nullable DateTimeOffset? and dest is non-nullable DateTime,
+                // route through NullPropertyHandling pipeline (except NullForgiving)
+                var srcIsNullableDto = GetNullableUnderlyingType(sourceProp.Type) != null;
+                var dstIsNullableDto = GetNullableUnderlyingType(destProp.Type) != null;
+                if (srcIsNullableDto && !dstIsNullableDto)
+                {
+                    var strategy = ResolveNullPropertyHandling(destProp.Name, nullPropertyHandlingOverrides);
+                    if (strategy == 1 && skipNullAssignments != null) // SkipNull
+                    {
+                        if (destProp.SetMethod?.IsInitOnly == true)
+                            return convDtoCoercionExpr;
+                        var localVar = "__dto_" + SanitizeVarName(destProp.Name);
+                        skipNullAssignments.Add((destProp.Name, $"{sourceParam}.{sourceProp.Name}", localVar, $"{localVar}.Value.UtcDateTime"));
+                        return null;
+                    }
+                    if (strategy != 0) // Not NullForgiving — apply CoalesceToDefault/ThrowException
+                    {
+                        var handledExpr = ApplyNullPropertyHandlingExpression(
+                            $"{sourceParam}.{sourceProp.Name}?.UtcDateTime", destProp.Type, destProp.Name,
+                            destProp.ContainingType.Name, strategy, method);
+                        if (handledExpr != null) return handledExpr;
+                    }
+                }
                 return convDtoCoercionExpr;
+            }
         }
 
         // Try automatic flattening: destProp "CustomerName" → source.Customer.Name
