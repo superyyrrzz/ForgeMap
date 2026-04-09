@@ -30,7 +30,7 @@ internal sealed partial class ForgeCodeEmitter
         List<(string DestPropName, string SourceExpr, string LocalVarName, string? AssignExpr)>? skipNullAssignments = null,
         List<(string DestPropName, string Block)>? postConstructionCollections = null,
         List<string>? preConstructionBlocks = null,
-        Dictionary<string, (string? MethodName, string? ConverterTypeName)>? propertyConvertWithMappings = null)
+        Dictionary<string, (string? MethodName, string? ConverterTypeName, INamedTypeSymbol? ConverterTypeSymbol)>? propertyConvertWithMappings = null)
     {
         // Skip ignored properties
         if (ignoredProperties.Contains(destProp.Name))
@@ -1007,7 +1007,7 @@ internal sealed partial class ForgeCodeEmitter
     /// </summary>
     private string? GeneratePropertyConvertWithExpression(
         IPropertySymbol destProp,
-        (string? MethodName, string? ConverterTypeName) convertWithInfo,
+        (string? MethodName, string? ConverterTypeName, INamedTypeSymbol? ConverterTypeSymbol) convertWithInfo,
         string sourceParam,
         INamedTypeSymbol sourceType,
         IEnumerable<IPropertySymbol> sourceProperties,
@@ -1090,6 +1090,26 @@ internal sealed partial class ForgeCodeEmitter
         if (!string.IsNullOrEmpty(convertWithInfo.ConverterTypeName))
         {
             var converterTypeName = convertWithInfo.ConverterTypeName!;
+            var converterTypeSymbol = convertWithInfo.ConverterTypeSymbol;
+
+            // Validate ITypeConverter<TSource, TDest> implementation
+            if (converterTypeSymbol != null && !ImplementsITypeConverter(converterTypeSymbol, sourcePropertyType, destProp.Type))
+            {
+                ReportDiagnosticIfNotSuppressed(context,
+                    DiagnosticDescriptors.PropertyConverterSignatureMismatch,
+                    method.Locations.FirstOrDefault(),
+                    converterTypeName, destProp.Name,
+                    sourcePropertyType.ToDisplayString(), destProp.Type.ToDisplayString());
+                return null;
+            }
+
+            // Check for DI capability or parameterless ctor
+            string? scopeFactoryField = _iServiceScopeFactorySymbol != null
+                ? FindFieldByType(forger.Symbol, _iServiceScopeFactorySymbol)
+                : null;
+            string? serviceProviderField = _iServiceProviderSymbol != null
+                ? FindFieldByType(forger.Symbol, _iServiceProviderSymbol)
+                : null;
 
             // Report info diagnostic
             ReportDiagnosticIfNotSuppressed(context,
@@ -1097,7 +1117,34 @@ internal sealed partial class ForgeCodeEmitter
                 method.Locations.FirstOrDefault(),
                 destProp.Name, converterTypeName);
 
-            return $"new {converterTypeName}().Convert({sourceExpr}{nullForgiving})";
+            if (scopeFactoryField != null)
+            {
+                return $"(({converterTypeName})global::Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.GetRequiredService((this.{scopeFactoryField}.CreateScope()).ServiceProvider, typeof({converterTypeName}))).Convert({sourceExpr}{nullForgiving})";
+            }
+            else if (serviceProviderField != null)
+            {
+                return $"(({converterTypeName})(this.{serviceProviderField}.GetService(typeof({converterTypeName})) ?? throw new global::System.InvalidOperationException(\"No service for type '\" + typeof({converterTypeName}).FullName + \"' has been registered.\"))).Convert({sourceExpr}{nullForgiving})";
+            }
+            else
+            {
+                // No DI — require public parameterless constructor
+                if (converterTypeSymbol != null)
+                {
+                    var hasParameterlessCtor = converterTypeSymbol.InstanceConstructors.Any(c =>
+                        c.Parameters.Length == 0 && c.DeclaredAccessibility == Accessibility.Public);
+
+                    if (!hasParameterlessCtor)
+                    {
+                        ReportDiagnosticIfNotSuppressed(context,
+                            DiagnosticDescriptors.PropertyConverterMethodNotFound,
+                            method.Locations.FirstOrDefault(),
+                            converterTypeName, destProp.Name);
+                        return null;
+                    }
+                }
+
+                return $"new {converterTypeName}().Convert({sourceExpr}{nullForgiving})";
+            }
         }
 
         return null;

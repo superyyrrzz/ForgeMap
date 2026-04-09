@@ -301,7 +301,7 @@ internal sealed partial class ForgeCodeEmitter
         ForgerInfo forger,
         SourceProductionContext context,
         IMethodSymbol method,
-        Dictionary<string, (string? MethodName, string? ConverterTypeName)>? propertyConvertWithMappings = null)
+        Dictionary<string, (string? MethodName, string? ConverterTypeName, INamedTypeSymbol? ConverterTypeSymbol)>? propertyConvertWithMappings = null)
     {
         // Constructor mapping: generate new Dest(param1: expr1, param2: expr2) { Prop = value, ... }
         // Using object initializer syntax so init-only properties work too
@@ -408,7 +408,7 @@ internal sealed partial class ForgeCodeEmitter
         ForgerInfo forger,
         SourceProductionContext context,
         IMethodSymbol method,
-        Dictionary<string, (string? MethodName, string? ConverterTypeName)>? propertyConvertWithMappings = null)
+        Dictionary<string, (string? MethodName, string? ConverterTypeName, INamedTypeSymbol? ConverterTypeSymbol)>? propertyConvertWithMappings = null)
     {
         // When AfterForge hooks exist, we need a variable to pass to the hooks
         var skipNullAssignmentsAfterForge = new List<(string DestPropName, string SourceExpr, string LocalVarName, string? AssignExpr)>();
@@ -480,7 +480,7 @@ internal sealed partial class ForgeCodeEmitter
         ForgerInfo forger,
         SourceProductionContext context,
         IMethodSymbol method,
-        Dictionary<string, (string? MethodName, string? ConverterTypeName)>? propertyConvertWithMappings = null)
+        Dictionary<string, (string? MethodName, string? ConverterTypeName, INamedTypeSymbol? ConverterTypeSymbol)>? propertyConvertWithMappings = null)
     {
         // Object initializer pattern
         var skipNullAssignmentsPlain = new List<(string DestPropName, string SourceExpr, string LocalVarName, string? AssignExpr)>();

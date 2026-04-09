@@ -152,9 +152,9 @@ internal sealed partial class ForgeCodeEmitter
     /// Gets per-property ConvertWith mappings from [ForgeProperty(ConvertWith=...)] attributes.
     /// Returns a dictionary mapping destination property name to (MethodName, ConverterTypeName).
     /// </summary>
-    private Dictionary<string, (string? MethodName, string? ConverterTypeName)> GetPropertyConvertWithMappings(IMethodSymbol method)
+    private Dictionary<string, (string? MethodName, string? ConverterTypeName, INamedTypeSymbol? ConverterTypeSymbol)> GetPropertyConvertWithMappings(IMethodSymbol method)
     {
-        var result = new Dictionary<string, (string? MethodName, string? ConverterTypeName)>(StringComparer.Ordinal);
+        var result = new Dictionary<string, (string? MethodName, string? ConverterTypeName, INamedTypeSymbol? ConverterTypeSymbol)>(StringComparer.Ordinal);
 
         // From [ForgeProperty(..., ConvertWith = "...", ConvertWithType = typeof(...))]
         foreach (var attr in GetMethodAttributes(method, _forgePropertyAttributeSymbol))
@@ -167,6 +167,7 @@ internal sealed partial class ForgeCodeEmitter
 
                 string? methodName = null;
                 string? converterTypeName = null;
+                INamedTypeSymbol? converterTypeSymbol = null;
 
                 foreach (var named in attr.NamedArguments)
                 {
@@ -177,14 +178,17 @@ internal sealed partial class ForgeCodeEmitter
                             break;
                         case "ConvertWithType":
                             if (named.Value.Value is INamedTypeSymbol typeSymbol)
-                                converterTypeName = typeSymbol.ToDisplayString();
+                            {
+                                converterTypeName = typeSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+                                converterTypeSymbol = typeSymbol;
+                            }
                             break;
                     }
                 }
 
                 if (!string.IsNullOrEmpty(methodName) || !string.IsNullOrEmpty(converterTypeName))
                 {
-                    result[destinationProperty!] = (methodName, converterTypeName);
+                    result[destinationProperty!] = (methodName, converterTypeName, converterTypeSymbol);
                 }
             }
         }
