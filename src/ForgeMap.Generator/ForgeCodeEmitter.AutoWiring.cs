@@ -1042,14 +1042,16 @@ internal sealed partial class ForgeCodeEmitter
             return $"new {rodType}({toDictExpr})";
         }
 
-        // For Dictionary, IDictionary, or any other dict type
+        // For Dictionary, IDictionary, ToDictionary already returns a compatible type
         if (destDef == "System.Collections.Generic.Dictionary<TKey, TValue>" ||
             destDef == "System.Collections.Generic.IDictionary<TKey, TValue>")
         {
             return toDictExpr;
         }
 
-        return toDictExpr;
+        // Unsupported concrete dictionary shapes (e.g. SortedDictionary, ConcurrentDictionary)
+        // fall back so FM0051 can be raised
+        return null;
     }
 
     /// <summary>

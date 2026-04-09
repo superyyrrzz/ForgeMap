@@ -605,7 +605,7 @@ internal sealed partial class ForgeCodeEmitter
 
                 if (matchedCtor == null)
                 {
-                    // FM0053: specified constructor not found
+                    // FM0047: specified constructor not found
                     ReportDiagnosticIfNotSuppressed(context,
                         DiagnosticDescriptors.SpecifiedConstructorNotFound,
                         method.Locations.FirstOrDefault(),
@@ -630,7 +630,7 @@ internal sealed partial class ForgeCodeEmitter
         var parameterlessCtor = constructors.FirstOrDefault(c => c.Parameters.Length == 0);
         if (parameterlessCtor != null && preferParameterless)
         {
-            // FM0054: info diagnostic (disabled by default)
+            // FM0048: info diagnostic (disabled by default)
             ReportDiagnosticIfNotSuppressed(context,
                 DiagnosticDescriptors.ConstructorMappingInfo,
                 method.Locations.FirstOrDefault(),
@@ -994,7 +994,7 @@ internal sealed partial class ForgeCodeEmitter
 
         if (allMatched)
         {
-            // FM0054: info diagnostic for routing
+            // FM0048: info diagnostic for routing
             ReportDiagnosticIfNotSuppressed(context,
                 DiagnosticDescriptors.ConstructorMappingInfo,
                 method.Locations.FirstOrDefault(),
@@ -1014,26 +1014,11 @@ internal sealed partial class ForgeCodeEmitter
         if (value == null)
             return "default";
         if (value is string s)
-            return $"\"{s.Replace("\\", "\\\\").Replace("\"", "\\\"")}\"";
+            return Microsoft.CodeAnalysis.CSharp.SymbolDisplay.FormatLiteral(s, true);
         if (value is bool b)
             return b ? "true" : "false";
         if (value is char c)
-        {
-            return c switch
-            {
-                '\'' => @"'\''",
-                '\\' => @"'\\'",
-                '\0' => @"'\0'",
-                '\a' => @"'\a'",
-                '\b' => @"'\b'",
-                '\f' => @"'\f'",
-                '\n' => @"'\n'",
-                '\r' => @"'\r'",
-                '\t' => @"'\t'",
-                '\v' => @"'\v'",
-                _ => $"'{c}'"
-            };
-        }
+            return Microsoft.CodeAnalysis.CSharp.SymbolDisplay.FormatLiteral(c, true);
         if (value is float f)
             return FormattableString.Invariant($"{f}f");
         if (value is double d)
@@ -1043,7 +1028,7 @@ internal sealed partial class ForgeCodeEmitter
         if (value is long l)
             return FormattableString.Invariant($"{l}L");
         if (type.TypeKind == TypeKind.Enum)
-            return $"({type.ToDisplayString()}){value}";
+            return $"({type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}){value}";
         return string.Format(System.Globalization.CultureInfo.InvariantCulture, "{0}", value);
     }
 
