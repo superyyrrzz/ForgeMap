@@ -887,13 +887,6 @@ internal sealed partial class ForgeCodeEmitter
                         method.Locations.FirstOrDefault(),
                         param.Name,
                         destinationType.Name);
-
-                    // FM0052: more descriptive unmatched warning
-                    ReportDiagnosticIfNotSuppressed(context,
-                        DiagnosticDescriptors.UnmatchedConstructorParameter,
-                        method.Locations.FirstOrDefault(),
-                        param.Name,
-                        destinationType.Name);
                 }
             }
             return (null, null);
@@ -1033,16 +1026,16 @@ internal sealed partial class ForgeCodeEmitter
         if (value is char c)
             return $"'{c}'";
         if (value is float f)
-            return $"{f}f";
+            return FormattableString.Invariant($"{f}f");
         if (value is double d)
-            return $"{d}d";
+            return FormattableString.Invariant($"{d}d");
         if (value is decimal m)
-            return $"{m}m";
+            return FormattableString.Invariant($"{m}m");
         if (value is long l)
-            return $"{l}L";
+            return FormattableString.Invariant($"{l}L");
         if (type.TypeKind == TypeKind.Enum)
             return $"({type.ToDisplayString()}){value}";
-        return value.ToString()!;
+        return string.Format(System.Globalization.CultureInfo.InvariantCulture, "{0}", value);
     }
 
     /// <summary>
