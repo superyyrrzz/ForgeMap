@@ -992,7 +992,7 @@ If this causes issues (e.g., a constructor has side effects), use `ConstructorPr
 | Get-only property detection | ✅ Automatic | ✅ Automatic | ✅ Automatic |
 | Constructor preference config | `.DisableCtorValidation()` | `MapperConstructor` attribute | `ConstructorPreference` enum |
 | Hybrid (ctor + setter) | ✅ | ✅ | ✅ |
-| Optional parameter handling | Skipped | Skipped | Omitted (uses ctor defaults) |
+| Optional parameter handling | Skipped | Skipped | Explicit default args for unmatched optional params |
 | Compile-time validation | ❌ Runtime errors | ✅ | ✅ FM0013/FM0014/FM0046 |
 
 ---
