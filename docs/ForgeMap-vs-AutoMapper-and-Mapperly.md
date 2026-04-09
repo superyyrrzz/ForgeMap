@@ -26,7 +26,7 @@ The table below compares all three tools across reverse mapping, polymorphic dis
 | **Mutation mapping** | `Map(src, dest)` | `Map(src, dest)` | ✅ Partial-method mutation pattern with `[UseExistingValue]` destination |
 | **Collection auto-generation** | Runtime | Auto-generated | ✅ Full (`T[]`, `List<T>`, `IEnumerable<T>`, `HashSet<T>`, etc.) |
 | **Inline collection mapping** | N/A | Auto-generated | ✅ Generates inline iteration for collection properties, no explicit method needed |
-| **Nested existing-target update** | `Map(src, dest)` updates nested (runtime) | ❌ Not supported ([#884](https://github.com/riok/mapperly/issues/884), [#1311](https://github.com/riok/mapperly/issues/1311)) | ✅ `ExistingTarget = true` with collection sync strategies *(planned v1.4)* |
+| **Nested existing-target update** | `Map(src, dest)` updates nested (runtime) | ❌ Not supported ([#884](https://github.com/riok/mapperly/issues/884), [#1311](https://github.com/riok/mapperly/issues/1311)) | ✅ `ExistingTarget = true` with collection sync strategies *(shipped in v1.4)* |
 | **Dictionary→Object mapping** | ❌ | ❌ Not supported ([#1309](https://github.com/riok/mapperly/issues/1309)) | ✅ `[ForgeDictionary]` with type-safe conversions *(planned, future)* |
 | **Diagnostics** | Runtime exceptions | ~95 diagnostics (RMG001–RMG095) | 27 diagnostics (FM0001–FM0027), 10 more planned for v1.4 (FM0028–FM0037), 8 planned for v1.5 (FM0038–FM0045), 7 planned for v1.6 (FM0046–FM0052) |
 | **Debuggable generated code** | ❌ | ✅ | ✅ |

@@ -1031,7 +1031,7 @@ All v1.6 features work within the existing attribute surface (one new property o
 
 ### From v1.5 to v1.6
 
-v1.6 introduces two behavioral changes that may affect existing forgers:
+v1.6 introduces several behavioral changes that may affect existing forgers:
 
 1. **String→enum null/empty handling (Feature 1)** — `Enum.Parse` on null/empty strings now returns `default(TEnum)` instead of throwing. This is safer but may change behavior for projects that relied on the exception. For projects using `StringToEnumConversion.TryParse`, the generated code now includes an explicit `IsNullOrEmpty` guard for consistency, though runtime behavior is unchanged since `TryParse` already returns `false` for null/empty. **To preserve v1.5 behavior**: use `[ForgeFrom]` with an explicit resolver that calls `Enum.Parse` without the guard.
 
@@ -1039,7 +1039,9 @@ v1.6 introduces two behavioral changes that may affect existing forgers:
 
 3. **Nullable collection coercion (Feature 2)** — Properties that previously triggered CS8620 will now generate nullable-safe coercion code. This should only eliminate warnings, not change runtime behavior.
 
-4. **Per-property ConvertWith (Feature 3)** and **Built-in type coercions (Feature 4)** are opt-in — no behavior change unless explicitly used.
+4. **Built-in type coercions (Feature 4)** — `DateTimeOffset → DateTime` and allowlisted generic wrapper unwrapping (`StringEnum<T> → T`) are applied automatically when matching type pairs are detected. Properties that previously required manual methods or were skipped (FM0006) will now be auto-mapped. **To preserve v1.5 behavior**: use `[Ignore]` on the affected property, or use `[ForgeProperty(ConvertWith = ...)]` to control the conversion explicitly.
+
+5. **Per-property ConvertWith (Feature 3)** is opt-in — no behavior change unless explicitly used via `[ForgeProperty(ConvertWith = ...)]`.
 
 ---
 
