@@ -1043,7 +1043,16 @@ internal sealed partial class ForgeCodeEmitter
         }
 
         var (sourceExpr, hasNullConditional) = GenerateSourceExpressionWithNullInfo(sourceParam, sourcePropName, sourceType);
+        var isLiftedValueType = hasNullConditional && sourcePropertyType.IsValueType && GetNullableUnderlyingType(sourcePropertyType) == null;
         var nullForgiving = hasNullConditional && sourcePropertyType.NullableAnnotation != NullableAnnotation.Annotated ? "!" : "";
+
+        // When null-conditional lifts a non-nullable value type (e.g., int -> int?),
+        // we need an explicit cast back to the original type, not just null-forgiving
+        string castSourceExpr;
+        if (isLiftedValueType)
+            castSourceExpr = $"({sourcePropertyType.ToDisplayString()})({sourceExpr})!";
+        else
+            castSourceExpr = $"{sourceExpr}{nullForgiving}";
 
         // Method-based converter
         if (!string.IsNullOrEmpty(convertWithInfo.MethodName))
@@ -1083,7 +1092,7 @@ internal sealed partial class ForgeCodeEmitter
                 method.Locations.FirstOrDefault(),
                 destProp.Name, converterMethodName);
 
-            return $"{converterMethodName}({sourceExpr}{nullForgiving})";
+            return $"{converterMethodName}({castSourceExpr})";
         }
 
         // Type-based converter (ITypeConverter<TSource, TDest>)
@@ -1118,7 +1127,7 @@ internal sealed partial class ForgeCodeEmitter
 
             if (serviceProviderField != null)
             {
-                return $"(({converterTypeName})(this.{serviceProviderField}.GetService(typeof({converterTypeName})) ?? throw new global::System.InvalidOperationException(\"No service for type '\" + typeof({converterTypeName}).FullName + \"' has been registered.\"))).Convert({sourceExpr}{nullForgiving})";
+                return $"(({converterTypeName})(this.{serviceProviderField}.GetService(typeof({converterTypeName})) ?? throw new global::System.InvalidOperationException(\"No service for type '\" + typeof({converterTypeName}).FullName + \"' has been registered.\"))).Convert({castSourceExpr})";
             }
             else
             {
@@ -1138,7 +1147,7 @@ internal sealed partial class ForgeCodeEmitter
                     }
                 }
 
-                return $"new {converterTypeName}().Convert({sourceExpr}{nullForgiving})";
+                return $"new {converterTypeName}().Convert({castSourceExpr})";
             }
         }
 
