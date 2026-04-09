@@ -563,8 +563,8 @@ internal sealed partial class ForgeCodeEmitter
                 SymbolEqualityComparer.Default.Equals(a.AttributeClass, _forgeConstructorAttributeSymbol))
             : null;
 
-        // Determine if we should prefer parameterized constructors
-        var preferParameterized = _config.PreferParameterizedConstructor;
+        // Determine constructor preference
+        var preferParameterless = _config.ConstructorPreference == 1; // PreferParameterless
 
         if (forgeConstructorAttr != null)
         {
@@ -628,7 +628,7 @@ internal sealed partial class ForgeCodeEmitter
 
         // If a parameterless constructor exists and we don't prefer parameterized, use object initializer
         var parameterlessCtor = constructors.FirstOrDefault(c => c.Parameters.Length == 0);
-        if (parameterlessCtor != null && !preferParameterized)
+        if (parameterlessCtor != null && preferParameterless)
         {
             // FM0054: info diagnostic (disabled by default)
             ReportDiagnosticIfNotSuppressed(context,

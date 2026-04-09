@@ -422,7 +422,7 @@ internal sealed partial class ForgeCodeEmitter
                             nullPropertyHandlingOverrides, postConstructionCollections);
                     }
 
-                    // Unsupported nullable coercion — FM0057
+                    // Unsupported nullable coercion — FM0051
                     ReportDiagnosticIfNotSuppressed(context,
                         DiagnosticDescriptors.NullableCollectionCoercionUnsupported,
                         method.Locations.FirstOrDefault(),
@@ -468,7 +468,7 @@ internal sealed partial class ForgeCodeEmitter
                         nullPropertyHandlingOverrides, postConstructionCollections);
                 }
 
-                // Unsupported nullable coercion — FM0057
+                // Unsupported nullable coercion — FM0051
                 ReportDiagnosticIfNotSuppressed(context,
                     DiagnosticDescriptors.NullableCollectionCoercionUnsupported,
                     method.Locations.FirstOrDefault(),

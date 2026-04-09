@@ -370,7 +370,7 @@ internal static class DiagnosticDescriptors
         isEnabledByDefault: true);
 
     public static readonly DiagnosticDescriptor UnmatchedConstructorParameter = new(
-        id: "FM0052",
+        id: "FM0046",
         title: "Unmatched constructor parameter",
         messageFormat: "Constructor parameter '{0}' on '{1}' could not be matched to any source property or [ForgeProperty] mapping",
         category: Category,
@@ -378,7 +378,7 @@ internal static class DiagnosticDescriptors
         isEnabledByDefault: true);
 
     public static readonly DiagnosticDescriptor SpecifiedConstructorNotFound = new(
-        id: "FM0053",
+        id: "FM0047",
         title: "Specified constructor not found",
         messageFormat: "No constructor on '{0}' matches the parameter types specified in [ForgeConstructor]",
         category: Category,
@@ -386,7 +386,7 @@ internal static class DiagnosticDescriptors
         isEnabledByDefault: true);
 
     public static readonly DiagnosticDescriptor ConstructorMappingInfo = new(
-        id: "FM0054",
+        id: "FM0048",
         title: "Constructor mapping routing info",
         messageFormat: "Constructor routing for '{0}': {1}",
         category: Category,
@@ -394,7 +394,7 @@ internal static class DiagnosticDescriptors
         isEnabledByDefault: false);
 
     public static readonly DiagnosticDescriptor StringToEnumNullSafeGuardApplied = new(
-        id: "FM0055",
+        id: "FM0049",
         title: "Null-safe guard applied to string→enum conversion",
         messageFormat: "Property '{0}': null/empty string→enum guard applied; null or empty source values will return default({1})",
         category: Category,
@@ -402,7 +402,7 @@ internal static class DiagnosticDescriptors
         isEnabledByDefault: false);
 
     public static readonly DiagnosticDescriptor NullableCollectionCoercionApplied = new(
-        id: "FM0056",
+        id: "FM0050",
         title: "Nullable-safe collection coercion applied",
         messageFormat: "Property '{0}': nullable-safe collection coercion applied from '{1}' to '{2}'",
         category: Category,
@@ -410,7 +410,7 @@ internal static class DiagnosticDescriptors
         isEnabledByDefault: false);
 
     public static readonly DiagnosticDescriptor NullableCollectionCoercionUnsupported = new(
-        id: "FM0057",
+        id: "FM0051",
         title: "Unsupported nullable collection coercion",
         messageFormat: "Property '{0}': nullable element type coercion from '{1}' to '{2}' is not supported for this collection kind",
         category: Category,
@@ -418,7 +418,7 @@ internal static class DiagnosticDescriptors
         isEnabledByDefault: true);
 
     public static readonly DiagnosticDescriptor PropertyConverterMethodNotFound = new(
-        id: "FM0058",
+        id: "FM0052",
         title: "Per-property converter method not found",
         messageFormat: "Converter method '{0}' specified for property '{1}' was not found on the forger class",
         category: Category,
@@ -426,7 +426,7 @@ internal static class DiagnosticDescriptors
         isEnabledByDefault: true);
 
     public static readonly DiagnosticDescriptor PropertyConverterSignatureMismatch = new(
-        id: "FM0059",
+        id: "FM0053",
         title: "Per-property converter signature mismatch",
         messageFormat: "Converter method '{0}' for property '{1}' has an incompatible signature; expected '{2}' -> '{3}'",
         category: Category,
@@ -434,7 +434,7 @@ internal static class DiagnosticDescriptors
         isEnabledByDefault: true);
 
     public static readonly DiagnosticDescriptor PropertyConverterApplied = new(
-        id: "FM0060",
+        id: "FM0054",
         title: "Per-property converter applied",
         messageFormat: "Property '{0}': per-property converter '{1}' applied",
         category: Category,

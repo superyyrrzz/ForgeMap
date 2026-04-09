@@ -149,7 +149,7 @@ internal sealed partial class ForgeCodeEmitter
     }
 
     /// <summary>
-    /// Gets per-property ConvertWith mappings from [ForgeProperty(ConvertWith=...)] and [PropertyConvertWith] attributes.
+    /// Gets per-property ConvertWith mappings from [ForgeProperty(ConvertWith=...)] attributes.
     /// Returns a dictionary mapping destination property name to (MethodName, ConverterTypeName).
     /// </summary>
     private Dictionary<string, (string? MethodName, string? ConverterTypeName)> GetPropertyConvertWithMappings(IMethodSymbol method)
@@ -185,34 +185,6 @@ internal sealed partial class ForgeCodeEmitter
                 if (!string.IsNullOrEmpty(methodName) || !string.IsNullOrEmpty(converterTypeName))
                 {
                     result[destinationProperty!] = (methodName, converterTypeName);
-                }
-            }
-        }
-
-        // From [PropertyConvertWith("destProp", "methodName")] or [PropertyConvertWith("destProp", typeof(Converter))]
-        if (_propertyConvertWithAttributeSymbol != null)
-        {
-            foreach (var attr in GetMethodAttributes(method, _propertyConvertWithAttributeSymbol))
-            {
-                if (attr.ConstructorArguments.Length >= 2)
-                {
-                    var destinationProperty = attr.ConstructorArguments[0].Value as string;
-                    if (string.IsNullOrEmpty(destinationProperty))
-                        continue;
-
-                    // Check second arg: string method name or Type converter type
-                    var secondArg = attr.ConstructorArguments[1];
-                    string? methodName = secondArg.Value as string;
-                    string? converterTypeName = null;
-                    if (secondArg.Value is INamedTypeSymbol typeSymbol)
-                        converterTypeName = typeSymbol.ToDisplayString();
-
-                    if (!string.IsNullOrEmpty(methodName) || !string.IsNullOrEmpty(converterTypeName))
-                    {
-                        // Don't overwrite ForgeProperty-level setting
-                        if (!result.ContainsKey(destinationProperty!))
-                            result[destinationProperty!] = (methodName, converterTypeName);
-                    }
                 }
             }
         }

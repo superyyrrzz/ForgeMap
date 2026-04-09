@@ -681,7 +681,7 @@ internal sealed partial class ForgeCodeEmitter
             destEnumUnderlying.ToDisplayString(),
             strategyName);
 
-        // Report FM0055 when null-safe guard is applied (Parse mode, not StrictParse)
+        // Report FM0049 when null-safe guard is applied (Parse mode, not StrictParse)
         if (_config.StringToEnum == 0)
         {
             ReportDiagnosticIfNotSuppressed(context,

@@ -30,8 +30,8 @@ internal sealed class ForgerConfig
     /// <summary>0 = Parse (default, null-safe), 1 = TryParse, 2 = None, 3 = StrictParse</summary>
     public int StringToEnum { get; set; }
 
-    /// <summary>Whether to prefer parameterized constructors over parameterless ones. Default false.</summary>
-    public bool PreferParameterizedConstructor { get; set; }
+    /// <summary>0 = Auto (default), 1 = PreferParameterless</summary>
+    public int ConstructorPreference { get; set; }
 
     public StringComparison PropertyNameComparison =>
         PropertyMatching == 1 ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;

@@ -993,7 +993,7 @@ If this causes issues (e.g., a constructor has side effects), use `ConstructorPr
 | Constructor preference config | `.DisableCtorValidation()` | `MapperConstructor` attribute | `ConstructorPreference` enum |
 | Hybrid (ctor + setter) | ✅ | ✅ | ✅ |
 | Optional parameter handling | Skipped | Skipped | Omitted (uses ctor defaults) |
-| Compile-time validation | ❌ Runtime errors | ✅ | ✅ FM0013/FM0014/FM0052 |
+| Compile-time validation | ❌ Runtime errors | ✅ | ✅ FM0013/FM0014/FM0046 |
 
 ---
 
@@ -1001,13 +1001,15 @@ If this causes issues (e.g., a constructor has side effects), use `ConstructorPr
 
 | Code | Severity | Category | Feature | Description |
 |------|----------|----------|---------|-------------|
-| FM0046 | Info | `ForgeMap` | String→enum guard | Property '{0}' null/empty string coerced to `default({1})` |
-| FM0047 | Info | `ForgeMap` | Nullable collection coercion | Property '{0}' element nullability coerced from '{1}' to '{2}' |
-| FM0048 | Error | `ForgeMap` | Per-property `ConvertWith` | Per-property `ConvertWith` method '{0}' not found or wrong signature |
-| FM0049 | Error | `ForgeMap` | Per-property `ConvertWith` | Property '{0}' has conflicting conversion attributes |
-| FM0050 | Info | `ForgeMap` | Built-in type coercions | Property '{0}' auto-coerced from '{1}' to '{2}' via {3} |
-| FM0051 | Info | `ForgeMap` | Constructor preference | Constructor preferred over parameterless for type '{0}' |
-| FM0052 | Error | `ForgeMap` | Constructor preference | Constructor for type '{0}' cannot satisfy get-only properties: {1} |
+| FM0046 | Warning | `ForgeMap` | Constructor mapping | Unmatched constructor parameter '{0}' on '{1}' |
+| FM0047 | Error | `ForgeMap` | Constructor mapping | Specified constructor not found on '{0}' matching [ForgeConstructor] parameter types |
+| FM0048 | Info (disabled) | `ForgeMap` | Constructor mapping | Constructor routing info for '{0}': {1} |
+| FM0049 | Info (disabled) | `ForgeMap` | String→enum guard | Null/empty string→enum guard applied for property '{0}'; returns default({1}) |
+| FM0050 | Info (disabled) | `ForgeMap` | Nullable collection coercion | Nullable-safe collection coercion applied from '{1}' to '{2}' for property '{0}' |
+| FM0051 | Warning | `ForgeMap` | Nullable collection coercion | Unsupported nullable element type coercion from '{1}' to '{2}' for property '{0}' |
+| FM0052 | Warning | `ForgeMap` | Per-property `ConvertWith` | Converter method '{0}' for property '{1}' not found on forger class |
+| FM0053 | Warning | `ForgeMap` | Per-property `ConvertWith` | Converter method '{0}' for property '{1}' has incompatible signature; expected '{2}' → '{3}' |
+| FM0054 | Info (disabled) | `ForgeMap` | Per-property `ConvertWith` | Per-property converter '{1}' applied to property '{0}' |
 
 ---
 

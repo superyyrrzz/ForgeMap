@@ -9,7 +9,7 @@ namespace ForgeMap;
 /// <remarks>
 /// When applied, the generator will look for a constructor on the destination type
 /// whose parameter types match the specified <see cref="ParameterTypes"/> array.
-/// If no matching constructor is found, diagnostic FM0053 is emitted.
+/// If no matching constructor is found, diagnostic FM0047 is emitted.
 /// </remarks>
 [AttributeUsage(AttributeTargets.Method, AllowMultiple = false, Inherited = false)]
 public sealed class ForgeConstructorAttribute : Attribute
