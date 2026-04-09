@@ -22,6 +22,7 @@ internal sealed partial class ForgeCodeEmitter
     private readonly INamedTypeSymbol? _includeBaseForgeAttributeSymbol;
     private readonly INamedTypeSymbol? _forgeAllDerivedAttributeSymbol;
     private readonly INamedTypeSymbol? _convertWithAttributeSymbol;
+    private readonly INamedTypeSymbol? _propertyConvertWithAttributeSymbol;
     private readonly INamedTypeSymbol? _useExistingValueAttributeSymbol;
     private readonly INamedTypeSymbol? _forgeConstructorAttributeSymbol;
     private readonly INamedTypeSymbol? _iTypeConverterOpenSymbol;
@@ -86,6 +87,7 @@ internal sealed partial class ForgeCodeEmitter
         _includeBaseForgeAttributeSymbol = compilation.GetTypeByMetadataName("ForgeMap.IncludeBaseForgeAttribute");
         _forgeAllDerivedAttributeSymbol = compilation.GetTypeByMetadataName("ForgeMap.ForgeAllDerivedAttribute");
         _convertWithAttributeSymbol = compilation.GetTypeByMetadataName("ForgeMap.ConvertWithAttribute");
+        _propertyConvertWithAttributeSymbol = compilation.GetTypeByMetadataName("ForgeMap.PropertyConvertWithAttribute");
         _useExistingValueAttributeSymbol = compilation.GetTypeByMetadataName("ForgeMap.UseExistingValueAttribute");
         _forgeConstructorAttributeSymbol = compilation.GetTypeByMetadataName("ForgeMap.ForgeConstructorAttribute");
         _iTypeConverterOpenSymbol = compilation.GetTypeByMetadataName("ForgeMap.ITypeConverter`2");

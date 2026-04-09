@@ -416,4 +416,28 @@ internal static class DiagnosticDescriptors
         category: Category,
         defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor PropertyConverterMethodNotFound = new(
+        id: "FM0058",
+        title: "Per-property converter method not found",
+        messageFormat: "Converter method '{0}' specified for property '{1}' was not found on the forger class",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor PropertyConverterSignatureMismatch = new(
+        id: "FM0059",
+        title: "Per-property converter signature mismatch",
+        messageFormat: "Converter method '{0}' for property '{1}' has an incompatible signature; expected '{2}' -> '{3}'",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor PropertyConverterApplied = new(
+        id: "FM0060",
+        title: "Per-property converter applied",
+        messageFormat: "Property '{0}': per-property converter '{1}' applied",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Info,
+        isEnabledByDefault: false);
 }

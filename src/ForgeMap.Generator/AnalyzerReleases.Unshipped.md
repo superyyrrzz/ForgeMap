@@ -11,3 +11,6 @@ FM0054 | ForgeMap | Disabled | Constructor mapping routing info
 FM0055 | ForgeMap | Disabled | Null-safe guard applied to string→enum conversion
 FM0056 | ForgeMap | Disabled | Nullable-safe collection coercion applied
 FM0057 | ForgeMap | Warning | Unsupported nullable collection coercion
+FM0058 | ForgeMap | Warning | Per-property converter method not found
+FM0059 | ForgeMap | Warning | Per-property converter signature mismatch
+FM0060 | ForgeMap | Disabled | Per-property converter applied

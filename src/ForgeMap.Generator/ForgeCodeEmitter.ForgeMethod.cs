@@ -326,9 +326,9 @@ internal sealed partial class ForgeCodeEmitter
                 continue;
 
             var assignment = GeneratePropertyAssignment(
-                destProp, sourceParam, sourceType, sourceProperties,
-                propertyMappings, resolverMappings, forgeWithMappings, ignoredProperties, forger, context, method,
-                nullPropertyHandlingOverrides, skipNullAssignmentsForCtor,
+               destProp, sourceParam, sourceType, sourceProperties,
+               propertyMappings, resolverMappings, forgeWithMappings, ignoredProperties, forger, context, method,
+               nullPropertyHandlingOverrides, skipNullAssignmentsForCtor,
                 postConstructionCollectionsForCtor, preConstructionBlocksForCtor);
 
             if (assignment != null)
@@ -415,10 +415,10 @@ internal sealed partial class ForgeCodeEmitter
         var afterForgeAssignments = new List<(string Name, string Expr)>();
         foreach (var destProp in destProperties.Where(p => p.SetMethod != null && p.SetMethod.DeclaredAccessibility >= Accessibility.Internal))
         {
-            var assignment = GeneratePropertyAssignment(
-                destProp, sourceParam, sourceType, sourceProperties,
-                propertyMappings, resolverMappings, forgeWithMappings, ignoredProperties, forger, context, method,
-                nullPropertyHandlingOverrides, skipNullAssignmentsAfterForge,
+           var assignment = GeneratePropertyAssignment(
+               destProp, sourceParam, sourceType, sourceProperties,
+               propertyMappings, resolverMappings, forgeWithMappings, ignoredProperties, forger, context, method,
+               nullPropertyHandlingOverrides, skipNullAssignmentsAfterForge,
                 postConstructionCollectionsAfterForge, preConstructionBlocksAfterForge);
 
             if (assignment != null)

@@ -29,11 +29,20 @@ internal sealed partial class ForgeCodeEmitter
         Dictionary<string, int> nullPropertyHandlingOverrides,
         List<(string DestPropName, string SourceExpr, string LocalVarName, string? AssignExpr)>? skipNullAssignments = null,
         List<(string DestPropName, string Block)>? postConstructionCollections = null,
-        List<string>? preConstructionBlocks = null)
+        List<string>? preConstructionBlocks = null,
+        Dictionary<string, (string? MethodName, string? ConverterTypeName)>? propertyConvertWithMappings = null)
     {
         // Skip ignored properties
         if (ignoredProperties.Contains(destProp.Name))
             return null;
+
+        // Check for per-property ConvertWith
+        if (propertyConvertWithMappings != null && propertyConvertWithMappings.TryGetValue(destProp.Name, out var convertWithInfo))
+        {
+            return GeneratePropertyConvertWithExpression(
+                destProp, convertWithInfo, sourceParam, sourceType,
+                sourceProperties, propertyMappings, forger, context, method);
+        }
 
         // Check if this property has a resolver from [ForgeFrom]
         if (resolverMappings.TryGetValue(destProp.Name, out var resolverMethodName))
@@ -137,6 +146,11 @@ internal sealed partial class ForgeCodeEmitter
                     }
                     return expr;
                 }
+
+                // DateTimeOffset→DateTime auto-coercion for [ForgeProperty] mapped properties
+                var dtoCoercionExpr = TryGenerateDateTimeOffsetToDateTimeCoercion(sourceLeafType, destProp.Type, sourceExpr);
+                if (dtoCoercionExpr != null)
+                    return dtoCoercionExpr;
 
                 if (_config.AutoWireNestedMappings)
                 {
@@ -243,6 +257,14 @@ internal sealed partial class ForgeCodeEmitter
                 return handledExpr ?? $"{expr}!";
             }
             return expr;
+        }
+
+        // DateTimeOffset→DateTime auto-coercion (convention path)
+        if (sourceProp != null)
+        {
+            var convDtoCoercionExpr = TryGenerateDateTimeOffsetToDateTimeCoercion(sourceProp.Type, destProp.Type, $"{sourceParam}.{sourceProp.Name}");
+            if (convDtoCoercionExpr != null)
+                return convDtoCoercionExpr;
         }
 
         // Try automatic flattening: destProp "CustomerName" → source.Customer.Name
@@ -567,6 +589,14 @@ internal sealed partial class ForgeCodeEmitter
             return GenerateEnumToStringExpression(sourcePropertyType, sourceExpression);
         }
 
+        // DateTimeOffset→DateTime auto-coercion for constructor parameters
+        if (sourcePropertyType != null)
+        {
+            var ctorDtoCoercion = TryGenerateDateTimeOffsetToDateTimeCoercion(sourcePropertyType, destPropertyType, sourceExpression);
+            if (ctorDtoCoercion != null)
+                return ctorDtoCoercion;
+        }
+
         return sourceExpression;
     }
 
@@ -865,5 +895,160 @@ internal sealed partial class ForgeCodeEmitter
                 sb.Append(c);
         }
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// Checks if the source type is DateTimeOffset (or Nullable&lt;DateTimeOffset&gt;) and the dest type
+    /// is DateTime (or Nullable&lt;DateTime&gt;), and if so, returns a coercion expression using .UtcDateTime.
+    /// Handles four cases:
+    ///   DateTimeOffset  → DateTime       : source.Prop.UtcDateTime
+    ///   DateTimeOffset? → DateTime?      : source.Prop?.UtcDateTime
+    ///   DateTimeOffset? → DateTime       : source.Prop!.Value.UtcDateTime
+    ///   DateTimeOffset  → DateTime?      : (global::System.DateTime?)source.Prop.UtcDateTime
+    /// Returns null if the types are not a DateTimeOffset→DateTime pair.
+    /// </summary>
+    private static string? TryGenerateDateTimeOffsetToDateTimeCoercion(
+        ITypeSymbol sourceType, ITypeSymbol destType, string sourceExpr)
+    {
+        var srcUnderlying = GetNullableUnderlyingType(sourceType);
+        var dstUnderlying = GetNullableUnderlyingType(destType);
+
+        var srcCore = srcUnderlying ?? sourceType;
+        var dstCore = dstUnderlying ?? destType;
+
+        // Check that the core types are System.DateTimeOffset → System.DateTime
+        if (srcCore.ToDisplayString() != "System.DateTimeOffset"
+            || dstCore.ToDisplayString() != "System.DateTime")
+            return null;
+
+        var srcIsNullable = srcUnderlying != null;
+        var dstIsNullable = dstUnderlying != null;
+
+        if (!srcIsNullable && !dstIsNullable)
+        {
+            // DateTimeOffset → DateTime
+            return $"{sourceExpr}.UtcDateTime";
+        }
+
+        if (srcIsNullable && dstIsNullable)
+        {
+            // DateTimeOffset? → DateTime?
+            return $"{sourceExpr}?.UtcDateTime";
+        }
+
+        if (srcIsNullable && !dstIsNullable)
+        {
+            // DateTimeOffset? → DateTime (nullable to non-nullable, suppress CS8629 with !)
+            return $"{sourceExpr}!.Value.UtcDateTime";
+        }
+
+        // !srcIsNullable && dstIsNullable
+        // DateTimeOffset → DateTime? (widening to nullable)
+        return $"(global::System.DateTime?){sourceExpr}.UtcDateTime";
+    }
+}
+
+// ---- Per-property ConvertWith support ----
+internal sealed partial class ForgeCodeEmitter
+{
+    /// <summary>
+    /// Generates a per-property converter call expression.
+    /// </summary>
+    private string? GeneratePropertyConvertWithExpression(
+        IPropertySymbol destProp,
+        (string? MethodName, string? ConverterTypeName) convertWithInfo,
+        string sourceParam,
+        INamedTypeSymbol sourceType,
+        IEnumerable<IPropertySymbol> sourceProperties,
+        Dictionary<string, string> propertyMappings,
+        ForgerInfo forger,
+        SourceProductionContext context,
+        IMethodSymbol method)
+    {
+        // Resolve source expression
+        string? sourcePropName = null;
+        ITypeSymbol? sourcePropertyType = null;
+
+        if (propertyMappings.TryGetValue(destProp.Name, out var mapped))
+        {
+            sourcePropName = mapped;
+            sourcePropertyType = ResolvePathLeafType(mapped, sourceType);
+        }
+        else
+        {
+            var matchingSourceProp = sourceProperties.FirstOrDefault(sp =>
+                string.Equals(sp.Name, destProp.Name, _config.PropertyNameComparison));
+            if (matchingSourceProp != null)
+            {
+                sourcePropName = matchingSourceProp.Name;
+                sourcePropertyType = matchingSourceProp.Type;
+            }
+        }
+
+        if (sourcePropName == null || sourcePropertyType == null)
+        {
+            // Cannot resolve source property — fall through to unmapped
+            return null;
+        }
+
+        var (sourceExpr, hasNullConditional) = GenerateSourceExpressionWithNullInfo(sourceParam, sourcePropName, sourceType);
+        var nullForgiving = hasNullConditional && sourcePropertyType.NullableAnnotation != NullableAnnotation.Annotated ? "!" : "";
+
+        // Method-based converter
+        if (!string.IsNullOrEmpty(convertWithInfo.MethodName))
+        {
+            var converterMethodName = convertWithInfo.MethodName!;
+
+            // Find method on forger class
+            var candidates = forger.Symbol.GetMembers(converterMethodName).OfType<IMethodSymbol>().ToList();
+            if (candidates.Count == 0)
+            {
+                ReportDiagnosticIfNotSuppressed(context,
+                    DiagnosticDescriptors.PropertyConverterMethodNotFound,
+                    method.Locations.FirstOrDefault(),
+                    converterMethodName, destProp.Name);
+                return null;
+            }
+
+            // Find a method with compatible signature: takes source property type, returns dest property type
+            var converterMethod = candidates.FirstOrDefault(m =>
+                m.Parameters.Length == 1 &&
+                CanAssign(sourcePropertyType, m.Parameters[0].Type) &&
+                CanAssign(m.ReturnType, destProp.Type));
+
+            if (converterMethod == null)
+            {
+                ReportDiagnosticIfNotSuppressed(context,
+                    DiagnosticDescriptors.PropertyConverterSignatureMismatch,
+                    method.Locations.FirstOrDefault(),
+                    converterMethodName, destProp.Name,
+                    sourcePropertyType.ToDisplayString(), destProp.Type.ToDisplayString());
+                return null;
+            }
+
+            // Report info diagnostic
+            ReportDiagnosticIfNotSuppressed(context,
+                DiagnosticDescriptors.PropertyConverterApplied,
+                method.Locations.FirstOrDefault(),
+                destProp.Name, converterMethodName);
+
+            return $"{converterMethodName}({sourceExpr}{nullForgiving})";
+        }
+
+        // Type-based converter (ITypeConverter<TSource, TDest>)
+        if (!string.IsNullOrEmpty(convertWithInfo.ConverterTypeName))
+        {
+            var converterTypeName = convertWithInfo.ConverterTypeName!;
+
+            // Report info diagnostic
+            ReportDiagnosticIfNotSuppressed(context,
+                DiagnosticDescriptors.PropertyConverterApplied,
+                method.Locations.FirstOrDefault(),
+                destProp.Name, converterTypeName);
+
+            return $"new {converterTypeName}().Convert({sourceExpr}{nullForgiving})";
+        }
+
+        return null;
     }
 }

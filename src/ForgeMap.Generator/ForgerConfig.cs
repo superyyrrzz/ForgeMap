@@ -68,7 +68,8 @@ internal readonly struct ResolvedMethodConfig
         List<string> beforeForgeHooks,
         List<string> afterForgeHooks,
         Dictionary<string, int> nullPropertyHandlingOverrides,
-        Dictionary<string, ExistingTargetConfig> existingTargetProperties)
+        Dictionary<string, ExistingTargetConfig> existingTargetProperties,
+        Dictionary<string, (string? MethodName, string? ConverterTypeName)>? propertyConvertWithMappings = null)
     {
         IgnoredProperties = ignoredProperties;
         PropertyMappings = propertyMappings;
@@ -78,6 +79,7 @@ internal readonly struct ResolvedMethodConfig
         AfterForgeHooks = afterForgeHooks;
         NullPropertyHandlingOverrides = nullPropertyHandlingOverrides;
         ExistingTargetProperties = existingTargetProperties;
+        PropertyConvertWithMappings = propertyConvertWithMappings ?? new Dictionary<string, (string? MethodName, string? ConverterTypeName)>(StringComparer.Ordinal);
     }
 
     public HashSet<string> IgnoredProperties { get; }
@@ -90,4 +92,6 @@ internal readonly struct ResolvedMethodConfig
     public Dictionary<string, int> NullPropertyHandlingOverrides { get; }
     /// <summary>Properties marked with ExistingTarget = true. Key = dest property name.</summary>
     public Dictionary<string, ExistingTargetConfig> ExistingTargetProperties { get; }
+    /// <summary>Per-property ConvertWith mappings. Key = dest property name, Value = (MethodName?, ConverterTypeName?).</summary>
+    public Dictionary<string, (string? MethodName, string? ConverterTypeName)> PropertyConvertWithMappings { get; }
 }
