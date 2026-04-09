@@ -39,7 +39,8 @@
           "SPEC-v1.3-auto-wiring.md",
           "SPEC-v1.4-advanced-mapping.md",
           "SPEC-v1.5-advanced-mapping.md",
-          "SPEC-v1.6-advanced-mapping.md",
+          "SPEC-v1.6-migration-features.md",
+          "SPEC-future-advanced-mapping.md",
           "ForgeMap-vs-AutoMapper-and-Mapperly.md"
         ],
         "src": "../docs",

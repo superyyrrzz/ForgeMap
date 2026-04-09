@@ -15,7 +15,8 @@ This section contains the internal design specifications for ForgeMap. These doc
 | **v1.3** | [Auto-Wiring](../../docs/SPEC-v1.3-auto-wiring.md) | Auto-wire nested & collection mappings, abstract destination dispatch |
 | **v1.4** | [Advanced Mapping](../../docs/SPEC-v1.4-advanced-mapping.md) | Nested existing-target, string-to-enum, `[ConvertWith]` |
 | **v1.5** | [Advanced Mapping](../../docs/SPEC-v1.5-advanced-mapping.md) | CoalesceToNew, collection coercion, standalone collection methods |
-| **v1.6** | [Advanced Mapping (Planned)](../../docs/SPEC-v1.6-advanced-mapping.md) | Upcoming features |
+| **v1.6** | [Migration Features (Planned)](../../docs/SPEC-v1.6-migration-features.md) | Per-property ConvertWith, type coercions, constructor preference |
+| **Future** | [Advanced Mapping (Planned)](../../docs/SPEC-future-advanced-mapping.md) | Auto-flattening, dictionary mapping |
 
 ## Comparison
 
