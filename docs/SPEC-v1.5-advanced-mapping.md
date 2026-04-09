@@ -11,14 +11,14 @@ v1.5 prioritizes four features driven by real-world AutoMapper → ForgeMap migr
 | 3 | Standalone collection mapping methods | [#89](https://github.com/superyyrrzz/ForgeMap/issues/89) | Medium | Planned |
 | 4 | `[AfterForge]` migration pattern & diagnostics | [#93](https://github.com/superyyrrzz/ForgeMap/issues/93) | Low | Planned |
 
-### Deferred to v1.6
+### Deferred to Future Version
 
-The following features were originally planned for v1.5 but have been moved to v1.6 to prioritize migration-blocking issues #89, #90, #91, and #93:
+The following features were originally planned for v1.5 but have been moved to a future version to prioritize migration-blocking issues #89, #90, #91, and #93:
 
 | Feature | Issue | Notes |
 |---------|-------|-------|
-| Auto-flattening with `init`/`required` support | [#82](https://github.com/superyyrrzz/ForgeMap/issues/82) | See [SPEC-v1.6-advanced-mapping.md](SPEC-v1.6-advanced-mapping.md) |
-| Dictionary-to-typed-object mapping (`[ForgeDictionary]`) | [#83](https://github.com/superyyrrzz/ForgeMap/issues/83) | See [SPEC-v1.6-advanced-mapping.md](SPEC-v1.6-advanced-mapping.md) |
+| Auto-flattening with `init`/`required` support | [#82](https://github.com/superyyrrzz/ForgeMap/issues/82) | See [SPEC-future-advanced-mapping.md](SPEC-future-advanced-mapping.md) |
+| Dictionary-to-typed-object mapping (`[ForgeDictionary]`) | [#83](https://github.com/superyyrrzz/ForgeMap/issues/83) | See [SPEC-future-advanced-mapping.md](SPEC-future-advanced-mapping.md) |
 
 ---
 
@@ -766,5 +766,5 @@ v1.5 introduces no required source changes and no API-surface breaks. Four behav
 
 *Specification Version: 1.5 (2026-04-07)*
 *Status: Planned*
-*Deferred features: [SPEC-v1.6-advanced-mapping.md](SPEC-v1.6-advanced-mapping.md)*
+*Deferred features: [SPEC-future-advanced-mapping.md](SPEC-future-advanced-mapping.md)*
 *License: MIT*

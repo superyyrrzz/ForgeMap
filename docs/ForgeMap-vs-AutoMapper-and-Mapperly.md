@@ -14,8 +14,8 @@ The table below compares all three tools across reverse mapping, polymorphic dis
 | **Performance (simple flat mapping)** | ~80 ns | ~16 ns | ~14.5 ns |
 | **License** | RPL-1.5 / commercial (15.0+) | Apache 2.0 | MIT |
 | **Auto reverse mapping** | `.ReverseMap()` | ❌ Manual only | ✅ `[ReverseForge]` with compile-time validation |
-| **Auto-flattening** | ✅ Runtime convention | ✅ Compile-time PascalCase (❌ broken with `init`/`required`) | ✅ Compile-time PascalCase with `init`/`required` support *(planned v1.6)* |
-| **Unflattening** | `.ReverseMap()` (runtime) | Manual `MapProperty` paths | ✅ Auto via `[ReverseForge]` *(planned v1.6)* |
+| **Auto-flattening** | ✅ Runtime convention | ✅ Compile-time PascalCase (❌ broken with `init`/`required`) | ✅ Compile-time PascalCase with `init`/`required` support *(planned, future)* |
+| **Unflattening** | `.ReverseMap()` (runtime) | Manual `MapProperty` paths | ✅ Auto via `[ReverseForge]` *(planned, future)* |
 | **Polymorphic dispatch** | Runtime reflection | Manual `[MapDerivedType]` per type | ✅ Auto-discovered `[ForgeAllDerived]` |
 | **Abstract destination mapping** | Runtime `.As<T>()` | `[MapDerivedType]` dispatch | ✅ Auto-discovered dispatch via `[ForgeAllDerived]` |
 | **Null handling strategies** | `NullSubstitute`, `AllowNullCollections` | `AllowNullPropertyAssignment`, `ThrowOnPropertyMappingNullMismatch`, `ThrowOnMappingNullMismatch` | ✅ 5 strategies (`NullForgiving`, `SkipNull`, `CoalesceToDefault`, `ThrowException`, `CoalesceToNew` in v1.5), 3-tier config |
@@ -27,8 +27,8 @@ The table below compares all three tools across reverse mapping, polymorphic dis
 | **Collection auto-generation** | Runtime | Auto-generated | ✅ Full (`T[]`, `List<T>`, `IEnumerable<T>`, `HashSet<T>`, etc.) |
 | **Inline collection mapping** | N/A | Auto-generated | ✅ Generates inline iteration for collection properties, no explicit method needed |
 | **Nested existing-target update** | `Map(src, dest)` updates nested (runtime) | ❌ Not supported ([#884](https://github.com/riok/mapperly/issues/884), [#1311](https://github.com/riok/mapperly/issues/1311)) | ✅ `ExistingTarget = true` with collection sync strategies *(planned v1.4)* |
-| **Dictionary→Object mapping** | ❌ | ❌ Not supported ([#1309](https://github.com/riok/mapperly/issues/1309)) | ✅ `[ForgeDictionary]` with type-safe conversions *(planned v1.6)* |
-| **Diagnostics** | Runtime exceptions | ~95 diagnostics (RMG001–RMG095) | 27 diagnostics (FM0001–FM0027), 10 more planned for v1.4 (FM0028–FM0037), 8 planned for v1.5 (FM0038–FM0045), 6 planned for v1.6 (FM0046–FM0051) |
+| **Dictionary→Object mapping** | ❌ | ❌ Not supported ([#1309](https://github.com/riok/mapperly/issues/1309)) | ✅ `[ForgeDictionary]` with type-safe conversions *(planned, future)* |
+| **Diagnostics** | Runtime exceptions | ~95 diagnostics (RMG001–RMG095) | 27 diagnostics (FM0001–FM0027), 10 more planned for v1.4 (FM0028–FM0037), 8 planned for v1.5 (FM0038–FM0045), 7 planned for v1.6 (FM0046–FM0052) |
 | **Debuggable generated code** | ❌ | ✅ | ✅ |
 
 ---
@@ -175,7 +175,7 @@ ForgeMap ships with an [**automated migration skill**](../.claude/skills/automap
 
 ## Compile-Time Safety
 
-ForgeMap currently provides **27 diagnostic rules** (FM0001–FM0027) that catch mapping errors at compile time, with an additional 10 rules (FM0028–FM0037) planned for v1.4, 8 rules (FM0038–FM0045) planned for v1.5, and 6 rules (FM0046–FM0051) planned for v1.6:
+ForgeMap currently provides **27 diagnostic rules** (FM0001–FM0027) that catch mapping errors at compile time, with an additional 10 rules (FM0028–FM0037) planned for v1.4, 8 rules (FM0038–FM0045) planned for v1.5, and 7 rules (FM0046–FM0052) planned for v1.6:
 
 - **Structural errors** — non-partial class/method, missing constructors, circular dependencies
 - **Mapping gaps** — unmapped source/destination properties, unmatched constructor parameters
@@ -187,7 +187,7 @@ These diagnostics surface in the IDE as you type, catching mapping errors before
 
 ### 6. Auto-Flattening with `init`/`required` Support
 
-Mapperly supports auto-flattening (`Order.Customer.Name` → `CustomerName`) but has been [broken for `init`/`required` properties since 2023](https://github.com/riok/mapperly/issues/643). ForgeMap v1.6 will build flattening from scratch with full `init`/`required` awareness — these properties are routed to object initializers automatically:
+Mapperly supports auto-flattening (`Order.Customer.Name` → `CustomerName`) but has been [broken for `init`/`required` properties since 2023](https://github.com/riok/mapperly/issues/643). ForgeMap will build flattening from scratch with full `init`/`required` awareness — these properties are routed to object initializers automatically:
 
 ```csharp
 class OrderDto {
@@ -218,7 +218,7 @@ For collection properties, `CollectionUpdateStrategy.Sync` with `KeyProperty` ma
 
 ### 8. Dictionary-to-Typed-Object Mapping
 
-Neither AutoMapper nor Mapperly support mapping `Dictionary<string, object?>` to typed objects ([Mapperly #1309](https://github.com/riok/mapperly/issues/1309), 10👍). ForgeMap v1.6 will add `[ForgeDictionary]` for compile-time, zero-reflection dictionary mapping:
+Neither AutoMapper nor Mapperly support mapping `Dictionary<string, object?>` to typed objects ([Mapperly #1309](https://github.com/riok/mapperly/issues/1309), 10👍). ForgeMap will add `[ForgeDictionary]` for compile-time, zero-reflection dictionary mapping:
 
 ```csharp
 [ForgeDictionary(KeyMatching = PropertyMatching.ByNameCaseInsensitive)]
@@ -238,10 +238,10 @@ Supports configurable key matching (case-sensitive/insensitive), missing key beh
 | `Entity ↔ DTO` round-trips | `[ReverseForge]` auto-generates the inverse |
 | Deep inheritance hierarchies | `[ForgeAllDerived]` auto-discovers subtypes |
 | Mixed nullability across large codebases | 5 strategies (including `CoalesceToNew` in v1.5), per-property control |
-| Nested object flattening | Auto-flattening with `init`/`required` support *(planned v1.6)* |
+| Nested object flattening | Auto-flattening with `init`/`required` support *(planned, future)* |
 | EF Core in-place entity updates | `ExistingTarget = true` with collection sync *(shipped in v1.4)* |
-| Dynamic / dictionary data sources | `[ForgeDictionary]` with compile-time type safety *(planned v1.6)* |
+| Dynamic / dictionary data sources | `[ForgeDictionary]` with compile-time type safety *(planned, future)* |
 | Migrating from AutoMapper | 1:1 concept mapping, automated migration skill |
 | Declarative lifecycle hooks | `[BeforeForge]` / `[AfterForge]` with ordered execution |
 
-ForgeMap provides comparable performance to Mapperly with additional support for auto-discovered polymorphism, declarative hooks, granular null handling, and a direct migration path from AutoMapper, including v1.4 features like EF Core-friendly nested updates, string-to-enum auto-conversion, and `[ConvertWith]`, plus v1.5 features like `CoalesceToNew`, collection type coercion, and standalone collection methods, with v1.6 features like auto-flattening with `init`/`required` support and dictionary mapping planned.
+ForgeMap provides comparable performance to Mapperly with additional support for auto-discovered polymorphism, declarative hooks, granular null handling, and a direct migration path from AutoMapper, including v1.4 features like EF Core-friendly nested updates, string-to-enum auto-conversion, and `[ConvertWith]`, plus v1.5 features like `CoalesceToNew`, collection type coercion, and standalone collection methods, with v1.6 features like per-property `ConvertWith`, built-in type coercions, and constructor preference for get-only types planned, and future features like auto-flattening and dictionary mapping on the roadmap.
