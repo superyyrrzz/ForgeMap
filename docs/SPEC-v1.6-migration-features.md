@@ -155,7 +155,7 @@ This is a **behavioral change** from v1.5. Projects that relied on `Enum.Parse` 
 |--------|-----------|---------|---------------|
 | Null string → enum | `default(T)` | `Enum.Parse` (throws) | `default(T)` |
 | Empty string → enum | `default(T)` | `Enum.Parse` (throws) | `default(T)` |
-| Configuration | None (always default) | None | `StringToEnum` mode + `NullPropertyHandling` |
+| Configuration | None (always default) | None | `StringToEnumConversion` mode + `NullPropertyHandling` |
 
 ---
 
@@ -220,7 +220,9 @@ dest.Metadata = source.Metadata?.ToDictionary(
 // Widening: safe, but generic variance requires explicit conversion
 dest.Items = source.Items is IReadOnlyList<string?> __cast_Items
     ? __cast_Items
-    : source.Items?.Select(__item => (string?)__item).ToList();
+    : source.Items is { } __v_Items
+        ? __v_Items.Select(__item => (string?)__item).ToList()
+        : null!;
 ```
 
 **List/sequence element nullability narrowing** (`T?` → `T`):
