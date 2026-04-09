@@ -42,7 +42,7 @@ private static FileType ResolveType(Source s)
 
 ### Design
 
-When converting `string` or `string?` to an enum type, the generator wraps the conversion in a `string.IsNullOrEmpty` guard. This applies to both `StringToEnumConversion.Parse` and `StringToEnumConversion.TryParse` modes. The guard returns `default(TEnum)` for null/empty strings.
+When converting `string` or `string?` to an enum type, the generator wraps the conversion in a `string.IsNullOrEmpty` guard. This applies to both `StringToEnumConversion.Parse` and `StringToEnumConversion.TryParse` modes. For non-nullable enum destinations, the guard returns `default(TEnum)` for null/empty strings. For nullable enum destinations (`TEnum?`), it returns `null`.
 
 This is a behavioral change from v1.5 where `Enum.Parse` was called unconditionally. The new behavior is safer — `Enum.Parse(null)` and `Enum.Parse("")` are always errors, never intentional.
 
@@ -197,9 +197,11 @@ The detection is based on comparing element types after stripping nullable annot
 // Note: same collection wrapper type — only element nullability differs.
 
 // Strategy: materialize with widened value type
-dest.Metadata = source.Metadata?.ToDictionary(
-    __kv => __kv.Key,
-    __kv => (object?)__kv.Value);
+dest.Metadata = source.Metadata is { } __v_Metadata
+    ? __v_Metadata.ToDictionary(
+        __kv => __kv.Key,
+        __kv => (object?)__kv.Value)
+    : null!;
 ```
 
 **Dictionary value nullability narrowing** (`object?` → `object`):
@@ -208,9 +210,11 @@ dest.Metadata = source.Metadata?.ToDictionary(
 // IReadOnlyDictionary<string, object?> → IDictionary<string, object>
 // Narrowing: nullable → non-nullable requires filtering or asserting.
 // Use NullForgiving (!) since the user explicitly declared the destination as non-nullable.
-dest.Metadata = source.Metadata?.ToDictionary(
-    __kv => __kv.Key,
-    __kv => __kv.Value!);
+dest.Metadata = source.Metadata is { } __v_Metadata
+    ? __v_Metadata.ToDictionary(
+        __kv => __kv.Key,
+        __kv => __kv.Value!)
+    : null!;
 ```
 
 **List/sequence element nullability widening** (`T` → `T?`):
