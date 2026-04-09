@@ -1018,7 +1018,22 @@ internal sealed partial class ForgeCodeEmitter
         if (value is bool b)
             return b ? "true" : "false";
         if (value is char c)
-            return $"'{c}'";
+        {
+            return c switch
+            {
+                '\'' => @"'\''",
+                '\\' => @"'\\'",
+                '\0' => @"'\0'",
+                '\a' => @"'\a'",
+                '\b' => @"'\b'",
+                '\f' => @"'\f'",
+                '\n' => @"'\n'",
+                '\r' => @"'\r'",
+                '\t' => @"'\t'",
+                '\v' => @"'\v'",
+                _ => $"'{c}'"
+            };
+        }
         if (value is float f)
             return FormattableString.Invariant($"{f}f");
         if (value is double d)
