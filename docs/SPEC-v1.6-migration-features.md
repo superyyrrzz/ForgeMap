@@ -142,7 +142,7 @@ var __result = new Dest(
 | `null` string → enum (TryParse) | `default(TEnum)` (TryParse returns false) | `default(TEnum)` (explicit guard) |
 | `""` string → enum (TryParse) | `default(TEnum)` (TryParse returns false) | `default(TEnum)` (explicit guard for consistency) |
 | Valid string → enum | `Enum.Parse` / `TryParse` as before | Unchanged |
-| `null` string → nullable enum | Follows `NullPropertyHandling` | `(TEnum?)null` |
+| `null` string → nullable enum | `(TEnum?)null` | `(TEnum?)null` |
 | `""` string → nullable enum | `ArgumentException` (Parse) | `(TEnum?)null` |
 
 ### Migration Notes
@@ -480,8 +480,8 @@ var __result = new Dest(
 | Feature | Interaction |
 |---------|-------------|
 | Method-level `[ConvertWith]` | Separate concern — method-level takes over the entire method body; per-property applies to one property only. Both can exist on the same forger class but not in ways that conflict (method-level makes per-property irrelevant for that method) |
-| `[ForgeFrom]` | `[ForgeFrom]` receives the entire source object; per-property `ConvertWith` receives only the source property value. If both target the same destination property, emit **FM0048** |
-| `[ForgeWith]` | `[ForgeWith]` calls another forge method; per-property `ConvertWith` calls a converter. If both target the same destination property, emit **FM0048** |
+| `[ForgeFrom]` | `[ForgeFrom]` receives the entire source object; per-property `ConvertWith` receives only the source property value. If both target the same destination property, emit **FM0049** |
+| `[ForgeWith]` | `[ForgeWith]` calls another forge method; per-property `ConvertWith` calls a converter. If both target the same destination property, emit **FM0049** |
 | `[Ignore]` | If a property is both ignored and has `ConvertWith`, the ignore takes precedence (the property is skipped) |
 | `NullPropertyHandling` | Per-property override on `[ForgeProperty]` applies to the null-handling wrapper around the converter call |
 | `[ReverseForge]` | Reverse method does NOT auto-apply the per-property `ConvertWith` — there is no general way to reverse an arbitrary converter. Use explicit `[ForgeProperty(ConvertWith = ...)]` on the reverse method if needed |
