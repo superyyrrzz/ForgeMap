@@ -27,8 +27,11 @@ internal sealed class ForgerConfig
     /// <summary>Whether to auto-discover matching forge methods for nested complex properties. Default true.</summary>
     public bool AutoWireNestedMappings { get; set; } = true;
 
-    /// <summary>0 = Parse (default), 1 = TryParse, 2 = None</summary>
+    /// <summary>0 = Parse (default, null-safe), 1 = TryParse, 2 = None, 3 = StrictParse</summary>
     public int StringToEnum { get; set; }
+
+    /// <summary>Whether to prefer parameterized constructors over parameterless ones. Default false.</summary>
+    public bool PreferParameterizedConstructor { get; set; }
 
     public StringComparison PropertyNameComparison =>
         PropertyMatching == 1 ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;

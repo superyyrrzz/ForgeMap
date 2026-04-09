@@ -522,10 +522,14 @@ internal sealed partial class ForgeCodeEmitter
                         var nullChecked = $"({sourceExpression} ?? throw new global::System.ArgumentNullException(\"{destPropertyName}\", \"Cannot assign null source property '{sourceExpression}' to non-nullable destination '{destTypeName}.{destPropertyName}'.\"))";
                         if (_config.StringToEnum == 1) // TryParse
                             return $"(global::System.Enum.TryParse<{enumFqn}>({nullChecked}, true, out var __enumVal_{SanitizeVarName(destPropertyName)}) ? __enumVal_{SanitizeVarName(destPropertyName)} : default({enumFqn}))";
+                        if (_config.StringToEnum == 0) // Parse with null-safe guard
+                            return $"string.IsNullOrEmpty({sourceExpression}) ? default({enumFqn}) : ({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), {sourceExpression}!, true)";
                         return $"({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), {nullChecked}, true)";
                     case 2: // CoalesceToDefault — return default enum when source is null
                         if (_config.StringToEnum == 1) // TryParse
                             return $"({sourceExpression} is {{ }} __enumStr_{SanitizeVarName(destPropertyName)} && global::System.Enum.TryParse<{enumFqn}>(__enumStr_{SanitizeVarName(destPropertyName)}, true, out var __enumVal_{SanitizeVarName(destPropertyName)}) ? __enumVal_{SanitizeVarName(destPropertyName)} : default({enumFqn}))";
+                        if (_config.StringToEnum == 0) // Parse with null-safe guard
+                            return $"string.IsNullOrEmpty({sourceExpression}) ? default({enumFqn}) : ({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), {sourceExpression}, true)";
                         return $"({sourceExpression} is {{ }} __enumStr_{SanitizeVarName(destPropertyName)} ? ({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), __enumStr_{SanitizeVarName(destPropertyName)}, true) : default({enumFqn}))";
                     case 4: // CoalesceToNew — same as CoalesceToDefault for value-type enums
                         goto case 2;
@@ -588,13 +592,23 @@ internal sealed partial class ForgeCodeEmitter
 
         // Report FM0033 (informational, disabled by default)
         var destEnumUnderlying = GetNullableUnderlyingType(destType) ?? destType;
-        var strategyName = _config.StringToEnum == 1 ? "TryParse" : "Parse";
+        var strategyName = _config.StringToEnum == 1 ? "TryParse" : (_config.StringToEnum == 3 ? "StrictParse" : "Parse");
         ReportDiagnosticIfNotSuppressed(context,
             DiagnosticDescriptors.StringToEnumAutoConverted,
             method.Locations.FirstOrDefault(),
             destPropertyName,
             destEnumUnderlying.ToDisplayString(),
             strategyName);
+
+        // Report FM0055 when null-safe guard is applied (Parse mode, not StrictParse)
+        if (_config.StringToEnum == 0)
+        {
+            ReportDiagnosticIfNotSuppressed(context,
+                DiagnosticDescriptors.StringToEnumNullSafeGuardApplied,
+                method.Locations.FirstOrDefault(),
+                destPropertyName,
+                destEnumUnderlying.ToDisplayString());
+        }
 
         var isSourceNullable = sourceType.NullableAnnotation == NullableAnnotation.Annotated;
         var isDestNullable = GetNullableUnderlyingType(destType) != null;
@@ -623,13 +637,17 @@ internal sealed partial class ForgeCodeEmitter
             {
                 if (_config.StringToEnum == 1) // TryParse
                     return $"(global::System.Enum.TryParse<{enumFqn}>({sourceExpr}!, true, out var __enumVal_{SanitizeVarName(destPropertyName)}) ? __enumVal_{SanitizeVarName(destPropertyName)} : default({enumFqn}))";
+                if (_config.StringToEnum == 0) // Parse with null-safe guard
+                    return $"string.IsNullOrEmpty({sourceExpr}) ? default({enumFqn}) : ({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), {sourceExpr}!, true)";
                 return $"({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), {sourceExpr}!, true)"; // init-only: fall back to NullForgiving
             }
             var localVar = "__strVal_" + SanitizeVarName(destPropertyName);
             string assignExpr;
             if (_config.StringToEnum == 1) // TryParse
                 assignExpr = $"(global::System.Enum.TryParse<{enumFqn}>({localVar}, true, out var __enumParsed_{SanitizeVarName(destPropertyName)}) ? __enumParsed_{SanitizeVarName(destPropertyName)} : default({enumFqn}))";
-            else // Parse
+            else if (_config.StringToEnum == 0) // Parse with null-safe guard
+                assignExpr = $"string.IsNullOrEmpty({localVar}) ? default({enumFqn}) : ({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), {localVar}, true)";
+            else // StrictParse
                 assignExpr = $"({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), {localVar}, true)";
             skipNullAssignments.Add((destPropertyName, sourceExpr, localVar, assignExpr));
         }
@@ -670,11 +688,23 @@ internal sealed partial class ForgeCodeEmitter
             }
         }
 
-        // Parse strategy
+        // Parse strategy (0 = null-safe, 3 = strict)
+        var useNullSafeGuard = _config.StringToEnum == 0;
+
         if (isSourceNullable && isDestNullable)
         {
             // Nullable source → nullable dest: null maps to null, non-null gets parsed
+            // For null-safe Parse, also guard against empty strings
+            if (useNullSafeGuard)
+                return $"string.IsNullOrEmpty({sourceExpr}) ? default({enumFqn}?) : ({enumFqn}?)(({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), {sourceExpr}, true))";
             return $"{sourceExpr} is {{ }} __strVal_{varSuffix} ? ({enumFqn}?)(({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), __strVal_{varSuffix}, true)) : null";
+        }
+        if (useNullSafeGuard)
+        {
+            var guardedParse = $"string.IsNullOrEmpty({sourceExpr}{(isSourceNullable ? "" : "")}) ? default({enumFqn}) : ({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), {sourceExpr}{(isSourceNullable ? "!" : "")}, true)";
+            if (isDestNullable)
+                return $"({enumFqn}?)({guardedParse})";
+            return guardedParse;
         }
         var parseBase = $"({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), {sourceExpr}{(isSourceNullable ? "!" : "")}, true)";
         if (isDestNullable)
@@ -694,9 +724,18 @@ internal sealed partial class ForgeCodeEmitter
         string destTypeName,
         Dictionary<string, int> nullPropertyHandlingOverrides)
     {
+        var useNullSafeGuard = _config.StringToEnum == 0;
+
         if (!isSourceNullable)
         {
-            // Non-nullable source: straightforward parse
+            // Non-nullable source: for null-safe Parse, guard against empty strings
+            if (useNullSafeGuard)
+            {
+                var guardedParse = $"string.IsNullOrEmpty({sourceExpr}) ? default({enumFqn}) : ({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), {sourceExpr}, true)";
+                if (isDestNullable)
+                    return $"({enumFqn}?)({guardedParse})";
+                return guardedParse;
+            }
             var parseExpr = $"({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), {sourceExpr}, true)";
             if (isDestNullable)
                 return $"({enumFqn}?)({parseExpr})";
@@ -710,27 +749,37 @@ internal sealed partial class ForgeCodeEmitter
         // regardless of NullPropertyHandling strategy (the strategy only matters for nullable→non-nullable)
         if (isDestNullable)
         {
+            if (useNullSafeGuard)
+                return $"string.IsNullOrEmpty({sourceExpr}) ? default({enumFqn}?) : ({enumFqn}?)(({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), {sourceExpr}, true))";
             return $"{sourceExpr} is {{ }} __strVal_{SanitizeVarName(destPropertyName)} ? ({enumFqn}?)(({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), __strVal_{SanitizeVarName(destPropertyName)}, true)) : null";
         }
 
         switch (strategy)
         {
             case 0: // NullForgiving
+                if (useNullSafeGuard)
+                    return $"string.IsNullOrEmpty({sourceExpr}) ? default({enumFqn}) : ({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), {sourceExpr}!, true)";
                 return $"({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), {sourceExpr}!, true)";
 
             case 1: // SkipNull — return null to signal the caller to skip the assignment
                 return null;
 
             case 2: // CoalesceToDefault
+                if (useNullSafeGuard)
+                    return $"string.IsNullOrEmpty({sourceExpr}) ? default({enumFqn}) : ({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), {sourceExpr}, true)";
                 return $"{sourceExpr} is null ? default({enumFqn}) : ({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), {sourceExpr}, true)";
 
             case 4: // CoalesceToNew — same as CoalesceToDefault for value-type enums
                 goto case 2;
 
             case 3: // ThrowException
+                if (useNullSafeGuard)
+                    return $"string.IsNullOrEmpty({sourceExpr}) ? default({enumFqn}) : ({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), {sourceExpr}!, true)";
                 return $"({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), {sourceExpr} ?? throw new global::System.ArgumentNullException(\"{destPropertyName}\", \"Cannot assign null source property '{sourceExpr}' to non-nullable destination '{destTypeName}.{destPropertyName}'.\"), true)";
 
             default:
+                if (useNullSafeGuard)
+                    return $"string.IsNullOrEmpty({sourceExpr}) ? default({enumFqn}) : ({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), {sourceExpr}!, true)";
                 return $"({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), {sourceExpr}!, true)";
         }
     }

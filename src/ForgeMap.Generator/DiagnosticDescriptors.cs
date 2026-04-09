@@ -364,8 +364,56 @@ internal static class DiagnosticDescriptors
     public static readonly DiagnosticDescriptor AfterForgeOnCollectionMethod = new(
         id: "FM0045",
         title: "[AfterForge] is not applicable to collection methods",
-        messageFormat: "[AfterForge] is not applicable to collection method '{0}' \u2014 use element-level [AfterForge] on the element forge method instead",
+        messageFormat: "[AfterForge] is not applicable to collection method '{0}' — use element-level [AfterForge] on the element forge method instead",
         category: Category,
         defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor UnmatchedConstructorParameter = new(
+        id: "FM0052",
+        title: "Unmatched constructor parameter",
+        messageFormat: "Constructor parameter '{0}' on '{1}' could not be matched to any source property or [ForgeProperty] mapping",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor SpecifiedConstructorNotFound = new(
+        id: "FM0053",
+        title: "Specified constructor not found",
+        messageFormat: "No constructor on '{0}' matches the parameter types specified in [ForgeConstructor]",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor ConstructorMappingInfo = new(
+        id: "FM0054",
+        title: "Constructor mapping routing info",
+        messageFormat: "Constructor routing for '{0}': {1}",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Info,
+        isEnabledByDefault: false);
+
+    public static readonly DiagnosticDescriptor StringToEnumNullSafeGuardApplied = new(
+        id: "FM0055",
+        title: "Null-safe guard applied to string→enum conversion",
+        messageFormat: "Property '{0}': null/empty string→enum guard applied; null or empty source values will return default({1})",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Info,
+        isEnabledByDefault: false);
+
+    public static readonly DiagnosticDescriptor NullableCollectionCoercionApplied = new(
+        id: "FM0056",
+        title: "Nullable-safe collection coercion applied",
+        messageFormat: "Property '{0}': nullable-safe collection coercion applied from '{1}' to '{2}'",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Info,
+        isEnabledByDefault: false);
+
+    public static readonly DiagnosticDescriptor NullableCollectionCoercionUnsupported = new(
+        id: "FM0057",
+        title: "Unsupported nullable collection coercion",
+        messageFormat: "Property '{0}': nullable element type coercion from '{1}' to '{2}' is not supported for this collection kind",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
 }

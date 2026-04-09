@@ -54,4 +54,11 @@ public sealed class ForgeMapAttribute : Attribute
     /// Default is <see cref="StringToEnumConversion.Parse"/>.
     /// </summary>
     public StringToEnumConversion StringToEnum { get; set; } = StringToEnumConversion.Parse;
+
+    /// <summary>
+    /// When true, the generator will prefer parameterized constructors over parameterless constructors
+    /// for destination type instantiation. When false (default), parameterless constructors are preferred
+    /// and the object initializer pattern is used.
+    /// </summary>
+    public bool PreferParameterizedConstructor { get; set; }
 }
