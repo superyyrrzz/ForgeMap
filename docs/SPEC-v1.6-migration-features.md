@@ -188,19 +188,18 @@ The detection is based on comparing element types after stripping nullable annot
 
 ### Generated Code
 
-**Dictionary value nullability widening** (`object` → `object?`):
+**Dictionary value nullability widening** (`IDictionary<K,V>` → `IDictionary<K,V?>`):
 
 ```csharp
-// IDictionary<string, object> → IReadOnlyDictionary<string, object?>
+// IDictionary<string, object> → IDictionary<string, object?>
 // Widening: non-nullable → nullable is inherently safe, but C# nullable analysis
 // treats generic type parameters as invariant, so an explicit conversion is needed.
+// Note: same collection wrapper type — only element nullability differs.
 
-// Strategy: use type-test + fallback materialization
-dest.Metadata = source.Metadata is IReadOnlyDictionary<string, object?> __cast_Metadata
-    ? __cast_Metadata
-    : source.Metadata?.ToDictionary(
-        __kv => __kv.Key,
-        __kv => (object?)__kv.Value);
+// Strategy: materialize with widened value type
+dest.Metadata = source.Metadata?.ToDictionary(
+    __kv => __kv.Key,
+    __kv => (object?)__kv.Value);
 ```
 
 **Dictionary value nullability narrowing** (`object?` → `object`):
@@ -585,7 +584,7 @@ __result.ClosedAt = source.ClosedAt.HasValue
 #### 4b. Generic Wrapper Unwrapping (`Wrapper<T> → T`)
 
 The generator detects when:
-1. The source property type is a generic type `W<T>` (any single-type-parameter generic)
+1. The source property type is an allowlisted generic wrapper type `W<T>` (in v1.6, only `StringEnum<T>`)
 2. The destination property type is `T` (the generic type argument)
 3. `W<T>` has a public property named `Value` of type `T`
 
@@ -621,15 +620,14 @@ This is intentionally narrow to avoid false positives and surprising runtime beh
 
 Built-in type coercions slot into the existing property assignment priority:
 
-1. Explicit `[ForgeProperty]` / `[ForgeFrom]` / `[Ignore]` / `[ForgeWith]`
-2. Per-property `ConvertWith` (Feature 3)
-3. Direct name match with compatible types (existing)
-4. Compatible enum casting (existing)
-5. String↔enum auto-conversion (existing)
-6. **Built-in type coercions (new — DateTimeOffset→DateTime, wrapper unwrap)**
-7. Auto-wire inline collections (existing)
-8. Auto-wire forge methods (existing)
-9. Unmapped → FM0006
+1. Explicit `[ForgeProperty]` remapping, `[ForgeFrom]`, `[Ignore]`, `[ForgeWith]`, or `[ForgeProperty(ConvertWith = ...)]`
+2. Direct name match with compatible types (existing)
+3. Compatible enum casting (existing)
+4. String↔enum auto-conversion (existing)
+5. **Built-in type coercions (new — DateTimeOffset→DateTime, wrapper unwrap)**
+6. Auto-wire inline collections (existing)
+7. Auto-wire forge methods (existing)
+8. Unmapped → FM0006
 
 ### Interaction with Existing Features
 
