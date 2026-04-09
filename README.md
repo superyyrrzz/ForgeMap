@@ -66,9 +66,13 @@ ForgeMap is the fastest in benchmarks against AutoMapper and Mapperly (.NET 9, A
 
 See [benchmarks/BENCHMARK_RESULTS.md](benchmarks/BENCHMARK_RESULTS.md) for full details.
 
+## Migrating from AutoMapper
+
+ForgeMap includes an AI-assisted migration tool (Claude Code skill) that can convert your existing AutoMapper `CreateMap`/`Profile` configurations to ForgeMap attributes automatically. See [ForgeMap vs AutoMapper & Mapperly](docs/ForgeMap-vs-AutoMapper-and-Mapperly.md) for a detailed feature comparison.
+
 ## Documentation
 
-See [SPEC.md](docs/SPEC.md) for the full specification.
+See [SPEC.md](docs/SPEC.md) for the full specification. See [CHANGELOG.md](CHANGELOG.md) for version history.
 
 ## Version Roadmap
 
