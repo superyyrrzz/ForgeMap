@@ -1104,9 +1104,8 @@ internal sealed partial class ForgeCodeEmitter
             }
 
             // Check for DI capability or parameterless ctor
-            string? scopeFactoryField = _iServiceScopeFactorySymbol != null
-                ? FindFieldByType(forger.Symbol, _iServiceScopeFactorySymbol)
-                : null;
+            // Note: per-property converters are inline expressions, so IServiceScopeFactory
+            // cannot be used (would leak scopes). We prefer IServiceProvider for DI here.
             string? serviceProviderField = _iServiceProviderSymbol != null
                 ? FindFieldByType(forger.Symbol, _iServiceProviderSymbol)
                 : null;
@@ -1117,11 +1116,7 @@ internal sealed partial class ForgeCodeEmitter
                 method.Locations.FirstOrDefault(),
                 destProp.Name, converterTypeName);
 
-            if (scopeFactoryField != null)
-            {
-                return $"(({converterTypeName})global::Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.GetRequiredService((this.{scopeFactoryField}.CreateScope()).ServiceProvider, typeof({converterTypeName}))).Convert({sourceExpr}{nullForgiving})";
-            }
-            else if (serviceProviderField != null)
+            if (serviceProviderField != null)
             {
                 return $"(({converterTypeName})(this.{serviceProviderField}.GetService(typeof({converterTypeName})) ?? throw new global::System.InvalidOperationException(\"No service for type '\" + typeof({converterTypeName}).FullName + \"' has been registered.\"))).Convert({sourceExpr}{nullForgiving})";
             }
@@ -1136,9 +1131,9 @@ internal sealed partial class ForgeCodeEmitter
                     if (!hasParameterlessCtor)
                     {
                         ReportDiagnosticIfNotSuppressed(context,
-                            DiagnosticDescriptors.PropertyConverterMethodNotFound,
+                            DiagnosticDescriptors.ConvertWithNoParameterlessConstructor,
                             method.Locations.FirstOrDefault(),
-                            converterTypeName, destProp.Name);
+                            converterTypeName);
                         return null;
                     }
                 }
