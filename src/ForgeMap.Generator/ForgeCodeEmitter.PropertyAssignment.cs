@@ -731,7 +731,7 @@ internal sealed partial class ForgeCodeEmitter
         }
         if (useNullSafeGuard)
         {
-            var guardedParse = $"string.IsNullOrEmpty({sourceExpr}{(isSourceNullable ? "" : "")}) ? default({enumFqn}) : ({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), {sourceExpr}{(isSourceNullable ? "!" : "")}, true)";
+            var guardedParse = $"string.IsNullOrEmpty({sourceExpr}) ? default({enumFqn}) : ({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), {sourceExpr}{(isSourceNullable ? "!" : "")}, true)";
             if (isDestNullable)
                 return $"({enumFqn}?)({guardedParse})";
             return guardedParse;
