@@ -12,7 +12,9 @@
   href: ../../docs/SPEC-v1.4-advanced-mapping.md
 - name: v1.5 — Advanced Mapping
   href: ../../docs/SPEC-v1.5-advanced-mapping.md
-- name: v1.6 — Advanced Mapping (Planned)
-  href: ../../docs/SPEC-v1.6-advanced-mapping.md
+- name: v1.6 — Migration Features (Planned)
+  href: ../../docs/SPEC-v1.6-migration-features.md
+- name: Future — Advanced Mapping (Planned)
+  href: ../../docs/SPEC-future-advanced-mapping.md
 - name: ForgeMap vs AutoMapper & Mapperly
   href: ../../docs/ForgeMap-vs-AutoMapper-and-Mapperly.md
