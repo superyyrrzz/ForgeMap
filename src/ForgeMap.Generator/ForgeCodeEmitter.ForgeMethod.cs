@@ -988,12 +988,6 @@ internal sealed partial class ForgeCodeEmitter
                         method.Locations.FirstOrDefault(),
                         param.Name,
                         destinationType.Name);
-
-                    ReportDiagnosticIfNotSuppressed(context,
-                        DiagnosticDescriptors.ConstructorParameterNotMatched,
-                        method.Locations.FirstOrDefault(),
-                        param.Name,
-                        destinationType.Name);
                 }
             }
         }
