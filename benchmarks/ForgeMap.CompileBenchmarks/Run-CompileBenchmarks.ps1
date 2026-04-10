@@ -56,7 +56,7 @@ try {
     Pop-Location
     $env:PACKAGE_VERSION = $null
 }
-Copy-Item (Join-Path $repoRoot 'src' 'ForgeMap' 'bin' $Configuration 'ForgeMap.*.nupkg') $localPkgDir
+Copy-Item (Join-Path $repoRoot 'src' 'ForgeMap' 'bin' $Configuration "ForgeMap.$benchVersion.nupkg") $localPkgDir
 
 # Generate NuGet.config at runtime so CI dependency scanners don't fail
 # trying to restore from a non-existent LocalPackages directory.

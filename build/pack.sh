@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR/.."
+
 roslyn_versions=("4.8" "4.12" "5.0")
 artifacts_dir="artifacts/generator"
 config="${1:-Release}"

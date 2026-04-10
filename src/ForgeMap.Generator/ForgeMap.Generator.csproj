@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <ROSLYN_VERSION Condition="'$(ROSLYN_VERSION)' == ''">5.0</ROSLYN_VERSION>
+    <ROSLYN_VERSION Condition="'$(ROSLYN_VERSION)' == ''">4.8</ROSLYN_VERSION>
   </PropertyGroup>
 
   <Import Project="ForgeMap.Generator.Roslyn$(ROSLYN_VERSION).props" />
