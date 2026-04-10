@@ -428,10 +428,23 @@ internal sealed partial class ForgeCodeEmitter
 
         if (sourceProp != null && CanAssign(sourceProp.Type, destProp.Type))
         {
-            // Handle Nullable<T> to T conversion using explicit cast which throws if null
+            // Handle Nullable<T> to T conversion — respect NullPropertyHandling strategy
             if (IsNullableToNonNullableValueType(sourceProp.Type, destProp.Type))
             {
-                sb.AppendLine($"            {destParam}.{destProp.Name} = ({destProp.Type.ToDisplayString()}){sourceParam}.{sourceProp.Name}!;");
+                var strategy = ResolveNullPropertyHandling(destProp.Name, nullPropertyHandlingOverrides);
+                var sourceExprVal = $"{sourceParam}.{sourceProp.Name}";
+                if (strategy == 1) // SkipNull
+                {
+                    sb.AppendLine($"            if ({sourceExprVal} is {{ }} __val_{destProp.Name})");
+                    sb.AppendLine($"            {{");
+                    sb.AppendLine($"                {destParam}.{destProp.Name} = __val_{destProp.Name};");
+                    sb.AppendLine($"            }}");
+                }
+                else
+                {
+                    var handledExpr = ApplyNullableValueTypeCtorHandling(sourceExprVal, destProp.Type, destProp.Name, destProp.ContainingType.Name, strategy);
+                    sb.AppendLine($"            {destParam}.{destProp.Name} = {handledExpr};");
+                }
             }
             else if (IsNullableToNonNullableReferenceType(sourceProp.Type, destProp.Type))
             {

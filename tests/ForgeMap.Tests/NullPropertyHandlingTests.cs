@@ -1054,6 +1054,266 @@ public class NullPropertyHandlingTests
         Assert.Contains("source.Title!", generatedCode);
     }
 
+    [Fact]
+    public void CoalesceToNew_NullableValueType_GeneratesDefaultCoalesce()
+    {
+        // Reproduction from issue #115: DateTime? → DateTime with CoalesceToNew
+        var source = """
+            #nullable enable
+            using System;
+            using ForgeMap;
+
+            namespace TestNamespace
+            {
+                public class Source
+                {
+                    public DateTime? LastBuildTime { get; set; }
+                }
+
+                public class Dest
+                {
+                    public DateTime LastBuildTime { get; set; }
+                }
+
+                [ForgeMap(NullPropertyHandling = NullPropertyHandling.CoalesceToNew)]
+                public partial class TestForger
+                {
+                    public partial Dest Forge(Source source);
+                }
+            }
+            """;
+
+        var (diagnostics, generatedTrees) = RunGenerator(source);
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        var generatedCode = generatedTrees[0].GetText().ToString();
+        Debug.WriteLine($"Generated code:\n{generatedCode}");
+
+        // Should generate ?? default, NOT a forced unwrap
+        Assert.Contains("source.LastBuildTime ?? default(System.DateTime)", generatedCode);
+        Assert.DoesNotContain("LastBuildTime!", generatedCode);
+    }
+
+    [Fact]
+    public void CoalesceToDefault_NullableValueType_GeneratesDefaultCoalesce()
+    {
+        var source = """
+            #nullable enable
+            using System;
+            using ForgeMap;
+
+            namespace TestNamespace
+            {
+                public class Source
+                {
+                    public int? Count { get; set; }
+                }
+
+                public class Dest
+                {
+                    public int Count { get; set; }
+                }
+
+                [ForgeMap(NullPropertyHandling = NullPropertyHandling.CoalesceToDefault)]
+                public partial class TestForger
+                {
+                    public partial Dest Forge(Source source);
+                }
+            }
+            """;
+
+        var (diagnostics, generatedTrees) = RunGenerator(source);
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        var generatedCode = generatedTrees[0].GetText().ToString();
+        Debug.WriteLine($"Generated code:\n{generatedCode}");
+
+        Assert.Contains("source.Count ?? default(int)", generatedCode);
+    }
+
+    [Fact]
+    public void ThrowException_NullableValueType_GeneratesThrow()
+    {
+        var source = """
+            #nullable enable
+            using System;
+            using ForgeMap;
+
+            namespace TestNamespace
+            {
+                public class Source
+                {
+                    public int? Count { get; set; }
+                }
+
+                public class Dest
+                {
+                    public int Count { get; set; }
+                }
+
+                [ForgeMap(NullPropertyHandling = NullPropertyHandling.ThrowException)]
+                public partial class TestForger
+                {
+                    public partial Dest Forge(Source source);
+                }
+            }
+            """;
+
+        var (diagnostics, generatedTrees) = RunGenerator(source);
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        var generatedCode = generatedTrees[0].GetText().ToString();
+        Debug.WriteLine($"Generated code:\n{generatedCode}");
+
+        Assert.Contains("?? throw new global::System.ArgumentNullException", generatedCode);
+    }
+
+    [Fact]
+    public void SkipNull_NullableValueType_GeneratesIfGuard()
+    {
+        var source = """
+            #nullable enable
+            using System;
+            using ForgeMap;
+
+            namespace TestNamespace
+            {
+                public class Source
+                {
+                    public int? Count { get; set; }
+                }
+
+                public class Dest
+                {
+                    public int Count { get; set; }
+                }
+
+                [ForgeMap(NullPropertyHandling = NullPropertyHandling.SkipNull)]
+                public partial class TestForger
+                {
+                    public partial Dest Forge(Source source);
+                }
+            }
+            """;
+
+        var (diagnostics, generatedTrees) = RunGenerator(source);
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        var generatedCode = generatedTrees[0].GetText().ToString();
+        Debug.WriteLine($"Generated code:\n{generatedCode}");
+
+        // SkipNull: should use var result pattern with if guard
+        Assert.Contains("var result = new", generatedCode);
+        Assert.Contains("is { }", generatedCode);
+        Assert.Contains("result.Count =", generatedCode);
+    }
+
+    [Fact]
+    public void NullForgiving_NullableValueType_DefaultBehavior()
+    {
+        var source = """
+            #nullable enable
+            using System;
+            using ForgeMap;
+
+            namespace TestNamespace
+            {
+                public class Source
+                {
+                    public int? Count { get; set; }
+                }
+
+                public class Dest
+                {
+                    public int Count { get; set; }
+                }
+
+                [ForgeMap(NullPropertyHandling = NullPropertyHandling.NullForgiving)]
+                public partial class TestForger
+                {
+                    public partial Dest Forge(Source source);
+                }
+            }
+            """;
+
+        var (diagnostics, generatedTrees) = RunGenerator(source);
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        var generatedCode = generatedTrees[0].GetText().ToString();
+        Debug.WriteLine($"Generated code:\n{generatedCode}");
+
+        // NullForgiving should keep the forced unwrap behavior
+        Assert.Contains("(int)source.Count!", generatedCode);
+    }
+
+    [Fact]
+    public void ForgeInto_CoalesceToNew_NullableValueType_GeneratesDefaultCoalesce()
+    {
+        var source = """
+            #nullable enable
+            using System;
+            using ForgeMap;
+
+            namespace TestNamespace
+            {
+                public class Source
+                {
+                    public DateTime? LastBuildTime { get; set; }
+                }
+
+                public class Dest
+                {
+                    public DateTime LastBuildTime { get; set; }
+                }
+
+                [ForgeMap(NullPropertyHandling = NullPropertyHandling.CoalesceToNew)]
+                public partial class TestForger
+                {
+                    public partial void ForgeInto(Source source, [UseExistingValue] Dest dest);
+                }
+            }
+            """;
+
+        var (diagnostics, generatedTrees) = RunGenerator(source);
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        var generatedCode = generatedTrees[0].GetText().ToString();
+        Debug.WriteLine($"Generated code:\n{generatedCode}");
+
+        Assert.Contains("source.LastBuildTime ?? default(System.DateTime)", generatedCode);
+    }
+
+    [Fact]
+    public void ConstructorMapping_CoalesceToNew_NullableValueType_GeneratesDefaultCoalesce()
+    {
+        var source = """
+            #nullable enable
+            using System;
+            using ForgeMap;
+
+            namespace TestNamespace
+            {
+                public class Source
+                {
+                    public int? Value { get; set; }
+                }
+
+                public class Dest
+                {
+                    public int Value { get; }
+                    public Dest(int value) { Value = value; }
+                }
+
+                [ForgeMap(NullPropertyHandling = NullPropertyHandling.CoalesceToNew)]
+                public partial class TestForger
+                {
+                    public partial Dest Forge(Source source);
+                }
+            }
+            """;
+
+        var (diagnostics, generatedTrees) = RunGenerator(source);
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        var generatedCode = generatedTrees[0].GetText().ToString();
+        Debug.WriteLine($"Generated code:\n{generatedCode}");
+
+        Assert.Contains("source.Value ?? default(int)", generatedCode);
+    }
+
     private static (IReadOnlyList<Diagnostic> Diagnostics, IReadOnlyList<SyntaxTree> GeneratedTrees) RunGenerator(string source)
     {
         var syntaxTree = CSharpSyntaxTree.ParseText(source);
