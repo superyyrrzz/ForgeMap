@@ -25,6 +25,7 @@
 - Fixed character and string literal escaping using Roslyn's SymbolDisplay.FormatLiteral
 - Fixed enum default expressions using FullyQualifiedFormat for cross-namespace resolution
 - Inherited ConvertWith mappings through IncludeBaseForge with first-wins semantics
+- Fixed `NullPropertyHandling` strategies (`CoalesceToNew`, `CoalesceToDefault`, `ThrowException`, `SkipNull`) being ignored for `Nullable<T>` → `T` value type mappings — previously always generated a forced unwrap that threw on null (#115)
 
 ### New Diagnostics
 
