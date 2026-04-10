@@ -61,11 +61,6 @@
       <TfmSpecificPackageFile Include="$(GeneratorArtifactsDir)/roslyn5.0/ForgeMap.Abstractions.dll"
                               PackagePath="analyzers/roslyn5.0/dotnet/cs" />
 
-      <!-- Universal fallback for SDKs that don't support roslyn{VERSION} resolution -->
-      <TfmSpecificPackageFile Include="$(GeneratorArtifactsDir)/roslyn4.8/ForgeMap.Generator.dll"
-                              PackagePath="analyzers/dotnet/cs" />
-      <TfmSpecificPackageFile Include="$(GeneratorArtifactsDir)/roslyn4.8/ForgeMap.Abstractions.dll"
-                              PackagePath="analyzers/dotnet/cs" />
     </ItemGroup>
   </Target>
 
