@@ -76,7 +76,14 @@ internal sealed partial class ForgeCodeEmitter
                     return enumCast;
             }
             if (isLiftedValueType && destProp.Type.IsValueType && GetNullableUnderlyingType(destProp.Type) == null)
-                return $"({destProp.Type.ToDisplayString()})({sourceExpr})!";
+            {
+                var strategy = ResolveNullPropertyHandling(destProp.Name, nullPropertyHandlingOverrides);
+                var liftedExpr = ApplyNullableValueTypeHandling(
+                    sourceExpr, destProp.Type, destProp.Name,
+                    destProp.ContainingType.Name, strategy, skipNullAssignments, destProp);
+                if (liftedExpr != null) return liftedExpr;
+                return null;
+            }
 
             // Check for nullable ref → non-nullable ref mismatch
             if (sourceLeafType != null && IsNullableToNonNullableReferenceType(sourceLeafType, destProp.Type))
@@ -209,7 +216,15 @@ internal sealed partial class ForgeCodeEmitter
         if (sourceProp != null && CanAssign(sourceProp.Type, destProp.Type))
         {
             if (IsNullableToNonNullableValueType(sourceProp.Type, destProp.Type))
-                return $"({destProp.Type.ToDisplayString()}){sourceParam}.{sourceProp.Name}!";
+            {
+                var strategy = ResolveNullPropertyHandling(destProp.Name, nullPropertyHandlingOverrides);
+                var nullableValueExpr = ApplyNullableValueTypeHandling(
+                    $"{sourceParam}.{sourceProp.Name}", destProp.Type, destProp.Name,
+                    destProp.ContainingType.Name, strategy, skipNullAssignments, destProp);
+                if (nullableValueExpr != null) return nullableValueExpr;
+                // null means SkipNull was added to skipNullAssignments
+                return null;
+            }
 
             // Check for nullable ref → non-nullable ref mismatch
             if (IsNullableToNonNullableReferenceType(sourceProp.Type, destProp.Type))
@@ -539,7 +554,12 @@ internal sealed partial class ForgeCodeEmitter
         IMethodSymbol method)
     {
         if (sourcePropertyType != null && IsNullableToNonNullableValueType(sourcePropertyType, destPropertyType))
-            return sourceExpression.Contains("?.") ? $"({destPropertyType.ToDisplayString()})({sourceExpression})!" : $"({destPropertyType.ToDisplayString()}){sourceExpression}!";
+        {
+            var strategy = ResolveNullPropertyHandling(destPropertyName, nullPropertyHandlingOverrides);
+            // SkipNull (1) is not applicable for ctor params — fall back to NullForgiving
+            if (strategy == 1) strategy = 0;
+            return ApplyNullableValueTypeCtorHandling(sourceExpression, destPropertyType, destPropertyName, destTypeName, strategy);
+        }
 
         // Handle lifted value type from null-conditional: source.Customer?.Age is int?
         // even though Age is int — cast back to the destination type
@@ -552,7 +572,9 @@ internal sealed partial class ForgeCodeEmitter
             var enumCast = TryGenerateCompatibleEnumCast(sourcePropertyType!, destPropertyType, sourceExpression, isLifted: true);
             if (enumCast != null)
                 return enumCast;
-            return $"({destPropertyType.ToDisplayString()})({sourceExpression})!";
+            var liftedStrategy = ResolveNullPropertyHandling(destPropertyName, nullPropertyHandlingOverrides);
+            if (liftedStrategy == 1) liftedStrategy = 0; // SkipNull → NullForgiving for ctor params
+            return ApplyNullableValueTypeCtorHandling(sourceExpression, destPropertyType, destPropertyName, destTypeName, liftedStrategy);
         }
 
         // Compatible enum cast for constructor parameters

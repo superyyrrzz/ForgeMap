@@ -219,4 +219,89 @@ internal sealed partial class ForgeCodeEmitter
         }
         return false;
     }
+
+    /// <summary>
+    /// Applies NullPropertyHandling to a Nullable&lt;T&gt; → T value type assignment in property initializers.
+    /// Returns the expression string, or null when SkipNull applies (added to skipNullAssignments).
+    /// </summary>
+    private string? ApplyNullableValueTypeHandling(
+        string sourceExpr,
+        ITypeSymbol destType,
+        string destPropertyName,
+        string destTypeName,
+        int strategy,
+        List<(string DestPropName, string SourceExpr, string LocalVarName, string? AssignExpr)>? skipNullAssignments,
+        IPropertySymbol destProp)
+    {
+        var destDisplay = destType.ToDisplayString();
+        var isParenNeeded = sourceExpr.Contains("?.");
+
+        switch (strategy)
+        {
+            case 0: // NullForgiving — existing behavior: forced unwrap
+                return isParenNeeded
+                    ? $"({destDisplay})({sourceExpr})!"
+                    : $"({destDisplay}){sourceExpr}!";
+
+            case 1: // SkipNull
+                if (skipNullAssignments == null || destProp.SetMethod?.IsInitOnly == true)
+                    return isParenNeeded
+                        ? $"({destDisplay})({sourceExpr})!"
+                        : $"({destDisplay}){sourceExpr}!";
+                var localVar = $"__val_{destPropertyName}";
+                skipNullAssignments.Add((destPropertyName, sourceExpr, localVar, null));
+                return null;
+
+            case 2: // CoalesceToDefault
+                return $"{sourceExpr} ?? default({destDisplay})";
+
+            case 3: // ThrowException
+                return $"{sourceExpr} ?? throw new global::System.ArgumentNullException(\"{destPropertyName}\", \"Cannot assign null source property '{sourceExpr}' to non-nullable destination '{destTypeName}.{destPropertyName}'.\")";
+
+            case 4: // CoalesceToNew — for value types, same as CoalesceToDefault
+                return $"{sourceExpr} ?? default({destDisplay})";
+
+            default:
+                return isParenNeeded
+                    ? $"({destDisplay})({sourceExpr})!"
+                    : $"({destDisplay}){sourceExpr}!";
+        }
+    }
+
+    /// <summary>
+    /// Applies NullPropertyHandling to a Nullable&lt;T&gt; → T value type for constructor parameters.
+    /// SkipNull is not applicable for ctor params — callers should remap to NullForgiving before calling.
+    /// </summary>
+    private static string ApplyNullableValueTypeCtorHandling(
+        string sourceExpr,
+        ITypeSymbol destType,
+        string destPropertyName,
+        string destTypeName,
+        int strategy)
+    {
+        var destDisplay = destType.ToDisplayString();
+        var isParenNeeded = sourceExpr.Contains("?.");
+
+        switch (strategy)
+        {
+            case 0: // NullForgiving
+                return isParenNeeded
+                    ? $"({destDisplay})({sourceExpr})!"
+                    : $"({destDisplay}){sourceExpr}!";
+
+            case 2: // CoalesceToDefault
+                return $"{sourceExpr} ?? default({destDisplay})";
+
+            case 3: // ThrowException
+                return $"{sourceExpr} ?? throw new global::System.ArgumentNullException(\"{destPropertyName}\", \"Cannot assign null source property '{sourceExpr}' to non-nullable destination '{destTypeName}.{destPropertyName}'.\")";
+
+            case 4: // CoalesceToNew — for value types, same as CoalesceToDefault
+                return $"{sourceExpr} ?? default({destDisplay})";
+
+            default:
+                return isParenNeeded
+                    ? $"({destDisplay})({sourceExpr})!"
+                    : $"({destDisplay}){sourceExpr}!";
+        }
+    }
 }
