@@ -41,8 +41,16 @@ if ($LASTEXITCODE -ne 0) { throw "ForgeMap wrapper build failed" }
 
 Write-Host "--- Packing ---"
 $fullArtifactsDir = (Resolve-Path $artifactsDir).Path
-dotnet pack src/ForgeMap/ForgeMap.csproj -c $Configuration --no-build `
-    /p:GeneratorArtifactsDir="$fullArtifactsDir"
+$packArgs = @(
+    "src/ForgeMap/ForgeMap.csproj",
+    "-c", $Configuration,
+    "--no-build",
+    "/p:GeneratorArtifactsDir=$fullArtifactsDir"
+)
+if ($env:PACKAGE_VERSION) {
+    $packArgs += "/p:PackageVersion=$($env:PACKAGE_VERSION)"
+}
+dotnet pack @packArgs
 if ($LASTEXITCODE -ne 0) { throw "Pack failed" }
 
 Write-Host "=== Pack complete ==="

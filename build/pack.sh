@@ -32,11 +32,11 @@ echo "--- Building ForgeMap wrapper ---"
 dotnet build src/ForgeMap/ForgeMap.csproj -c "$config"
 
 echo "--- Packing ---"
-pack_args="-c $config --no-build -p:GeneratorArtifactsDir=$(pwd)/$artifacts_dir"
+pack_args=(-c "$config" --no-build "-p:GeneratorArtifactsDir=$(pwd)/$artifacts_dir")
 if [ -n "${PACKAGE_VERSION:-}" ]; then
-  pack_args="$pack_args -p:PackageVersion=$PACKAGE_VERSION"
+  pack_args+=("-p:PackageVersion=$PACKAGE_VERSION")
 fi
-dotnet pack src/ForgeMap/ForgeMap.csproj $pack_args
+dotnet pack src/ForgeMap/ForgeMap.csproj "${pack_args[@]}"
 
 echo "=== Pack complete ==="
 ls -la artifacts/*.nupkg 2>/dev/null || ls -la src/ForgeMap/bin/"$config"/*.nupkg 2>/dev/null || echo "NuGet package location may vary — check bin/$config/"
