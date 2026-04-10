@@ -42,21 +42,23 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Pack
-        run: dotnet pack src/ForgeMap/ForgeMap.csproj --configuration Release --no-build --no-restore --output ${{ env.NuGetDirectory }} /p:PackageVersion=${{ steps.version.outputs.version }}
+        run: bash build/pack.sh Release
+        env:
+          PACKAGE_VERSION: ${{ steps.version.outputs.version }}
 
       - name: Upload NuGet package artifact
         uses: actions/upload-artifact@v7
         with:
           name: nuget
           if-no-files-found: error
-          path: ${{ env.NuGetDirectory }}/*.nupkg
+          path: src/ForgeMap/bin/Release/*.nupkg
 
       - name: Upload symbol package artifact
         uses: actions/upload-artifact@v7
         with:
           name: nuget-symbols
           if-no-files-found: warn
-          path: ${{ env.NuGetDirectory }}/*.snupkg
+          path: src/ForgeMap/bin/Release/*.snupkg
 
   publish:
     runs-on: ubuntu-latest
