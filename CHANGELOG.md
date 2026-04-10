@@ -1,5 +1,45 @@
 # Changelog
 
+## v1.6.0
+
+### New Features
+
+- **Enhanced constructor-based mapping** — New `[ForgeConstructor]` attribute and `ConstructorPreference` enum (`Auto`, `PreferParameterless`) on `[ForgeMap]`/`[ForgeMapDefaults]` for explicit constructor selection. Parameters are matched by name to source properties and `[ForgeProperty]` mappings; unmatched optional parameters receive their declared default values. Adds FM0046 (warning for unmatched parameters), FM0047 (error for specified constructor not found), and FM0048 (disabled routing info).
+
+- **Null-safe string→enum conversion** — String-to-enum mappings now emit null-safe code. When the source is nullable, a null/empty guard returns the enum default instead of throwing. `StrictParse` mode is available for validation scenarios. Adds FM0049 (disabled info diagnostic).
+
+- **Nullable-safe collection coercion** — Collection coercion now handles nullable element types correctly, avoiding CS8620 warnings. Supports `List<T?>` → `IReadOnlyList<T?>` and similar patterns. Adds FM0050 (disabled info) and FM0051 (warning for unsupported patterns).
+
+- **Per-property ConvertWith** — `ForgePropertyAttribute.ConvertWith` allows specifying a converter method or type per property, supporting both method names and `ITypeConverter<TSource, TDest>` type references with DI resolution. Adds FM0052 (warning for method not found), FM0053 (warning for signature mismatch), and FM0054 (disabled info).
+
+- **DateTimeOffset→DateTime auto-coercion** — Automatic conversion from `DateTimeOffset` to `DateTime` via `.UtcDateTime`, with full `NullPropertyHandling` support for nullable variants.
+
+### Bug Fixes
+
+- Fixed duplicate FM0014 emission for unmatched constructor parameters in explicit-constructor path
+- Fixed culture-sensitive decimal separators in generated numeric literals (FormatLiteral now uses invariant culture)
+- Fixed per-property ConvertWith being silently ignored in normal mappings
+- Fixed DateTimeOffset? coercion bypassing NullPropertyHandling pipeline
+- Fixed ConvertWith expressions for lifted value types using explicit cast instead of null-forgiving operator
+- Fixed dictionary coercion for unsupported types (SortedDictionary, ConcurrentDictionary) returning null for proper FM0051 reporting
+- Fixed character and string literal escaping using Roslyn's SymbolDisplay.FormatLiteral
+- Fixed enum default expressions using FullyQualifiedFormat for cross-namespace resolution
+- Inherited ConvertWith mappings through IncludeBaseForge with first-wins semantics
+
+### New Diagnostics
+
+| Rule ID | Severity | Description |
+|---------|----------|-------------|
+| FM0046 | Warning | Unmatched constructor parameter |
+| FM0047 | Error | Specified constructor not found |
+| FM0048 | Disabled | Constructor mapping routing info |
+| FM0049 | Disabled | Null-safe guard applied to string→enum conversion |
+| FM0050 | Disabled | Nullable-safe collection coercion applied |
+| FM0051 | Warning | Unsupported nullable collection coercion |
+| FM0052 | Warning | Per-property converter method not found |
+| FM0053 | Warning | Per-property converter signature mismatch |
+| FM0054 | Disabled | Per-property converter applied |
+
 ## v1.5.0
 
 ### New Features
