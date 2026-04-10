@@ -14,6 +14,8 @@
 
 - **DateTimeOffset→DateTime auto-coercion** — Automatic conversion from `DateTimeOffset` to `DateTime` via `.UtcDateTime`, with full `NullPropertyHandling` support for nullable variants.
 
+- **Multi-Roslyn targeting for .NET 8/9/10 SDK compatibility** — The NuGet package now ships three analyzer variants compiled against Roslyn 4.8.0, 4.12.0, and 5.0.0, so consumers on .NET 8, 9, or 10 SDKs automatically get the correct binary. Includes pack scripts (`build/pack.sh`, `build/pack.ps1`) for the multi-build workflow and an MSBuild guard against bare `dotnet pack`.
+
 ### Bug Fixes
 
 - Fixed duplicate FM0014 emission for unmatched constructor parameters in explicit-constructor path
