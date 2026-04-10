@@ -43,12 +43,20 @@ New-Item -ItemType Directory -Path $localPkgDir -Force | Out-Null
 
 $benchVersion = "99.0.0-bench.$(Get-Date -Format 'yyyyMMddHHmmss')"
 Write-Host "Packing ForgeMap as local NuGet package (version $benchVersion)..."
-dotnet pack (Join-Path $repoRoot 'src' 'ForgeMap' 'ForgeMap.csproj') `
-    -c $Configuration --verbosity quiet -o $localPkgDir -p:Version=$benchVersion
-if ($LASTEXITCODE -ne 0) {
-    Write-Error 'Failed to pack ForgeMap'
-    exit 1
+$packScript = Join-Path $repoRoot 'build' 'pack.ps1'
+$env:PACKAGE_VERSION = $benchVersion
+Push-Location $repoRoot
+try {
+    & $packScript -Configuration $Configuration
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error 'Failed to pack ForgeMap'
+        exit 1
+    }
+} finally {
+    Pop-Location
+    $env:PACKAGE_VERSION = $null
 }
+Copy-Item (Join-Path $repoRoot 'src' 'ForgeMap' 'bin' $Configuration "ForgeMap.$benchVersion.nupkg") $localPkgDir
 
 # Generate NuGet.config at runtime so CI dependency scanners don't fail
 # trying to restore from a non-existent LocalPackages directory.

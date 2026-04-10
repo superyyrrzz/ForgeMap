@@ -38,10 +38,29 @@
   </PropertyGroup>
 
   <Target Name="IncludePackageContent">
+    <Error Condition="'$(GeneratorArtifactsDir)' == ''"
+           Text="GeneratorArtifactsDir must be set. Use build/pack.sh or build/pack.ps1 to pack." />
     <ItemGroup>
       <TfmSpecificPackageFile Include="$(OutDir)ForgeMap.Abstractions.dll" PackagePath="lib/netstandard2.0" />
-      <TfmSpecificPackageFile Include="$([MSBuild]::NormalizePath('$(MSBuildThisFileDirectory)', '..', 'ForgeMap.Generator', 'bin', '$(Configuration)', 'netstandard2.0', 'ForgeMap.Generator.dll'))"
-                              PackagePath="analyzers/dotnet/cs" />
+
+      <!-- Roslyn 4.8 (for .NET 8 SDK) -->
+      <TfmSpecificPackageFile Include="$(GeneratorArtifactsDir)/roslyn4.8/ForgeMap.Generator.dll"
+                              PackagePath="analyzers/roslyn4.8/dotnet/cs" />
+      <TfmSpecificPackageFile Include="$(GeneratorArtifactsDir)/roslyn4.8/ForgeMap.Abstractions.dll"
+                              PackagePath="analyzers/roslyn4.8/dotnet/cs" />
+
+      <!-- Roslyn 4.12 (for .NET 9 SDK) -->
+      <TfmSpecificPackageFile Include="$(GeneratorArtifactsDir)/roslyn4.12/ForgeMap.Generator.dll"
+                              PackagePath="analyzers/roslyn4.12/dotnet/cs" />
+      <TfmSpecificPackageFile Include="$(GeneratorArtifactsDir)/roslyn4.12/ForgeMap.Abstractions.dll"
+                              PackagePath="analyzers/roslyn4.12/dotnet/cs" />
+
+      <!-- Roslyn 5.0 (for .NET 10 SDK) -->
+      <TfmSpecificPackageFile Include="$(GeneratorArtifactsDir)/roslyn5.0/ForgeMap.Generator.dll"
+                              PackagePath="analyzers/roslyn5.0/dotnet/cs" />
+      <TfmSpecificPackageFile Include="$(GeneratorArtifactsDir)/roslyn5.0/ForgeMap.Abstractions.dll"
+                              PackagePath="analyzers/roslyn5.0/dotnet/cs" />
+
     </ItemGroup>
   </Target>
 

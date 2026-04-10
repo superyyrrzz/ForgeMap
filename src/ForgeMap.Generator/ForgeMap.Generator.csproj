@@ -1,6 +1,12 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
+    <ROSLYN_VERSION Condition="'$(ROSLYN_VERSION)' == ''">4.8</ROSLYN_VERSION>
+  </PropertyGroup>
+
+  <Import Project="ForgeMap.Generator.Roslyn$(ROSLYN_VERSION).props" />
+
+  <PropertyGroup>
     <TargetFramework>netstandard2.0</TargetFramework>
     <LangVersion>12.0</LangVersion>
     <Nullable>enable</Nullable>
@@ -22,7 +28,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" PrivateAssets="all" />
     <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" PrivateAssets="all" />
   </ItemGroup>
 
