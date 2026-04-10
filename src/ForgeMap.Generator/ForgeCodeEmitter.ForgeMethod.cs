@@ -111,6 +111,7 @@ internal sealed partial class ForgeCodeEmitter
         var beforeForgeHooks = cfg.BeforeForgeHooks;
         var afterForgeHooks = cfg.AfterForgeHooks;
         var nullPropertyHandlingOverrides = cfg.NullPropertyHandlingOverrides;
+        var propertyConvertWithMappings = cfg.PropertyConvertWithMappings;
 
         // FM0028: ExistingTarget = true is only valid on [UseExistingValue] mutation methods
         if (cfg.ExistingTargetProperties.Count > 0)
@@ -174,21 +175,21 @@ internal sealed partial class ForgeCodeEmitter
                 sb, destinationType, sourceType, sourceParam, sourceProperties, destProperties,
                 ctorParamMappings, ctorCoveredDestProps, ignoredProperties, propertyMappings,
                 resolverMappings, forgeWithMappings, nullPropertyHandlingOverrides,
-                afterForgeHooks, forger, context, method);
+                afterForgeHooks, forger, context, method, propertyConvertWithMappings);
         }
         else if (hasAfterForge)
         {
             GenerateObjInitWithAfterForge(
                 sb, destinationType, sourceType, sourceParam, sourceProperties, destProperties,
                 ignoredProperties, propertyMappings, resolverMappings, forgeWithMappings,
-                nullPropertyHandlingOverrides, afterForgeHooks, forger, context, method);
+                nullPropertyHandlingOverrides, afterForgeHooks, forger, context, method, propertyConvertWithMappings);
         }
         else
         {
             GenerateSimpleObjectInit(
                 sb, destinationType, sourceType, sourceParam, sourceProperties, destProperties,
                 ignoredProperties, propertyMappings, resolverMappings, forgeWithMappings,
-                nullPropertyHandlingOverrides, forger, context, method);
+                nullPropertyHandlingOverrides, forger, context, method, propertyConvertWithMappings);
         }
 
         sb.AppendLine("        }");
@@ -299,7 +300,8 @@ internal sealed partial class ForgeCodeEmitter
         List<string> afterForgeHooks,
         ForgerInfo forger,
         SourceProductionContext context,
-        IMethodSymbol method)
+        IMethodSymbol method,
+        Dictionary<string, (string? MethodName, string? ConverterTypeName, INamedTypeSymbol? ConverterTypeSymbol)>? propertyConvertWithMappings = null)
     {
         // Constructor mapping: generate new Dest(param1: expr1, param2: expr2) { Prop = value, ... }
         // Using object initializer syntax so init-only properties work too
@@ -326,10 +328,10 @@ internal sealed partial class ForgeCodeEmitter
                 continue;
 
             var assignment = GeneratePropertyAssignment(
-                destProp, sourceParam, sourceType, sourceProperties,
-                propertyMappings, resolverMappings, forgeWithMappings, ignoredProperties, forger, context, method,
-                nullPropertyHandlingOverrides, skipNullAssignmentsForCtor,
-                postConstructionCollectionsForCtor, preConstructionBlocksForCtor);
+               destProp, sourceParam, sourceType, sourceProperties,
+               propertyMappings, resolverMappings, forgeWithMappings, ignoredProperties, forger, context, method,
+               nullPropertyHandlingOverrides, skipNullAssignmentsForCtor,
+                postConstructionCollectionsForCtor, preConstructionBlocksForCtor, propertyConvertWithMappings);
 
             if (assignment != null)
                 initAssignments.Add((destProp.Name, assignment));
@@ -405,7 +407,8 @@ internal sealed partial class ForgeCodeEmitter
         List<string> afterForgeHooks,
         ForgerInfo forger,
         SourceProductionContext context,
-        IMethodSymbol method)
+        IMethodSymbol method,
+        Dictionary<string, (string? MethodName, string? ConverterTypeName, INamedTypeSymbol? ConverterTypeSymbol)>? propertyConvertWithMappings = null)
     {
         // When AfterForge hooks exist, we need a variable to pass to the hooks
         var skipNullAssignmentsAfterForge = new List<(string DestPropName, string SourceExpr, string LocalVarName, string? AssignExpr)>();
@@ -415,11 +418,11 @@ internal sealed partial class ForgeCodeEmitter
         var afterForgeAssignments = new List<(string Name, string Expr)>();
         foreach (var destProp in destProperties.Where(p => p.SetMethod != null && p.SetMethod.DeclaredAccessibility >= Accessibility.Internal))
         {
-            var assignment = GeneratePropertyAssignment(
-                destProp, sourceParam, sourceType, sourceProperties,
-                propertyMappings, resolverMappings, forgeWithMappings, ignoredProperties, forger, context, method,
-                nullPropertyHandlingOverrides, skipNullAssignmentsAfterForge,
-                postConstructionCollectionsAfterForge, preConstructionBlocksAfterForge);
+           var assignment = GeneratePropertyAssignment(
+               destProp, sourceParam, sourceType, sourceProperties,
+               propertyMappings, resolverMappings, forgeWithMappings, ignoredProperties, forger, context, method,
+               nullPropertyHandlingOverrides, skipNullAssignmentsAfterForge,
+                postConstructionCollectionsAfterForge, preConstructionBlocksAfterForge, propertyConvertWithMappings);
 
             if (assignment != null)
                 afterForgeAssignments.Add((destProp.Name, assignment));
@@ -476,7 +479,8 @@ internal sealed partial class ForgeCodeEmitter
         Dictionary<string, int> nullPropertyHandlingOverrides,
         ForgerInfo forger,
         SourceProductionContext context,
-        IMethodSymbol method)
+        IMethodSymbol method,
+        Dictionary<string, (string? MethodName, string? ConverterTypeName, INamedTypeSymbol? ConverterTypeSymbol)>? propertyConvertWithMappings = null)
     {
         // Object initializer pattern
         var skipNullAssignmentsPlain = new List<(string DestPropName, string SourceExpr, string LocalVarName, string? AssignExpr)>();
@@ -490,7 +494,7 @@ internal sealed partial class ForgeCodeEmitter
                 destProp, sourceParam, sourceType, sourceProperties,
                 propertyMappings, resolverMappings, forgeWithMappings, ignoredProperties, forger, context, method,
                 nullPropertyHandlingOverrides, skipNullAssignmentsPlain,
-                postConstructionCollectionsPlain, preConstructionBlocksPlain);
+                postConstructionCollectionsPlain, preConstructionBlocksPlain, propertyConvertWithMappings);
 
             if (assignment != null)
                 plainAssignments.Add((destProp.Name, assignment));
@@ -553,10 +557,87 @@ internal sealed partial class ForgeCodeEmitter
             .Where(c => c.DeclaredAccessibility == Accessibility.Public)
             .ToList();
 
-        // If a parameterless constructor exists, prefer it (object initializer pattern)
+        // Check for [ForgeConstructor] attribute on the method
+        var forgeConstructorAttr = _forgeConstructorAttributeSymbol != null
+            ? method.GetAttributes().FirstOrDefault(a =>
+                SymbolEqualityComparer.Default.Equals(a.AttributeClass, _forgeConstructorAttributeSymbol))
+            : null;
+
+        // Determine constructor preference
+        var preferParameterless = _config.ConstructorPreference == 1; // PreferParameterless
+
+        if (forgeConstructorAttr != null)
+        {
+            // [ForgeConstructor] explicitly selects a constructor by parameter types
+            var paramTypeArgs = forgeConstructorAttr.ConstructorArguments;
+            IReadOnlyList<TypedConstant>? specifiedTypes = null;
+
+            if (paramTypeArgs.Length > 0 && paramTypeArgs[0].Kind == TypedConstantKind.Array)
+            {
+                specifiedTypes = paramTypeArgs[0].Values;
+            }
+
+            if (specifiedTypes != null)
+            {
+                // Find the matching constructor
+                IMethodSymbol? matchedCtor = null;
+                foreach (var ctor in constructors)
+                {
+                    if (ctor.Parameters.Length != specifiedTypes.Count)
+                        continue;
+
+                    var match = true;
+                    for (int i = 0; i < ctor.Parameters.Length; i++)
+                    {
+                        var specType = specifiedTypes[i].Value as ITypeSymbol;
+                        if (specType == null || !SymbolEqualityComparer.Default.Equals(ctor.Parameters[i].Type, specType))
+                        {
+                            match = false;
+                            break;
+                        }
+                    }
+                    if (match)
+                    {
+                        matchedCtor = ctor;
+                        break;
+                    }
+                }
+
+                if (matchedCtor == null)
+                {
+                    // FM0047: specified constructor not found
+                    ReportDiagnosticIfNotSuppressed(context,
+                        DiagnosticDescriptors.SpecifiedConstructorNotFound,
+                        method.Locations.FirstOrDefault(),
+                        destinationType.Name);
+                    return (null, null);
+                }
+
+                if (matchedCtor.Parameters.Length == 0)
+                {
+                    // Explicitly selected parameterless ctor
+                    return (null, null);
+                }
+
+                // Use the explicitly selected constructor
+                return ResolveConstructorMappings(
+                    matchedCtor, destinationType, sourceType, sourceProperties, propertyMappings,
+                    context, method, forger, emitUnmatchedWarning: true);
+            }
+        }
+
+        // If a parameterless constructor exists and we don't prefer parameterized, use object initializer
         var parameterlessCtor = constructors.FirstOrDefault(c => c.Parameters.Length == 0);
-        if (parameterlessCtor != null)
+        if (parameterlessCtor != null && preferParameterless)
+        {
+            // FM0048: info diagnostic (disabled by default)
+            ReportDiagnosticIfNotSuppressed(context,
+                DiagnosticDescriptors.ConstructorMappingInfo,
+                method.Locations.FirstOrDefault(),
+                destinationType.Name,
+                "using parameterless constructor (object initializer pattern)");
             return (null, null);
+        }
 
         if (constructors.Count == 0)
         {
@@ -769,8 +850,19 @@ internal sealed partial class ForgeCodeEmitter
                 }
                 else
                 {
-                    allMatched = false;
-                    break;
+                    // Check if parameter has a default value (optional parameter)
+                    if (param.HasExplicitDefaultValue)
+                    {
+                        var defaultExpr = param.ExplicitDefaultValue == null
+                            ? "default"
+                            : FormatLiteral(param.ExplicitDefaultValue, param.Type);
+                        mappings.Add(new CtorParamMapping(param.Name, param.Name, defaultExpr, param.Type, param.Type));
+                    }
+                    else
+                    {
+                        allMatched = false;
+                        break;
+                    }
                 }
             }
 
@@ -818,6 +910,126 @@ internal sealed partial class ForgeCodeEmitter
             deferredDiag();
 
         return (bestMatches[0].Ctor, bestMatches[0].Mappings);
+    }
+
+    /// <summary>
+    /// Resolves constructor parameter mappings for a specific constructor.
+    /// Used by [ForgeConstructor] explicit selection path.
+    /// </summary>
+    private (IMethodSymbol? Constructor, List<CtorParamMapping>? Mappings) ResolveConstructorMappings(
+        IMethodSymbol ctor,
+        INamedTypeSymbol destinationType,
+        INamedTypeSymbol sourceType,
+        IEnumerable<IPropertySymbol> sourceProperties,
+        Dictionary<string, string> propertyMappings,
+        SourceProductionContext context,
+        IMethodSymbol method,
+        ForgerInfo? _,
+        bool emitUnmatchedWarning)
+    {
+        var sourcePropertiesList = sourceProperties.ToList();
+        var destToSourceExpr = BuildDestToSourceMap(sourceType, sourcePropertiesList, propertyMappings);
+        var mappings = new List<CtorParamMapping>();
+        var allMatched = true;
+
+        foreach (var param in ctor.Parameters)
+        {
+            var paramName = param.Name;
+
+            string? matchedDestPropName = null;
+            string? sourceExpr = null;
+            ITypeSymbol? sourcePropType = null;
+
+            foreach (var kvp in destToSourceExpr)
+            {
+                if (string.Equals(kvp.Key, paramName, StringComparison.OrdinalIgnoreCase))
+                {
+                    matchedDestPropName = kvp.Key;
+                    sourceExpr = kvp.Value.Expression;
+                    sourcePropType = kvp.Value.Type;
+                    break;
+                }
+            }
+
+            if (sourceExpr == null)
+            {
+                var directMatch = sourcePropertiesList.FirstOrDefault(sp =>
+                    string.Equals(sp.Name, paramName, StringComparison.OrdinalIgnoreCase));
+                if (directMatch != null)
+                {
+                    matchedDestPropName = paramName;
+                    sourceExpr = $"source.{directMatch.Name}";
+                    sourcePropType = directMatch.Type;
+                }
+            }
+
+            if (sourceExpr != null && sourcePropType != null &&
+                (CanAssign(sourcePropType, param.Type) || IsCompatibleEnumPair(sourcePropType, param.Type)
+                 || (_config.StringToEnum != 2 && IsStringToEnumPair(sourcePropType, param.Type))
+                 || IsEnumToStringPair(sourcePropType, param.Type)))
+            {
+                mappings.Add(new CtorParamMapping(param.Name, matchedDestPropName!, sourceExpr, sourcePropType, param.Type));
+            }
+            else if (param.HasExplicitDefaultValue)
+            {
+                // Optional parameter with default — use default(type) expression
+                var defaultExpr = param.ExplicitDefaultValue == null
+                    ? "default"
+                    : FormatLiteral(param.ExplicitDefaultValue, param.Type);
+                mappings.Add(new CtorParamMapping(param.Name, param.Name, defaultExpr, param.Type, param.Type));
+            }
+            else
+            {
+                allMatched = false;
+                if (emitUnmatchedWarning)
+                {
+                    ReportDiagnosticIfNotSuppressed(context,
+                        DiagnosticDescriptors.UnmatchedConstructorParameter,
+                        method.Locations.FirstOrDefault(),
+                        param.Name,
+                        destinationType.Name);
+                }
+            }
+        }
+
+        if (allMatched)
+        {
+            // FM0048: info diagnostic for routing
+            ReportDiagnosticIfNotSuppressed(context,
+                DiagnosticDescriptors.ConstructorMappingInfo,
+                method.Locations.FirstOrDefault(),
+                destinationType.Name,
+                $"using constructor with {ctor.Parameters.Length} parameter(s)");
+            return (ctor, mappings);
+        }
+
+        return (null, null);
+    }
+
+    /// <summary>
+    /// Formats a literal value for code emission.
+    /// </summary>
+    private static string FormatLiteral(object? value, ITypeSymbol type)
+    {
+        if (value == null)
+            return "default";
+        if (value is string s)
+            return Microsoft.CodeAnalysis.CSharp.SymbolDisplay.FormatLiteral(s, true);
+        if (value is bool b)
+            return b ? "true" : "false";
+        if (value is char c)
+            return Microsoft.CodeAnalysis.CSharp.SymbolDisplay.FormatLiteral(c, true);
+        if (value is float f)
+            return FormattableString.Invariant($"{f}f");
+        if (value is double d)
+            return FormattableString.Invariant($"{d}d");
+        if (value is decimal m)
+            return FormattableString.Invariant($"{m}m");
+        if (value is long l)
+            return FormattableString.Invariant($"{l}L");
+        if (type.TypeKind == TypeKind.Enum)
+            return $"({type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}){value}";
+        return string.Format(System.Globalization.CultureInfo.InvariantCulture, "{0}", value);
     }
 
     /// <summary>

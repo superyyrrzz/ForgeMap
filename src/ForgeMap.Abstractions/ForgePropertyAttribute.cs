@@ -59,4 +59,21 @@ public sealed class ForgePropertyAttribute : Attribute
     /// Required when <see cref="CollectionUpdate"/> is <see cref="CollectionUpdateStrategy.Sync"/>.
     /// </summary>
     public string? KeyProperty { get; set; }
+
+    /// <summary>
+    /// Specifies a static or instance method on the forger class to use for converting
+    /// this individual property's value. The method must accept the source property type
+    /// and return the destination property type (e.g., <c>TDest MethodName(TSource value)</c>).
+    /// When set, this takes precedence over default assignment for this property only.
+    /// </summary>
+    public string? ConvertWith { get; set; }
+
+    /// <summary>
+    /// Specifies a type that implements <see cref="ITypeConverter{TSource, TDestination}"/>
+    /// to use for converting this individual property's value.
+    /// The type must have an accessible parameterless constructor.
+    /// When set, this takes precedence over default assignment for this property only.
+    /// Cannot be combined with <see cref="ConvertWith"/> (method name).
+    /// </summary>
+    public Type? ConvertWithType { get; set; }
 }

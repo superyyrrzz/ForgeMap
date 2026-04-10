@@ -23,6 +23,7 @@ internal sealed partial class ForgeCodeEmitter
     private readonly INamedTypeSymbol? _forgeAllDerivedAttributeSymbol;
     private readonly INamedTypeSymbol? _convertWithAttributeSymbol;
     private readonly INamedTypeSymbol? _useExistingValueAttributeSymbol;
+    private readonly INamedTypeSymbol? _forgeConstructorAttributeSymbol;
     private readonly INamedTypeSymbol? _iTypeConverterOpenSymbol;
     private readonly INamedTypeSymbol? _iServiceProviderSymbol;
     private readonly INamedTypeSymbol? _iServiceScopeFactorySymbol;
@@ -86,6 +87,7 @@ internal sealed partial class ForgeCodeEmitter
         _forgeAllDerivedAttributeSymbol = compilation.GetTypeByMetadataName("ForgeMap.ForgeAllDerivedAttribute");
         _convertWithAttributeSymbol = compilation.GetTypeByMetadataName("ForgeMap.ConvertWithAttribute");
         _useExistingValueAttributeSymbol = compilation.GetTypeByMetadataName("ForgeMap.UseExistingValueAttribute");
+        _forgeConstructorAttributeSymbol = compilation.GetTypeByMetadataName("ForgeMap.ForgeConstructorAttribute");
         _iTypeConverterOpenSymbol = compilation.GetTypeByMetadataName("ForgeMap.ITypeConverter`2");
         _iServiceProviderSymbol = compilation.GetTypeByMetadataName("System.IServiceProvider");
         _iServiceScopeFactorySymbol = compilation.GetTypeByMetadataName("Microsoft.Extensions.DependencyInjection.IServiceScopeFactory");
@@ -106,6 +108,7 @@ internal sealed partial class ForgeCodeEmitter
             NullPropertyHandling = _assemblyDefaults.NullPropertyHandling,
             AutoWireNestedMappings = _assemblyDefaults.AutoWireNestedMappings,
             StringToEnum = _assemblyDefaults.StringToEnum,
+            ConstructorPreference = _assemblyDefaults.ConstructorPreference,
             SuppressDiagnostics = new HashSet<string>(_assemblyDefaults.SuppressDiagnostics, StringComparer.OrdinalIgnoreCase),
         };
 
@@ -138,6 +141,9 @@ internal sealed partial class ForgeCodeEmitter
                     break;
                 case "StringToEnum":
                     config.StringToEnum = (int)named.Value.Value!;
+                    break;
+                case "ConstructorPreference":
+                    config.ConstructorPreference = (int)named.Value.Value!;
                     break;
             }
         }

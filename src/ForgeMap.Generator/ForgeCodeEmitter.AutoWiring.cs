@@ -356,23 +356,75 @@ internal sealed partial class ForgeCodeEmitter
             // No element forge method. Check for pure container coercion (identical element types only).
             // We require exact element type match — assignable-but-different types (e.g., string->object)
             // would generate invalid code for invariant generic containers.
-            if (!SymbolEqualityComparer.Default.Equals(srcElemType, destElemType))
+            // However, we allow nullable annotation mismatches (e.g., object vs object?) via safe coercion.
+            var elemTypesExactMatch = SymbolEqualityComparer.Default.Equals(srcElemType, destElemType);
+            var elemTypesNullableMismatchOnly = !elemTypesExactMatch &&
+                SymbolEqualityComparer.Default.Equals(
+                    srcElemType.WithNullableAnnotation(NullableAnnotation.NotAnnotated),
+                    destElemType.WithNullableAnnotation(NullableAnnotation.NotAnnotated));
+
+            if (!elemTypesExactMatch && !elemTypesNullableMismatchOnly)
                 return null;
 
             // Already assignable containers -> no coercion needed (CanAssign already handled this upstream)
             if (CanAssign(sourcePropertyType, destProp.Type))
                 return null;
 
-            // Try dictionary coercion
+            // Try dictionary coercion (handles both exact match and nullable mismatch)
             var srcDict = GetDictionaryKeyValueTypes(sourcePropertyType);
             var destDict = GetDictionaryKeyValueTypes(destProp.Type);
             if (srcDict != null && destDict != null)
             {
-                if (!SymbolEqualityComparer.Default.Equals(srcDict.Value.KeyType, destDict.Value.KeyType))
+                var keysExact = SymbolEqualityComparer.Default.Equals(srcDict.Value.KeyType, destDict.Value.KeyType);
+                var keysNullMismatch = !keysExact &&
+                    SymbolEqualityComparer.Default.Equals(
+                        srcDict.Value.KeyType.WithNullableAnnotation(NullableAnnotation.NotAnnotated),
+                        destDict.Value.KeyType.WithNullableAnnotation(NullableAnnotation.NotAnnotated));
+                var valsExact = SymbolEqualityComparer.Default.Equals(srcDict.Value.ValueType, destDict.Value.ValueType);
+                var valsNullMismatch = !valsExact &&
+                    SymbolEqualityComparer.Default.Equals(
+                        srcDict.Value.ValueType.WithNullableAnnotation(NullableAnnotation.NotAnnotated),
+                        destDict.Value.ValueType.WithNullableAnnotation(NullableAnnotation.NotAnnotated));
+
+                if (!keysExact && !keysNullMismatch)
                 {
-                    // Key type mismatch — FM0040
+                    // Key type mismatch (not just nullability) — FM0040
                     ReportDiagnosticIfNotSuppressed(context,
                         DiagnosticDescriptors.CollectionCoercionNotSupported,
+                        method.Locations.FirstOrDefault(),
+                        destProp.Name,
+                        sourcePropertyType.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat),
+                        destProp.Type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat));
+                    return null;
+                }
+
+                var hasNullableMismatch = keysNullMismatch || valsNullMismatch;
+
+                if (hasNullableMismatch)
+                {
+                    // Generate nullable-safe dictionary coercion via adapter expression
+                    var nullableCoercionResult = TryGenerateNullableDictionaryCoercion(
+                        destProp.Type,
+                        srcDict.Value.KeyType, srcDict.Value.ValueType,
+                        destDict.Value.KeyType, destDict.Value.ValueType,
+                        $"__coll_{destProp.Name}");
+                    if (nullableCoercionResult != null)
+                    {
+                        ReportDiagnosticIfNotSuppressed(context,
+                            DiagnosticDescriptors.NullableCollectionCoercionApplied,
+                            method.Locations.FirstOrDefault(),
+                            destProp.Name,
+                            sourcePropertyType.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat),
+                            destProp.Type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat));
+
+                        return ApplyCoercionNullHandlingCore(destProp, sourceExpr, $"__coll_{destProp.Name}",
+                            nullableCoercionResult, mode, destVarName,
+                            nullPropertyHandlingOverrides, postConstructionCollections);
+                    }
+
+                    // Unsupported nullable coercion — FM0051
+                    ReportDiagnosticIfNotSuppressed(context,
+                        DiagnosticDescriptors.NullableCollectionCoercionUnsupported,
                         method.Locations.FirstOrDefault(),
                         destProp.Name,
                         sourcePropertyType.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat),
@@ -395,6 +447,35 @@ internal sealed partial class ForgeCodeEmitter
                         dictExpr, mode, destVarName,
                         nullPropertyHandlingOverrides, postConstructionCollections);
                 }
+            }
+
+            // Try nullable-safe sequence coercion when element types differ only in nullability
+            if (elemTypesNullableMismatchOnly)
+            {
+                var nullableSeqResult = TryGenerateNullableSequenceCoercion(
+                    destProp.Type, destElemType, $"__coll_{destProp.Name}");
+                if (nullableSeqResult != null)
+                {
+                    ReportDiagnosticIfNotSuppressed(context,
+                        DiagnosticDescriptors.NullableCollectionCoercionApplied,
+                        method.Locations.FirstOrDefault(),
+                        destProp.Name,
+                        sourcePropertyType.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat),
+                        destProp.Type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat));
+
+                    return ApplyCoercionNullHandlingCore(destProp, sourceExpr, $"__coll_{destProp.Name}",
+                        nullableSeqResult, mode, destVarName,
+                        nullPropertyHandlingOverrides, postConstructionCollections);
+                }
+
+                // Unsupported nullable coercion — FM0051
+                ReportDiagnosticIfNotSuppressed(context,
+                    DiagnosticDescriptors.NullableCollectionCoercionUnsupported,
+                    method.Locations.FirstOrDefault(),
+                    destProp.Name,
+                    sourcePropertyType.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat),
+                    destProp.Type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat));
+                return null;
             }
 
             // Try sequence coercion
@@ -921,6 +1002,93 @@ internal sealed partial class ForgeCodeEmitter
                 return $"new {dictType}({sourceExpr}, {sourceExpr}.Comparer)";
             }
             return $"{sourceExpr} is {dictType} {dictLocal} ? new {dictType}({dictLocal}, {dictLocal}.Comparer) : new {dictType}({sourceExpr})";
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Generates a nullable-safe dictionary coercion when key/value types differ only in nullability.
+    /// Uses .ToDictionary() adapter with casts for nullable annotation bridging.
+    /// </summary>
+    private static string? TryGenerateNullableDictionaryCoercion(
+        ITypeSymbol destCollType,
+        ITypeSymbol srcKeyType, ITypeSymbol srcValueType,
+        ITypeSymbol destKeyType, ITypeSymbol destValueType,
+        string sourceExpr)
+    {
+        if (destCollType is not INamedTypeSymbol destNamed)
+            return null;
+
+        var destKeyDisplay = destKeyType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+        var destValueDisplay = destValueType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+        var destDef = destNamed.OriginalDefinition.ToDisplayString();
+
+        // Build the key/value cast expressions
+        var keyCast = SymbolEqualityComparer.Default.Equals(srcKeyType, destKeyType)
+            ? "kv.Key"
+            : $"({destKeyDisplay})kv.Key";
+        var valueCast = SymbolEqualityComparer.Default.Equals(srcValueType, destValueType)
+            ? "kv.Value"
+            : $"({destValueDisplay})kv.Value";
+
+        var toDictExpr = $"global::System.Linq.Enumerable.ToDictionary(global::System.Linq.Enumerable.Select({sourceExpr}, kv => new global::System.Collections.Generic.KeyValuePair<{destKeyDisplay}, {destValueDisplay}>({keyCast}, {valueCast})), kv => kv.Key, kv => kv.Value)";
+
+        // For IReadOnlyDictionary, wrap in ReadOnlyDictionary
+        if (destDef == "System.Collections.Generic.IReadOnlyDictionary<TKey, TValue>" ||
+            destDef == "System.Collections.ObjectModel.ReadOnlyDictionary<TKey, TValue>")
+        {
+            var rodType = $"global::System.Collections.ObjectModel.ReadOnlyDictionary<{destKeyDisplay}, {destValueDisplay}>";
+            return $"new {rodType}({toDictExpr})";
+        }
+
+        // For Dictionary, IDictionary, ToDictionary already returns a compatible type
+        if (destDef == "System.Collections.Generic.Dictionary<TKey, TValue>" ||
+            destDef == "System.Collections.Generic.IDictionary<TKey, TValue>")
+        {
+            return toDictExpr;
+        }
+
+        // Unsupported concrete dictionary shapes (e.g. SortedDictionary, ConcurrentDictionary)
+        // fall back so FM0051 can be raised
+        return null;
+    }
+
+    /// <summary>
+    /// Generates a nullable-safe sequence coercion when element types differ only in nullability.
+    /// Uses Select + cast to bridge the nullable annotation gap.
+    /// </summary>
+    private static string? TryGenerateNullableSequenceCoercion(
+        ITypeSymbol destCollType,
+        ITypeSymbol destElemType,
+        string sourceExpr)
+    {
+        var destElemDisplay = destElemType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+        var selectExpr = $"global::System.Linq.Enumerable.Select({sourceExpr}, __item => ({destElemDisplay})__item)";
+
+        // Array destination
+        if (destCollType is IArrayTypeSymbol)
+            return $"global::System.Linq.Enumerable.ToArray({selectExpr})";
+
+        if (destCollType is INamedTypeSymbol destNamed)
+        {
+            var destDef = destNamed.OriginalDefinition.ToDisplayString();
+
+            if (destDef == "System.Collections.Generic.HashSet<T>")
+                return $"new global::System.Collections.Generic.HashSet<{destElemDisplay}>({selectExpr})";
+
+            if (destDef == "System.Collections.ObjectModel.ReadOnlyCollection<T>")
+                return $"new global::System.Collections.Generic.List<{destElemDisplay}>({selectExpr}).AsReadOnly()";
+
+            if (destDef == "System.Collections.Generic.List<T>" ||
+                destDef == "System.Collections.Generic.IList<T>" ||
+                destDef == "System.Collections.Generic.ICollection<T>" ||
+                destDef == "System.Collections.Generic.IReadOnlyList<T>" ||
+                destDef == "System.Collections.Generic.IReadOnlyCollection<T>")
+                return $"new global::System.Collections.Generic.List<{destElemDisplay}>({selectExpr})";
+
+            if (destDef == "System.Collections.Generic.IEnumerable<T>")
+                return selectExpr;
         }
 
         return null;

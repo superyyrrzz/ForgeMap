@@ -41,4 +41,10 @@ public sealed class ForgeMapDefaultsAttribute : Attribute
     /// Default is <see cref="StringToEnumConversion.Parse"/>.
     /// </summary>
     public StringToEnumConversion StringToEnum { get; set; } = StringToEnumConversion.Parse;
+
+    /// <summary>
+    /// Assembly-level default for constructor preference.
+    /// Default is <see cref="ConstructorPreference.Auto"/>.
+    /// </summary>
+    public ConstructorPreference ConstructorPreference { get; set; } = ConstructorPreference.Auto;
 }

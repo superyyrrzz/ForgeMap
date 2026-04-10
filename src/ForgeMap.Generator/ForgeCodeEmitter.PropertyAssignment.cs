@@ -29,11 +29,20 @@ internal sealed partial class ForgeCodeEmitter
         Dictionary<string, int> nullPropertyHandlingOverrides,
         List<(string DestPropName, string SourceExpr, string LocalVarName, string? AssignExpr)>? skipNullAssignments = null,
         List<(string DestPropName, string Block)>? postConstructionCollections = null,
-        List<string>? preConstructionBlocks = null)
+        List<string>? preConstructionBlocks = null,
+        Dictionary<string, (string? MethodName, string? ConverterTypeName, INamedTypeSymbol? ConverterTypeSymbol)>? propertyConvertWithMappings = null)
     {
         // Skip ignored properties
         if (ignoredProperties.Contains(destProp.Name))
             return null;
+
+        // Check for per-property ConvertWith
+        if (propertyConvertWithMappings != null && propertyConvertWithMappings.TryGetValue(destProp.Name, out var convertWithInfo))
+        {
+            return GeneratePropertyConvertWithExpression(
+                destProp, convertWithInfo, sourceParam, sourceType,
+                sourceProperties, propertyMappings, forger, context, method);
+        }
 
         // Check if this property has a resolver from [ForgeFrom]
         if (resolverMappings.TryGetValue(destProp.Name, out var resolverMethodName))
@@ -136,6 +145,37 @@ internal sealed partial class ForgeCodeEmitter
                         return handledExpr ?? $"{expr}!";
                     }
                     return expr;
+                }
+
+                // DateTimeOffset→DateTime auto-coercion for [ForgeProperty] mapped properties
+                var dtoCoercionExpr = TryGenerateDateTimeOffsetToDateTimeCoercion(sourceLeafType, destProp.Type, sourceExpr);
+                if (dtoCoercionExpr != null)
+                {
+                    // If source is nullable DateTimeOffset? and dest is non-nullable DateTime,
+                    // route through NullPropertyHandling pipeline (except NullForgiving, where the
+                    // default source!.Value.UtcDateTime is already correct)
+                    var srcIsNullableDto = GetNullableUnderlyingType(sourceLeafType) != null;
+                    var dstIsNullableDto = GetNullableUnderlyingType(destProp.Type) != null;
+                    if (srcIsNullableDto && !dstIsNullableDto)
+                    {
+                        var strategy = ResolveNullPropertyHandling(destProp.Name, nullPropertyHandlingOverrides);
+                        if (strategy == 1 && skipNullAssignments != null) // SkipNull
+                        {
+                            if (destProp.SetMethod?.IsInitOnly == true)
+                                return dtoCoercionExpr;
+                            var localVar = "__dto_" + SanitizeVarName(destProp.Name);
+                            skipNullAssignments.Add((destProp.Name, sourceExpr, localVar, $"{localVar}.Value.UtcDateTime"));
+                            return null;
+                        }
+                        if (strategy != 0) // Not NullForgiving — apply CoalesceToDefault/ThrowException
+                        {
+                            var handledExpr = ApplyNullPropertyHandlingExpression(
+                                $"{sourceExpr}?.UtcDateTime", destProp.Type, destProp.Name,
+                                destProp.ContainingType.Name, strategy, method);
+                            if (handledExpr != null) return handledExpr;
+                        }
+                    }
+                    return dtoCoercionExpr;
                 }
 
                 if (_config.AutoWireNestedMappings)
@@ -243,6 +283,39 @@ internal sealed partial class ForgeCodeEmitter
                 return handledExpr ?? $"{expr}!";
             }
             return expr;
+        }
+
+        // DateTimeOffset→DateTime auto-coercion (convention path)
+        if (sourceProp != null)
+        {
+            var convDtoCoercionExpr = TryGenerateDateTimeOffsetToDateTimeCoercion(sourceProp.Type, destProp.Type, $"{sourceParam}.{sourceProp.Name}");
+            if (convDtoCoercionExpr != null)
+            {
+                // If source is nullable DateTimeOffset? and dest is non-nullable DateTime,
+                // route through NullPropertyHandling pipeline (except NullForgiving)
+                var srcIsNullableDto = GetNullableUnderlyingType(sourceProp.Type) != null;
+                var dstIsNullableDto = GetNullableUnderlyingType(destProp.Type) != null;
+                if (srcIsNullableDto && !dstIsNullableDto)
+                {
+                    var strategy = ResolveNullPropertyHandling(destProp.Name, nullPropertyHandlingOverrides);
+                    if (strategy == 1 && skipNullAssignments != null) // SkipNull
+                    {
+                        if (destProp.SetMethod?.IsInitOnly == true)
+                            return convDtoCoercionExpr;
+                        var localVar = "__dto_" + SanitizeVarName(destProp.Name);
+                        skipNullAssignments.Add((destProp.Name, $"{sourceParam}.{sourceProp.Name}", localVar, $"{localVar}.Value.UtcDateTime"));
+                        return null;
+                    }
+                    if (strategy != 0) // Not NullForgiving — apply CoalesceToDefault/ThrowException
+                    {
+                        var handledExpr = ApplyNullPropertyHandlingExpression(
+                            $"{sourceParam}.{sourceProp.Name}?.UtcDateTime", destProp.Type, destProp.Name,
+                            destProp.ContainingType.Name, strategy, method);
+                        if (handledExpr != null) return handledExpr;
+                    }
+                }
+                return convDtoCoercionExpr;
+            }
         }
 
         // Try automatic flattening: destProp "CustomerName" → source.Customer.Name
@@ -522,10 +595,14 @@ internal sealed partial class ForgeCodeEmitter
                         var nullChecked = $"({sourceExpression} ?? throw new global::System.ArgumentNullException(\"{destPropertyName}\", \"Cannot assign null source property '{sourceExpression}' to non-nullable destination '{destTypeName}.{destPropertyName}'.\"))";
                         if (_config.StringToEnum == 1) // TryParse
                             return $"(global::System.Enum.TryParse<{enumFqn}>({nullChecked}, true, out var __enumVal_{SanitizeVarName(destPropertyName)}) ? __enumVal_{SanitizeVarName(destPropertyName)} : default({enumFqn}))";
+                        if (_config.StringToEnum == 0) // Parse with null-safe guard
+                            return $"string.IsNullOrEmpty({sourceExpression}) ? default({enumFqn}) : ({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), {sourceExpression}!, true)";
                         return $"({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), {nullChecked}, true)";
                     case 2: // CoalesceToDefault — return default enum when source is null
                         if (_config.StringToEnum == 1) // TryParse
                             return $"({sourceExpression} is {{ }} __enumStr_{SanitizeVarName(destPropertyName)} && global::System.Enum.TryParse<{enumFqn}>(__enumStr_{SanitizeVarName(destPropertyName)}, true, out var __enumVal_{SanitizeVarName(destPropertyName)}) ? __enumVal_{SanitizeVarName(destPropertyName)} : default({enumFqn}))";
+                        if (_config.StringToEnum == 0) // Parse with null-safe guard
+                            return $"string.IsNullOrEmpty({sourceExpression}) ? default({enumFqn}) : ({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), {sourceExpression}, true)";
                         return $"({sourceExpression} is {{ }} __enumStr_{SanitizeVarName(destPropertyName)} ? ({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), __enumStr_{SanitizeVarName(destPropertyName)}, true) : default({enumFqn}))";
                     case 4: // CoalesceToNew — same as CoalesceToDefault for value-type enums
                         goto case 2;
@@ -563,6 +640,14 @@ internal sealed partial class ForgeCodeEmitter
             return GenerateEnumToStringExpression(sourcePropertyType, sourceExpression);
         }
 
+        // DateTimeOffset→DateTime auto-coercion for constructor parameters
+        if (sourcePropertyType != null)
+        {
+            var ctorDtoCoercion = TryGenerateDateTimeOffsetToDateTimeCoercion(sourcePropertyType, destPropertyType, sourceExpression);
+            if (ctorDtoCoercion != null)
+                return ctorDtoCoercion;
+        }
+
         return sourceExpression;
     }
 
@@ -588,13 +673,23 @@ internal sealed partial class ForgeCodeEmitter
 
         // Report FM0033 (informational, disabled by default)
         var destEnumUnderlying = GetNullableUnderlyingType(destType) ?? destType;
-        var strategyName = _config.StringToEnum == 1 ? "TryParse" : "Parse";
+        var strategyName = _config.StringToEnum == 1 ? "TryParse" : (_config.StringToEnum == 3 ? "StrictParse" : "Parse");
         ReportDiagnosticIfNotSuppressed(context,
             DiagnosticDescriptors.StringToEnumAutoConverted,
             method.Locations.FirstOrDefault(),
             destPropertyName,
             destEnumUnderlying.ToDisplayString(),
             strategyName);
+
+        // Report FM0049 when null-safe guard is applied (Parse mode, not StrictParse)
+        if (_config.StringToEnum == 0)
+        {
+            ReportDiagnosticIfNotSuppressed(context,
+                DiagnosticDescriptors.StringToEnumNullSafeGuardApplied,
+                method.Locations.FirstOrDefault(),
+                destPropertyName,
+                destEnumUnderlying.ToDisplayString());
+        }
 
         var isSourceNullable = sourceType.NullableAnnotation == NullableAnnotation.Annotated;
         var isDestNullable = GetNullableUnderlyingType(destType) != null;
@@ -623,13 +718,17 @@ internal sealed partial class ForgeCodeEmitter
             {
                 if (_config.StringToEnum == 1) // TryParse
                     return $"(global::System.Enum.TryParse<{enumFqn}>({sourceExpr}!, true, out var __enumVal_{SanitizeVarName(destPropertyName)}) ? __enumVal_{SanitizeVarName(destPropertyName)} : default({enumFqn}))";
+                if (_config.StringToEnum == 0) // Parse with null-safe guard
+                    return $"string.IsNullOrEmpty({sourceExpr}) ? default({enumFqn}) : ({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), {sourceExpr}!, true)";
                 return $"({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), {sourceExpr}!, true)"; // init-only: fall back to NullForgiving
             }
             var localVar = "__strVal_" + SanitizeVarName(destPropertyName);
             string assignExpr;
             if (_config.StringToEnum == 1) // TryParse
                 assignExpr = $"(global::System.Enum.TryParse<{enumFqn}>({localVar}, true, out var __enumParsed_{SanitizeVarName(destPropertyName)}) ? __enumParsed_{SanitizeVarName(destPropertyName)} : default({enumFqn}))";
-            else // Parse
+            else if (_config.StringToEnum == 0) // Parse with null-safe guard
+                assignExpr = $"string.IsNullOrEmpty({localVar}) ? default({enumFqn}) : ({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), {localVar}, true)";
+            else // StrictParse
                 assignExpr = $"({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), {localVar}, true)";
             skipNullAssignments.Add((destPropertyName, sourceExpr, localVar, assignExpr));
         }
@@ -670,11 +769,23 @@ internal sealed partial class ForgeCodeEmitter
             }
         }
 
-        // Parse strategy
+        // Parse strategy (0 = null-safe, 3 = strict)
+        var useNullSafeGuard = _config.StringToEnum == 0;
+
         if (isSourceNullable && isDestNullable)
         {
             // Nullable source → nullable dest: null maps to null, non-null gets parsed
+            // For null-safe Parse, also guard against empty strings
+            if (useNullSafeGuard)
+                return $"string.IsNullOrEmpty({sourceExpr}) ? default({enumFqn}?) : ({enumFqn}?)(({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), {sourceExpr}, true))";
             return $"{sourceExpr} is {{ }} __strVal_{varSuffix} ? ({enumFqn}?)(({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), __strVal_{varSuffix}, true)) : null";
+        }
+        if (useNullSafeGuard)
+        {
+            var guardedParse = $"string.IsNullOrEmpty({sourceExpr}) ? default({enumFqn}) : ({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), {sourceExpr}{(isSourceNullable ? "!" : "")}, true)";
+            if (isDestNullable)
+                return $"({enumFqn}?)({guardedParse})";
+            return guardedParse;
         }
         var parseBase = $"({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), {sourceExpr}{(isSourceNullable ? "!" : "")}, true)";
         if (isDestNullable)
@@ -694,9 +805,18 @@ internal sealed partial class ForgeCodeEmitter
         string destTypeName,
         Dictionary<string, int> nullPropertyHandlingOverrides)
     {
+        var useNullSafeGuard = _config.StringToEnum == 0;
+
         if (!isSourceNullable)
         {
-            // Non-nullable source: straightforward parse
+            // Non-nullable source: for null-safe Parse, guard against empty strings
+            if (useNullSafeGuard)
+            {
+                var guardedParse = $"string.IsNullOrEmpty({sourceExpr}) ? default({enumFqn}) : ({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), {sourceExpr}, true)";
+                if (isDestNullable)
+                    return $"({enumFqn}?)({guardedParse})";
+                return guardedParse;
+            }
             var parseExpr = $"({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), {sourceExpr}, true)";
             if (isDestNullable)
                 return $"({enumFqn}?)({parseExpr})";
@@ -710,27 +830,37 @@ internal sealed partial class ForgeCodeEmitter
         // regardless of NullPropertyHandling strategy (the strategy only matters for nullable→non-nullable)
         if (isDestNullable)
         {
+            if (useNullSafeGuard)
+                return $"string.IsNullOrEmpty({sourceExpr}) ? default({enumFqn}?) : ({enumFqn}?)(({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), {sourceExpr}, true))";
             return $"{sourceExpr} is {{ }} __strVal_{SanitizeVarName(destPropertyName)} ? ({enumFqn}?)(({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), __strVal_{SanitizeVarName(destPropertyName)}, true)) : null";
         }
 
         switch (strategy)
         {
             case 0: // NullForgiving
+                if (useNullSafeGuard)
+                    return $"string.IsNullOrEmpty({sourceExpr}) ? default({enumFqn}) : ({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), {sourceExpr}!, true)";
                 return $"({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), {sourceExpr}!, true)";
 
             case 1: // SkipNull — return null to signal the caller to skip the assignment
                 return null;
 
             case 2: // CoalesceToDefault
+                if (useNullSafeGuard)
+                    return $"string.IsNullOrEmpty({sourceExpr}) ? default({enumFqn}) : ({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), {sourceExpr}, true)";
                 return $"{sourceExpr} is null ? default({enumFqn}) : ({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), {sourceExpr}, true)";
 
             case 4: // CoalesceToNew — same as CoalesceToDefault for value-type enums
                 goto case 2;
 
             case 3: // ThrowException
+                if (useNullSafeGuard)
+                    return $"string.IsNullOrEmpty({sourceExpr}) ? default({enumFqn}) : ({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), {sourceExpr}!, true)";
                 return $"({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), {sourceExpr} ?? throw new global::System.ArgumentNullException(\"{destPropertyName}\", \"Cannot assign null source property '{sourceExpr}' to non-nullable destination '{destTypeName}.{destPropertyName}'.\"), true)";
 
             default:
+                if (useNullSafeGuard)
+                    return $"string.IsNullOrEmpty({sourceExpr}) ? default({enumFqn}) : ({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), {sourceExpr}!, true)";
                 return $"({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), {sourceExpr}!, true)";
         }
     }
@@ -816,5 +946,211 @@ internal sealed partial class ForgeCodeEmitter
                 sb.Append(c);
         }
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// Checks if the source type is DateTimeOffset (or Nullable&lt;DateTimeOffset&gt;) and the dest type
+    /// is DateTime (or Nullable&lt;DateTime&gt;), and if so, returns a coercion expression using .UtcDateTime.
+    /// Handles four cases:
+    ///   DateTimeOffset  → DateTime       : source.Prop.UtcDateTime
+    ///   DateTimeOffset? → DateTime?      : source.Prop?.UtcDateTime
+    ///   DateTimeOffset? → DateTime       : source.Prop!.Value.UtcDateTime
+    ///   DateTimeOffset  → DateTime?      : (global::System.DateTime?)source.Prop.UtcDateTime
+    /// Returns null if the types are not a DateTimeOffset→DateTime pair.
+    /// </summary>
+    private static string? TryGenerateDateTimeOffsetToDateTimeCoercion(
+        ITypeSymbol sourceType, ITypeSymbol destType, string sourceExpr)
+    {
+        var srcUnderlying = GetNullableUnderlyingType(sourceType);
+        var dstUnderlying = GetNullableUnderlyingType(destType);
+
+        var srcCore = srcUnderlying ?? sourceType;
+        var dstCore = dstUnderlying ?? destType;
+
+        // Check that the core types are System.DateTimeOffset → System.DateTime
+        if (srcCore.ToDisplayString() != "System.DateTimeOffset"
+            || dstCore.ToDisplayString() != "System.DateTime")
+            return null;
+
+        var srcIsNullable = srcUnderlying != null;
+        var dstIsNullable = dstUnderlying != null;
+
+        if (!srcIsNullable && !dstIsNullable)
+        {
+            // DateTimeOffset → DateTime
+            return $"{sourceExpr}.UtcDateTime";
+        }
+
+        if (srcIsNullable && dstIsNullable)
+        {
+            // DateTimeOffset? → DateTime?
+            return $"{sourceExpr}?.UtcDateTime";
+        }
+
+        if (srcIsNullable && !dstIsNullable)
+        {
+            // DateTimeOffset? → DateTime (nullable to non-nullable, suppress CS8629 with !)
+            return $"{sourceExpr}!.Value.UtcDateTime";
+        }
+
+        // !srcIsNullable && dstIsNullable
+        // DateTimeOffset → DateTime? (widening to nullable)
+        return $"(global::System.DateTime?){sourceExpr}.UtcDateTime";
+    }
+}
+
+// ---- Per-property ConvertWith support ----
+internal sealed partial class ForgeCodeEmitter
+{
+    /// <summary>
+    /// Generates a per-property converter call expression.
+    /// </summary>
+    private string? GeneratePropertyConvertWithExpression(
+        IPropertySymbol destProp,
+        (string? MethodName, string? ConverterTypeName, INamedTypeSymbol? ConverterTypeSymbol) convertWithInfo,
+        string sourceParam,
+        INamedTypeSymbol sourceType,
+        IEnumerable<IPropertySymbol> sourceProperties,
+        Dictionary<string, string> propertyMappings,
+        ForgerInfo forger,
+        SourceProductionContext context,
+        IMethodSymbol method)
+    {
+        // Resolve source expression
+        string? sourcePropName = null;
+        ITypeSymbol? sourcePropertyType = null;
+
+        if (propertyMappings.TryGetValue(destProp.Name, out var mapped))
+        {
+            sourcePropName = mapped;
+            sourcePropertyType = ResolvePathLeafType(mapped, sourceType);
+        }
+        else
+        {
+            var matchingSourceProp = sourceProperties.FirstOrDefault(sp =>
+                string.Equals(sp.Name, destProp.Name, _config.PropertyNameComparison));
+            if (matchingSourceProp != null)
+            {
+                sourcePropName = matchingSourceProp.Name;
+                sourcePropertyType = matchingSourceProp.Type;
+            }
+        }
+
+        if (sourcePropName == null || sourcePropertyType == null)
+        {
+            // Cannot resolve source property — fall through to unmapped
+            return null;
+        }
+
+        var (sourceExpr, hasNullConditional) = GenerateSourceExpressionWithNullInfo(sourceParam, sourcePropName, sourceType);
+        var isLiftedValueType = hasNullConditional && sourcePropertyType.IsValueType && GetNullableUnderlyingType(sourcePropertyType) == null;
+        var nullForgiving = hasNullConditional && sourcePropertyType.NullableAnnotation != NullableAnnotation.Annotated ? "!" : "";
+
+        // When null-conditional lifts a non-nullable value type (e.g., int -> int?),
+        // we need an explicit cast back to the original type, not just null-forgiving
+        string castSourceExpr;
+        if (isLiftedValueType)
+            castSourceExpr = $"({sourcePropertyType.ToDisplayString()})({sourceExpr})!";
+        else
+            castSourceExpr = $"{sourceExpr}{nullForgiving}";
+
+        // Method-based converter
+        if (!string.IsNullOrEmpty(convertWithInfo.MethodName))
+        {
+            var converterMethodName = convertWithInfo.MethodName!;
+
+            // Find method on forger class
+            var candidates = forger.Symbol.GetMembers(converterMethodName).OfType<IMethodSymbol>().ToList();
+            if (candidates.Count == 0)
+            {
+                ReportDiagnosticIfNotSuppressed(context,
+                    DiagnosticDescriptors.PropertyConverterMethodNotFound,
+                    method.Locations.FirstOrDefault(),
+                    converterMethodName, destProp.Name);
+                return null;
+            }
+
+            // Find a method with compatible signature: takes source property type, returns dest property type
+            var converterMethod = candidates.FirstOrDefault(m =>
+                m.Parameters.Length == 1 &&
+                CanAssign(sourcePropertyType, m.Parameters[0].Type) &&
+                CanAssign(m.ReturnType, destProp.Type));
+
+            if (converterMethod == null)
+            {
+                ReportDiagnosticIfNotSuppressed(context,
+                    DiagnosticDescriptors.PropertyConverterSignatureMismatch,
+                    method.Locations.FirstOrDefault(),
+                    converterMethodName, destProp.Name,
+                    sourcePropertyType.ToDisplayString(), destProp.Type.ToDisplayString());
+                return null;
+            }
+
+            // Report info diagnostic
+            ReportDiagnosticIfNotSuppressed(context,
+                DiagnosticDescriptors.PropertyConverterApplied,
+                method.Locations.FirstOrDefault(),
+                destProp.Name, converterMethodName);
+
+            return $"{converterMethodName}({castSourceExpr})";
+        }
+
+        // Type-based converter (ITypeConverter<TSource, TDest>)
+        if (!string.IsNullOrEmpty(convertWithInfo.ConverterTypeName))
+        {
+            var converterTypeName = convertWithInfo.ConverterTypeName!;
+            var converterTypeSymbol = convertWithInfo.ConverterTypeSymbol;
+
+            // Validate ITypeConverter<TSource, TDest> implementation
+            if (converterTypeSymbol != null && !ImplementsITypeConverter(converterTypeSymbol, sourcePropertyType, destProp.Type))
+            {
+                ReportDiagnosticIfNotSuppressed(context,
+                    DiagnosticDescriptors.PropertyConverterSignatureMismatch,
+                    method.Locations.FirstOrDefault(),
+                    converterTypeName, destProp.Name,
+                    sourcePropertyType.ToDisplayString(), destProp.Type.ToDisplayString());
+                return null;
+            }
+
+            // Check for DI capability or parameterless ctor
+            // Note: per-property converters are inline expressions, so IServiceScopeFactory
+            // cannot be used (would leak scopes). We prefer IServiceProvider for DI here.
+            string? serviceProviderField = _iServiceProviderSymbol != null
+                ? FindFieldByType(forger.Symbol, _iServiceProviderSymbol)
+                : null;
+
+            // Report info diagnostic
+            ReportDiagnosticIfNotSuppressed(context,
+                DiagnosticDescriptors.PropertyConverterApplied,
+                method.Locations.FirstOrDefault(),
+                destProp.Name, converterTypeName);
+
+            if (serviceProviderField != null)
+            {
+                return $"(({converterTypeName})(this.{serviceProviderField}.GetService(typeof({converterTypeName})) ?? throw new global::System.InvalidOperationException(\"No service for type '\" + typeof({converterTypeName}).FullName + \"' has been registered.\"))).Convert({castSourceExpr})";
+            }
+            else
+            {
+                // No DI — require public parameterless constructor
+                if (converterTypeSymbol != null)
+                {
+                    var hasParameterlessCtor = converterTypeSymbol.InstanceConstructors.Any(c =>
+                        c.Parameters.Length == 0 && c.DeclaredAccessibility == Accessibility.Public);
+
+                    if (!hasParameterlessCtor)
+                    {
+                        ReportDiagnosticIfNotSuppressed(context,
+                            DiagnosticDescriptors.ConvertWithNoParameterlessConstructor,
+                            method.Locations.FirstOrDefault(),
+                            converterTypeName);
+                        return null;
+                    }
+                }
+
+                return $"new {converterTypeName}().Convert({castSourceExpr})";
+            }
+        }
+
+        return null;
     }
 }

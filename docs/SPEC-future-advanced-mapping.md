@@ -199,17 +199,17 @@ public Order Forge(OrderDto source)
 ```
 
 **Unflattening constraints:**
-- Intermediate types must have accessible parameterless constructors (or constructor parameters matching the properties). Emit **FM0054** if not constructible
+- Intermediate types must have accessible parameterless constructors (or constructor parameters matching the properties). Emit **FM0056** if not constructible
 - When multiple destination properties unflatten into the same intermediate object, they are grouped into a single object initializer
-- `[ReverseForge]` unflattening is best-effort — emit **FM0055** (warning) for any property that cannot be unflattened, with a suggestion to add explicit `[ForgeProperty]` on the reverse method
+- `[ReverseForge]` unflattening is best-effort — emit **FM0057** (warning) for any property that cannot be unflattened, with a suggestion to add explicit `[ForgeProperty]` on the reverse method
 
 ### Diagnostics
 
 | Code | Severity | Description |
 |------|----------|-------------|
-| **FM0053** | Info | Property '{0}' auto-flattened from '{1}' (disabled by default; enable via `.editorconfig`) |
-| **FM0054** | Error | Unflattening requires type '{0}' to have an accessible constructor, but none was found |
-| **FM0055** | Warning | Auto-flattened property '{0}' cannot be unflattened for `[ReverseForge]`: {reason} |
+| **FM0055** | Info | Property '{0}' auto-flattened from '{1}' (disabled by default; enable via `.editorconfig`) |
+| **FM0056** | Error | Unflattening requires type '{0}' to have an accessible constructor, but none was found |
+| **FM0057** | Warning | Auto-flattened property '{0}' cannot be unflattened for `[ReverseForge]`: {reason} |
 
 ### Interaction with Existing Features
 
@@ -232,7 +232,7 @@ public Order Forge(OrderDto source)
 | Opt-out | `.DisableCtorValidation()` | No opt-out | `AutoFlatten = false` |
 | Case sensitivity control | Always case-insensitive | Case-insensitive | Follows `PropertyMatching` |
 | Null-safe paths | Runtime null checks | Compile-time `?.` chains | Compile-time `?.` chains |
-| Diagnostic visibility | None (runtime only) | Compile-time | FM0053 info (opt-in) |
+| Diagnostic visibility | None (runtime only) | Compile-time | FM0055 info (opt-in) |
 
 ---
 
@@ -448,7 +448,7 @@ The generator applies the following conversion hierarchy for each destination pr
 | 6 | Auto-wired forge method | `value is SourceType s ? Forge(s) : /* skip/throw */` | Complex nested types |
 | 7 | `ToString()` | `value?.ToString()` | Any → string (fallback) |
 
-The generator picks the **first applicable** strategy at compile time. If no strategy applies, the property is skipped and **FM0057** is emitted.
+The generator picks the **first applicable** strategy at compile time. If no strategy applies, the property is skipped and **FM0059** is emitted.
 
 For strategies that use framework conversion helpers (e.g., `Convert.ToXxx`, `Enum.Parse`), any exceptions thrown by those helpers (`FormatException`, `OverflowException`, `ArgumentException`, etc.) are propagated as-is; the generator does **not** catch and wrap them into a uniform `InvalidCastException`.
 
@@ -504,9 +504,9 @@ public Dictionary<string, object?> Forge(UserDto source)
 
 | Code | Severity | Description |
 |------|----------|-------------|
-| **FM0056** | Error | `[ForgeDictionary]` source parameter must be `Dictionary<string, object?>`, `IDictionary<string, object?>`, or `IReadOnlyDictionary<string, object?>` |
-| **FM0057** | Warning | Destination property '{0}' of type '{1}' has no applicable conversion from `object?`. The property will be skipped |
-| **FM0058** | Info | Property '{0}' mapped from dictionary key '{1}' with conversion '{2}' (disabled by default) |
+| **FM0058** | Error | `[ForgeDictionary]` source parameter must be `Dictionary<string, object?>`, `IDictionary<string, object?>`, or `IReadOnlyDictionary<string, object?>` |
+| **FM0059** | Warning | Destination property '{0}' of type '{1}' has no applicable conversion from `object?`. The property will be skipped |
+| **FM0060** | Info | Property '{0}' mapped from dictionary key '{1}' with conversion '{2}' (disabled by default) |
 
 ### Behavioral Contract
 
@@ -538,12 +538,12 @@ public Dictionary<string, object?> Forge(UserDto source)
 
 | Code | Severity | Category | Feature | Description |
 |------|----------|----------|---------|-------------|
-| FM0053 | Info | `ForgeMap` | Auto-flattening | Property '{0}' auto-flattened from '{1}' (disabled by default) |
-| FM0054 | Error | `ForgeMap` | Auto-flattening | Unflattening requires type '{0}' to have an accessible constructor |
-| FM0055 | Warning | `ForgeMap` | Auto-flattening | Auto-flattened property '{0}' cannot be unflattened for `[ReverseForge]`: {reason} |
-| FM0056 | Error | `ForgeMap` | `[ForgeDictionary]` | Source parameter must be `Dictionary<string, object?>`, `IDictionary<string, object?>`, or `IReadOnlyDictionary<string, object?>` |
-| FM0057 | Warning | `ForgeMap` | `[ForgeDictionary]` | Destination property '{0}' of type '{1}' has no applicable conversion from `object?` |
-| FM0058 | Info | `ForgeMap` | `[ForgeDictionary]` | Property '{0}' mapped from dictionary key '{1}' with conversion '{2}' (disabled by default) |
+| FM0055 | Info | `ForgeMap` | Auto-flattening | Property '{0}' auto-flattened from '{1}' (disabled by default) |
+| FM0056 | Error | `ForgeMap` | Auto-flattening | Unflattening requires type '{0}' to have an accessible constructor |
+| FM0057 | Warning | `ForgeMap` | Auto-flattening | Auto-flattened property '{0}' cannot be unflattened for `[ReverseForge]`: {reason} |
+| FM0058 | Error | `ForgeMap` | `[ForgeDictionary]` | Source parameter must be `Dictionary<string, object?>`, `IDictionary<string, object?>`, or `IReadOnlyDictionary<string, object?>` |
+| FM0059 | Warning | `ForgeMap` | `[ForgeDictionary]` | Destination property '{0}' of type '{1}' has no applicable conversion from `object?` |
+| FM0060 | Info | `ForgeMap` | `[ForgeDictionary]` | Property '{0}' mapped from dictionary key '{1}' with conversion '{2}' (disabled by default) |
 
 ---
 

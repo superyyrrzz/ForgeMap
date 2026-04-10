@@ -149,6 +149,54 @@ internal sealed partial class ForgeCodeEmitter
     }
 
     /// <summary>
+    /// Gets per-property ConvertWith mappings from [ForgeProperty(ConvertWith=...)] attributes.
+    /// Returns a dictionary mapping destination property name to (MethodName, ConverterTypeName).
+    /// </summary>
+    private Dictionary<string, (string? MethodName, string? ConverterTypeName, INamedTypeSymbol? ConverterTypeSymbol)> GetPropertyConvertWithMappings(IMethodSymbol method)
+    {
+        var result = new Dictionary<string, (string? MethodName, string? ConverterTypeName, INamedTypeSymbol? ConverterTypeSymbol)>(StringComparer.Ordinal);
+
+        // From [ForgeProperty(..., ConvertWith = "...", ConvertWithType = typeof(...))]
+        foreach (var attr in GetMethodAttributes(method, _forgePropertyAttributeSymbol))
+        {
+            if (attr.ConstructorArguments.Length >= 2)
+            {
+                var destinationProperty = attr.ConstructorArguments[1].Value as string;
+                if (string.IsNullOrEmpty(destinationProperty))
+                    continue;
+
+                string? methodName = null;
+                string? converterTypeName = null;
+                INamedTypeSymbol? converterTypeSymbol = null;
+
+                foreach (var named in attr.NamedArguments)
+                {
+                    switch (named.Key)
+                    {
+                        case "ConvertWith":
+                            methodName = named.Value.Value as string;
+                            break;
+                        case "ConvertWithType":
+                            if (named.Value.Value is INamedTypeSymbol typeSymbol)
+                            {
+                                converterTypeName = typeSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+                                converterTypeSymbol = typeSymbol;
+                            }
+                            break;
+                    }
+                }
+
+                if (!string.IsNullOrEmpty(methodName) || !string.IsNullOrEmpty(converterTypeName))
+                {
+                    result[destinationProperty!] = (methodName, converterTypeName, converterTypeSymbol);
+                }
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>
     /// Gets resolver mappings from [ForgeFrom] attributes.
     /// Returns a dictionary mapping destination property name to resolver method name.
     /// </summary>
@@ -312,6 +360,7 @@ internal sealed partial class ForgeCodeEmitter
         Dictionary<string, string> forgeWithMappings,
         Dictionary<string, int> nullPropertyHandlingOverrides,
         Dictionary<string, ExistingTargetConfig>? existingTargetProperties,
+        Dictionary<string, (string? MethodName, string? ConverterTypeName, INamedTypeSymbol? ConverterTypeSymbol)> propertyConvertWithMappings,
         HashSet<string> visited)
     {
         var includeBaseForges = GetIncludeBaseForgeAttributes(method);
@@ -388,7 +437,8 @@ internal sealed partial class ForgeCodeEmitter
             var baseForgeWithMappings = GetForgeWithMappings(baseMethod);
             var baseNullPropertyHandlingOverrides = GetNullPropertyHandlingOverrides(baseMethod);
             var baseExistingTargetProperties = GetExistingTargetProperties(baseMethod);
-            ResolveInheritedConfig(baseMethod, forger, context, baseIgnored, basePropertyMappings, baseResolverMappings, baseForgeWithMappings, baseNullPropertyHandlingOverrides, existingTargetProperties != null ? baseExistingTargetProperties : null, visited);
+            var basePropertyConvertWithMappings = GetPropertyConvertWithMappings(baseMethod);
+            ResolveInheritedConfig(baseMethod, forger, context, baseIgnored, basePropertyMappings, baseResolverMappings, baseForgeWithMappings, baseNullPropertyHandlingOverrides, existingTargetProperties != null ? baseExistingTargetProperties : null, basePropertyConvertWithMappings, visited);
 
             // Merge all base config into derived using first-wins semantics + FM0021 override reporting
             var diagLocation = attrData.ApplicationSyntaxReference?.GetSyntax().GetLocation() ?? method.Locations.FirstOrDefault();
@@ -461,6 +511,13 @@ internal sealed partial class ForgeCodeEmitter
                         existingTargetProperties[kvp.Key] = kvp.Value;
                 }
             }
+
+            // Merge base PropertyConvertWith mappings using first-wins semantics
+            foreach (var kvp in basePropertyConvertWithMappings)
+            {
+                if (!propertyConvertWithMappings.ContainsKey(kvp.Key))
+                    propertyConvertWithMappings[kvp.Key] = kvp.Value;
+            }
         }
     }
 
@@ -480,8 +537,9 @@ internal sealed partial class ForgeCodeEmitter
         var forgeWithMappings = GetForgeWithMappings(method);
         var nullPropertyHandlingOverrides = GetNullPropertyHandlingOverrides(method);
         var existingTargetProperties = GetExistingTargetProperties(method);
+        var propertyConvertWithMappings = GetPropertyConvertWithMappings(method);
 
-        ResolveInheritedConfig(method, forger, context, ignoredProperties, propertyMappings, resolverMappings, forgeWithMappings, nullPropertyHandlingOverrides, existingTargetProperties, new HashSet<string>());
+        ResolveInheritedConfig(method, forger, context, ignoredProperties, propertyMappings, resolverMappings, forgeWithMappings, nullPropertyHandlingOverrides, existingTargetProperties, propertyConvertWithMappings, new HashSet<string>());
 
         var beforeForgeHooks = GetBeforeForgeHooks(method)
             .Select(h => ValidateBeforeForgeHook(h, sourceType, forger, context, method))
@@ -500,7 +558,8 @@ internal sealed partial class ForgeCodeEmitter
             beforeForgeHooks,
             afterForgeHooks,
             nullPropertyHandlingOverrides,
-            existingTargetProperties);
+            existingTargetProperties,
+            propertyConvertWithMappings);
     }
 
     /// <summary>

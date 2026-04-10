@@ -130,6 +130,9 @@ public sealed class ForgeMapGenerator : IIncrementalGenerator
                 case "StringToEnum":
                     config.StringToEnum = (int)named.Value.Value!;
                     break;
+                case "ConstructorPreference":
+                    config.ConstructorPreference = (int)named.Value.Value!;
+                    break;
             }
         }
 

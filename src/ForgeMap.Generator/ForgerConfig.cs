@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Microsoft.CodeAnalysis;
 
 namespace ForgeMap.Generator;
 
@@ -27,8 +28,11 @@ internal sealed class ForgerConfig
     /// <summary>Whether to auto-discover matching forge methods for nested complex properties. Default true.</summary>
     public bool AutoWireNestedMappings { get; set; } = true;
 
-    /// <summary>0 = Parse (default), 1 = TryParse, 2 = None</summary>
+    /// <summary>0 = Parse (default, null-safe), 1 = TryParse, 2 = None, 3 = StrictParse</summary>
     public int StringToEnum { get; set; }
+
+    /// <summary>0 = Auto (default), 1 = PreferParameterless</summary>
+    public int ConstructorPreference { get; set; }
 
     public StringComparison PropertyNameComparison =>
         PropertyMatching == 1 ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
@@ -65,7 +69,8 @@ internal readonly struct ResolvedMethodConfig
         List<string> beforeForgeHooks,
         List<string> afterForgeHooks,
         Dictionary<string, int> nullPropertyHandlingOverrides,
-        Dictionary<string, ExistingTargetConfig> existingTargetProperties)
+        Dictionary<string, ExistingTargetConfig> existingTargetProperties,
+        Dictionary<string, (string? MethodName, string? ConverterTypeName, INamedTypeSymbol? ConverterTypeSymbol)>? propertyConvertWithMappings = null)
     {
         IgnoredProperties = ignoredProperties;
         PropertyMappings = propertyMappings;
@@ -75,6 +80,7 @@ internal readonly struct ResolvedMethodConfig
         AfterForgeHooks = afterForgeHooks;
         NullPropertyHandlingOverrides = nullPropertyHandlingOverrides;
         ExistingTargetProperties = existingTargetProperties;
+        PropertyConvertWithMappings = propertyConvertWithMappings ?? new Dictionary<string, (string? MethodName, string? ConverterTypeName, INamedTypeSymbol? ConverterTypeSymbol)>(StringComparer.Ordinal);
     }
 
     public HashSet<string> IgnoredProperties { get; }
@@ -87,4 +93,6 @@ internal readonly struct ResolvedMethodConfig
     public Dictionary<string, int> NullPropertyHandlingOverrides { get; }
     /// <summary>Properties marked with ExistingTarget = true. Key = dest property name.</summary>
     public Dictionary<string, ExistingTargetConfig> ExistingTargetProperties { get; }
+    /// <summary>Per-property ConvertWith mappings. Key = dest property name, Value = (MethodName?, ConverterTypeName?).</summary>
+    public Dictionary<string, (string? MethodName, string? ConverterTypeName, INamedTypeSymbol? ConverterTypeSymbol)> PropertyConvertWithMappings { get; }
 }
