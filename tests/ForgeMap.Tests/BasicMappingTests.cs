@@ -1574,3 +1574,33 @@ public class ConvertWithTests
 }
 
 #endregion
+
+#region v1.6 Per-Property ConvertWith Tests
+
+public class PropertyConvertWithTests
+{
+    private readonly PropertyConvertWithForger _forger = new();
+
+    [Fact]
+    public void PerPropertyConvertWith_ShouldApplyConverterMethod()
+    {
+        var source = new PropertyConvertWithSource { Id = 42, UserType = "Admin", Name = "Alice" };
+        var result = _forger.Forge(source);
+
+        result.Should().NotBeNull();
+        result.Id.Should().Be(42);
+        result.Name.Should().Be("Alice");
+        result.UserTypeCode.Should().Be(1);
+    }
+
+    [Fact]
+    public void PerPropertyConvertWith_UnknownType_ShouldReturnDefault()
+    {
+        var source = new PropertyConvertWithSource { Id = 1, UserType = "Unknown", Name = "Bob" };
+        var result = _forger.Forge(source);
+
+        result.UserTypeCode.Should().Be(0);
+    }
+}
+
+#endregion

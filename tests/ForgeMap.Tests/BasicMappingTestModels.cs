@@ -504,3 +504,21 @@ public class ConvertWithSourceToDestConverter : ITypeConverter<ConvertWithSource
 }
 
 #endregion
+
+#region v1.6 Per-Property ConvertWith Models
+
+public class PropertyConvertWithSource
+{
+    public int Id { get; set; }
+    public string UserType { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+}
+
+public class PropertyConvertWithDest
+{
+    public int Id { get; set; }
+    public int UserTypeCode { get; set; }
+    public string Name { get; set; } = string.Empty;
+}
+
+#endregion

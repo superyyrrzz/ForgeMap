@@ -393,3 +393,24 @@ public partial class ConvertWithForger
 }
 
 #endregion
+
+#region v1.6 Per-Property ConvertWith
+
+// --- Forger with per-property [ForgeProperty(ConvertWith = ...)] ---
+
+[ForgeMap]
+public partial class PropertyConvertWithForger
+{
+    [ForgeProperty(nameof(PropertyConvertWithSource.UserType), nameof(PropertyConvertWithDest.UserTypeCode), ConvertWith = nameof(ConvertUserType))]
+    public partial PropertyConvertWithDest Forge(PropertyConvertWithSource source);
+
+    private static int ConvertUserType(string userType) => userType switch
+    {
+        "Admin" => 1,
+        "Editor" => 2,
+        "Viewer" => 3,
+        _ => 0,
+    };
+}
+
+#endregion
