@@ -6,8 +6,8 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
 
-    <Description>ForgeMap is a lightweight, compile-time object transformation library for .NET. Zero-reflection, source-generator-based mapping with compile-time type safety.</Description>
-    <PackageTags>automapper;mapping;sourcegenerator;dto;transformation;object-mapper</PackageTags>
+    <Description>Compile-time object mapper for .NET using Roslyn source generators. Zero runtime reflection, MIT licensed. Supports property mapping, reverse mapping, nested objects, collections, enums, constructor mapping, and custom converters.</Description>
+    <PackageTags>mapper;mapping;object-mapper;source-generator;automapper;automapper-alternative;dto;compile-time;roslyn;code-generation;dotnet;csharp</PackageTags>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageIcon>icon.png</PackageIcon>
 
