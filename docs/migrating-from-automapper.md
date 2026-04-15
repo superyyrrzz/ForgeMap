@@ -45,8 +45,10 @@ The generator auto-discovers that `Forge(Address)` should be used for the `Addre
 | AutoMapper | ForgeMap |
 |---|---|
 | `mapper.Map<UserDto>(user)` | `mapper.Forge(user)` |
-| `mapper.Map(source, dest)` | `mapper.ForgeInto(source, dest)` |
+| `mapper.Map(source, dest)` | `mapper.ForgeInto(source, dest)` * |
 | `mapper.Map<List<UserDto>>(users)` | `users.Select(u => mapper.Forge(u)).ToList()` |
+
+\* `ForgeInto` is a naming convention, not a built-in method. You must declare it as a `partial void` method with a `[UseExistingValue]` parameter — see [Map Into Existing Object](#map-into-existing-object) below.
 
 **Injection changes:** AutoMapper injects `IMapper`. ForgeMap mappers are plain classes — you can either inject them via DI (`services.AddForgeMaps()`) or use static instances:
 
@@ -221,15 +223,15 @@ services.AddForgeMaps();
 | Dynamic/runtime mapping | ForgeMap is compile-time only |
 | `ForAllMaps()` global conventions | Apply attributes per mapper — no global convention system |
 
-## Null Handling
+## Null Property Handling
 
-AutoMapper assigns null through by default. ForgeMap provides 5 strategies:
+AutoMapper assigns null through by default. ForgeMap provides 5 `NullPropertyHandling` strategies that control how nullable-to-non-nullable **reference type** property assignments are generated. (For null *source objects*, ForgeMap returns `null`/`default` by default — configurable via `NullHandling.ThrowException`.)
 
 | Strategy | Behavior |
 |---|---|
 | `NullForgiving` (default) | Same as AutoMapper — assigns null through |
-| `SkipNull` | Keeps destination's current value when source is null |
-| `CoalesceToDefault` | Null → `""` for strings, `new List<T>()` for collections |
+| `SkipNull` | Keeps destination's current value when source property is null |
+| `CoalesceToDefault` | Null → type-appropriate default (`""` for strings, `Array.Empty<T>()` for arrays, `new List<T>()`/`new Dictionary<K,V>()` for collections) |
 | `CoalesceToNew` | Null → `new T()` for any type with parameterless constructor |
 | `ThrowException` | Throws `ArgumentNullException` |
 
