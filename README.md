@@ -15,6 +15,10 @@ A lightweight, MIT-licensed, source-generator-based object transformation librar
 - **Debuggable** - Generated code is readable and debuggable
 - **MIT License** - Fully open source, no commercial restrictions
 
+## Coming from AutoMapper?
+
+See the [Migration Guide](docs/migrating-from-automapper.md) for step-by-step instructions and before/after code examples. For a detailed feature comparison with AutoMapper and Mapperly, see [ForgeMap vs AutoMapper & Mapperly](docs/ForgeMap-vs-AutoMapper-and-Mapperly.md).
+
 ## Installation
 
 ```bash
