@@ -53,8 +53,9 @@ The generator auto-discovers that `Forge(Address)` should be used for the `Addre
 **Injection changes:** AutoMapper injects `IMapper`. ForgeMap mappers are plain classes — you can either inject them via DI or use static instances:
 
 ```csharp
-// Option A: DI (requires Microsoft.Extensions.DependencyInjection package)
-// AddForgeMaps() is auto-generated when the full DI package is referenced.
+// Option A: DI
+// AddForgeMaps() is auto-generated when Microsoft.Extensions.DependencyInjection
+// types are available (e.g., in ASP.NET Core projects).
 services.AddForgeMaps();
 // constructor: public MyService(AppMapper mapper)
 
