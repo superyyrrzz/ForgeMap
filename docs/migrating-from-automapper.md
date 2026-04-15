@@ -131,11 +131,12 @@ public partial class AppMapper
 ### Map Into Existing Object
 
 ```csharp
-// AutoMapper
-mapper.Map(source, existingDest);
+// AutoMapper — map DTO into existing entity (e.g., for EF Core updates)
+mapper.Map(updateDto, existingEntity);
 
-// ForgeMap
+// ForgeMap — declare a void partial method with [UseExistingValue]
 public partial void ForgeInto(UserDto source, [UseExistingValue] User destination);
+// Usage: mapper.ForgeInto(updateDto, existingEntity);
 ```
 
 ### Enum Mapping
@@ -219,14 +220,14 @@ services.AddForgeMaps();
 | AutoMapper Feature | Alternative |
 |---|---|
 | `ProjectTo<T>()` (IQueryable) | Materialize the query first, then map in-memory |
-| `ConstructUsing()` | Use `[ConvertWith]` or `[ForgeFrom]` |
+| `ConstructUsing()` | No direct equivalent. ForgeMap uses constructors/records automatically. For custom factory logic, use `[ConvertWith]` to delegate the entire conversion |
 | `.Condition()` per member | Use `[AfterForge]` hook or `[ForgeFrom]` with conditional logic |
 | Dynamic/runtime mapping | ForgeMap is compile-time only |
 | `ForAllMaps()` global conventions | Apply attributes per mapper — no global convention system |
 
 ## Null Property Handling
 
-AutoMapper assigns null through by default. ForgeMap provides 5 `NullPropertyHandling` strategies that control how nullable-to-non-nullable property assignments are generated — both nullable reference types (`string?` → `string`) and nullable value types (`int?` → `int`). (For null *source objects*, ForgeMap returns `null`/`default` by default — configurable via `NullHandling.ThrowException`.)
+AutoMapper assigns null through by default. ForgeMap provides 5 `NullPropertyHandling` strategies that control how nullable-to-non-nullable property assignments are generated. (For null *source objects*, ForgeMap returns `null`/`default` by default — configurable via `NullHandling.ThrowException`.)
 
 | Strategy | Behavior |
 |---|---|
