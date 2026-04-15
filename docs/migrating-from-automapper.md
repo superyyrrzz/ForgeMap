@@ -46,9 +46,11 @@ The generator auto-discovers that `Forge(Address)` should be used for the `Addre
 |---|---|
 | `mapper.Map<UserDto>(user)` | `mapper.Forge(user)` |
 | `mapper.Map(source, dest)` | `mapper.ForgeInto(source, dest)` * |
-| `mapper.Map<List<UserDto>>(users)` | `users?.Select(u => mapper.Forge(u)).ToList()` |
+| `mapper.Map<List<UserDto>>(users)` | `mapper.Forge(users)` ** |
 
 \* `ForgeInto` is a naming convention, not a built-in method. You must declare it as a `partial void` method with a `[UseExistingValue]` parameter — see [Map Into Existing Object](#map-into-existing-object) below.
+
+\** Declare a collection forge method: `public partial List<UserDto> Forge(List<User> source);` — the generator auto-discovers the element-level `Forge(User)` method and implements the body.
 
 **Injection changes:** AutoMapper injects `IMapper`. ForgeMap mappers are plain classes — you can either inject them via DI or use static instances:
 
