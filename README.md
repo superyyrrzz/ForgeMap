@@ -17,7 +17,7 @@ A lightweight, MIT-licensed, source-generator-based object transformation librar
 
 ## Coming from AutoMapper?
 
-See the [Migration Guide](docs/migrating-from-automapper.md) for step-by-step instructions and before/after code examples. For a detailed feature comparison with AutoMapper and Mapperly, see [ForgeMap vs AutoMapper & Mapperly](docs/ForgeMap-vs-AutoMapper-and-Mapperly.md).
+See the [Migration Guide](https://github.com/superyyrrzz/ForgeMap/blob/main/docs/migrating-from-automapper.md) for step-by-step instructions and before/after code examples. For a detailed feature comparison with AutoMapper and Mapperly, see [ForgeMap vs AutoMapper & Mapperly](https://github.com/superyyrrzz/ForgeMap/blob/main/docs/ForgeMap-vs-AutoMapper-and-Mapperly.md).
 
 ## Installation
 

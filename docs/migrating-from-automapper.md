@@ -50,10 +50,11 @@ The generator auto-discovers that `Forge(Address)` should be used for the `Addre
 
 \* `ForgeInto` is a naming convention, not a built-in method. You must declare it as a `partial void` method with a `[UseExistingValue]` parameter — see [Map Into Existing Object](#map-into-existing-object) below.
 
-**Injection changes:** AutoMapper injects `IMapper`. ForgeMap mappers are plain classes — you can either inject them via DI (`services.AddForgeMaps()`) or use static instances:
+**Injection changes:** AutoMapper injects `IMapper`. ForgeMap mappers are plain classes — you can either inject them via DI or use static instances:
 
 ```csharp
-// Option A: DI
+// Option A: DI (requires Microsoft.Extensions.DependencyInjection)
+// AddForgeMaps() is auto-generated when DI abstractions are referenced.
 services.AddForgeMaps();
 // constructor: public MyService(AppMapper mapper)
 
@@ -225,7 +226,7 @@ services.AddForgeMaps();
 
 ## Null Property Handling
 
-AutoMapper assigns null through by default. ForgeMap provides 5 `NullPropertyHandling` strategies that control how nullable-to-non-nullable **reference type** property assignments are generated. (For null *source objects*, ForgeMap returns `null`/`default` by default — configurable via `NullHandling.ThrowException`.)
+AutoMapper assigns null through by default. ForgeMap provides 5 `NullPropertyHandling` strategies that control how nullable-to-non-nullable property assignments are generated — both nullable reference types (`string?` → `string`) and nullable value types (`int?` → `int`). (For null *source objects*, ForgeMap returns `null`/`default` by default — configurable via `NullHandling.ThrowException`.)
 
 | Strategy | Behavior |
 |---|---|
