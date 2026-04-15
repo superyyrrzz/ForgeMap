@@ -46,15 +46,15 @@ The generator auto-discovers that `Forge(Address)` should be used for the `Addre
 |---|---|
 | `mapper.Map<UserDto>(user)` | `mapper.Forge(user)` |
 | `mapper.Map(source, dest)` | `mapper.ForgeInto(source, dest)` * |
-| `mapper.Map<List<UserDto>>(users)` | `users.Select(u => mapper.Forge(u)).ToList()` |
+| `mapper.Map<List<UserDto>>(users)` | `users?.Select(u => mapper.Forge(u)).ToList()` |
 
 \* `ForgeInto` is a naming convention, not a built-in method. You must declare it as a `partial void` method with a `[UseExistingValue]` parameter — see [Map Into Existing Object](#map-into-existing-object) below.
 
 **Injection changes:** AutoMapper injects `IMapper`. ForgeMap mappers are plain classes — you can either inject them via DI or use static instances:
 
 ```csharp
-// Option A: DI (requires Microsoft.Extensions.DependencyInjection)
-// AddForgeMaps() is auto-generated when DI abstractions are referenced.
+// Option A: DI (requires Microsoft.Extensions.DependencyInjection package)
+// AddForgeMaps() is auto-generated when the full DI package is referenced.
 services.AddForgeMaps();
 // constructor: public MyService(AppMapper mapper)
 
