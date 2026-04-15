@@ -18,7 +18,7 @@ dotnet build ForgeMap.slnx
 dotnet test ForgeMap.slnx
 ```
 
-Requires the .NET SDK (see `global.json` for the exact version).
+Requires the .NET SDK (see `global.json` for the minimum SDK version).
 
 ## Code Style
 
@@ -32,7 +32,7 @@ Key things to know:
 
 - The generator runs at compile time inside the IDE and the build pipeline
 - Changes to the generator affect every project that references ForgeMap
-- New diagnostics must be registered in `DiagnosticDescriptors.cs` and tracked in `AnalyzerReleases.Unshipped.md`
+- New diagnostics must be registered in `DiagnosticDescriptors.cs` and tracked in `src/ForgeMap.Generator/AnalyzerReleases.Unshipped.md`
 
 ## Running Benchmarks
 

@@ -19,4 +19,4 @@
 - [ ] Tests pass (`dotnet test`)
 - [ ] No new compiler warnings
 - [ ] Follows existing code patterns
-- [ ] Diagnostics added to `AnalyzerReleases.Unshipped.md` (if new diagnostics)
+- [ ] Diagnostics added to `src/ForgeMap.Generator/AnalyzerReleases.Unshipped.md` (if new diagnostics)

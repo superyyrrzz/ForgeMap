@@ -17,10 +17,7 @@ Only the latest released version of ForgeMap receives security updates.
 
 ## Scope
 
-This security policy covers the following NuGet packages:
-
-- `ForgeMap`
-- `ForgeMap.Abstractions`
+This security policy covers the `ForgeMap` NuGet package (which bundles the generator and abstractions).
 
 ## Response Time
 
