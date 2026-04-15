@@ -68,7 +68,7 @@ See [benchmarks/BENCHMARK_RESULTS.md](benchmarks/BENCHMARK_RESULTS.md) for full 
 
 ## Migrating from AutoMapper
 
-ForgeMap includes an [AI-assisted migration tool](https://github.com/superyyrrzz/ForgeMap/blob/main/.claude/skills/automapper-migration/SKILL.md) (Claude Code skill) that can convert your existing AutoMapper `CreateMap`/`Profile` configurations to ForgeMap attributes automatically. See [ForgeMap vs AutoMapper & Mapperly](https://github.com/superyyrrzz/ForgeMap/blob/main/docs/ForgeMap-vs-AutoMapper-and-Mapperly.md) for a detailed feature comparison.
+See the [Migration Guide](https://github.com/superyyrrzz/ForgeMap/blob/main/docs/migrating-from-automapper.md) for step-by-step instructions and before/after code examples. ForgeMap also includes an [AI-assisted migration tool](https://github.com/superyyrrzz/ForgeMap/blob/main/.claude/skills/automapper-migration/SKILL.md) (Claude Code skill) that can convert your existing AutoMapper `CreateMap`/`Profile` configurations to ForgeMap attributes automatically. See [ForgeMap vs AutoMapper & Mapperly](https://github.com/superyyrrzz/ForgeMap/blob/main/docs/ForgeMap-vs-AutoMapper-and-Mapperly.md) for a detailed feature comparison.
 
 ## Documentation
 
