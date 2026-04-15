@@ -20,7 +20,7 @@
     <IncludeBuildOutput>false</IncludeBuildOutput>
 
     <Description>Source generator for ForgeMap that generates type transformation code at compile time.</Description>
-    <PackageTags>automapper;mapping;sourcegenerator;dto;transformation;roslyn</PackageTags>
+    <PackageTags>mapper;mapping;object-mapper;source-generator;automapper;dto;compile-time;roslyn;code-generation</PackageTags>
     <DevelopmentDependency>true</DevelopmentDependency>
 
     <!-- Only the main ForgeMap package is published -->
