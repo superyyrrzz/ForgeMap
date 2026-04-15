@@ -26,7 +26,7 @@ Follow the `.editorconfig` rules included in the repository. No additional linte
 
 ## Source Generator Notes
 
-ForgeMap is a **Roslyn incremental source generator**. The main entry point is `ForgeCodeEmitter.cs` in `src/ForgeMap.Generator/`.
+ForgeMap is a **Roslyn incremental source generator**. The main entry point is `ForgeMapGenerator.cs` in `src/ForgeMap.Generator/`, which constructs and uses `ForgeCodeEmitter`. The `ForgeCodeEmitter*` files in that directory contain the code emission implementation.
 
 Key things to know:
 

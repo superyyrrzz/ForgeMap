@@ -8,10 +8,10 @@ Use [GitHub's private vulnerability reporting](https://github.com/superyyrrzz/Fo
 
 ## Supported Versions
 
-| Version | Supported |
-|---------|-----------|
-| Latest release | Yes |
-| Older releases | No |
+| Version        | Supported |
+|----------------|-----------|
+| Latest release | Yes       |
+| Older releases | No        |
 
 Only the latest released version of ForgeMap receives security updates.
 
