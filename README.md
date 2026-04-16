@@ -74,17 +74,6 @@ See the [Migration Guide](https://github.com/superyyrrzz/ForgeMap/blob/main/docs
 
 See [SPEC.md](https://github.com/superyyrrzz/ForgeMap/blob/main/docs/SPEC.md) for the full specification. See [CHANGELOG.md](https://github.com/superyyrrzz/ForgeMap/blob/main/CHANGELOG.md) for version history.
 
-## Version Roadmap
-
-| Version | Key Features |
-|---------|--------------|
-| **v1.0** | Core generator, property matching, collections, enums, constructor mapping, flattening, `[ReverseForge]`, hooks, DI integration, full diagnostics |
-| **v1.1** | Mapping inheritance, `[IncludeBaseForge]`, `[ForgeAllDerived]` polymorphic dispatch |
-| **v1.2** | Null-safe property assignment: `NullPropertyHandling` with 4 strategies, three-tier config |
-| **v1.3** | Auto-wiring nested & collection mappings, abstract destination dispatch for `[ForgeAllDerived]` |
-| **v1.4** | Nested existing-target mapping, automatic string↔enum conversion, `[ConvertWith]` custom type converters |
-| **v1.5** | CoalesceToNew null handling, collection type coercion, standalone collection methods, `[AfterForge]` migration diagnostics |
-
 ## License
 
 MIT
