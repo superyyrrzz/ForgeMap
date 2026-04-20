@@ -368,7 +368,7 @@ For `init`/`required` properties and constructor parameters, the conditional has
 | `[Ignore]` | Ignore wins |
 | `NullPropertyHandling` | Applied inside the conditional branch — `Condition` typically replaces null-handling for the "skip null" case, but they can coexist (`Condition` is a more general predicate) |
 | `[UseExistingValue]` / `ForgeInto` | Primary use case — skipped assignments preserve the existing destination value |
-| `init`/`required` properties | **Not supported** — emit **FM0062** |
+| `init`/`required` properties | Plain non-`required` `init` properties **are supported** (skipping leaves the initializer unset). `required` members and constructor-bound members **are not supported** — emit **FM0062** |
 | Constructor parameters | **Not supported** — emit **FM0062** |
 | `[ReverseForge]` | Not auto-reversed (predicates rarely have an inverse). Re-declare the conditional on the reverse method |
 | `[AfterForge]` | Callback runs after all guarded assignments — can still override |
@@ -491,7 +491,7 @@ public partial class EntityPrimitiveMapper
 
 ### Resolution Algorithm — `[ExtractProperty]`
 
-1. **Validate conflicting attributes**: The decorated partial method must not also be annotated with `[ConvertWith]`, `[ForgeFrom]`, or `[ForgeWith]`. If any of those method-level attributes are present, emit **FM0065** and stop.
+1. **Validate conflicting attributes**: The decorated partial method must not also be annotated with `[ConvertWith]`, `[ForgeFrom]`, `[ForgeWith]`, or `[ForgeProperty]`. If any of those method-level attributes are present, emit **FM0065** and stop.
 2. **Validate signature**: The decorated partial method must have exactly one parameter (the source) and a non-`void` return type.
 3. **Resolve property**: The named property must exist on the source parameter type as a public readable instance property.
 4. **Validate type compatibility**: The property type must be assignable to the return type, optionally through built-in coercions (string↔enum, `DateTimeOffset→DateTime`, wrapper unwrap, nullability widening/narrowing — narrowing is permitted under the same rules as Feature 1: when the source is annotated nullable but the return is non-nullable, a `!` is applied; the nullability annotation is advisory and does not block compilation).
@@ -499,7 +499,7 @@ public partial class EntityPrimitiveMapper
 
 ### Resolution Algorithm — `[WrapProperty]`
 
-1. **Validate conflicting attributes**: The decorated partial method must not also be annotated with `[ConvertWith]`, `[ForgeFrom]`, or `[ForgeWith]`. If any of those method-level attributes are present, emit **FM0065** and stop.
+1. **Validate conflicting attributes**: The decorated partial method must not also be annotated with `[ConvertWith]`, `[ForgeFrom]`, `[ForgeWith]`, or `[ForgeProperty]`. If any of those method-level attributes are present, emit **FM0065** and stop.
 2. **Validate signature**: Exactly one parameter (the primitive) and a non-`void` return. Reference-type returns are the primary use case; value-type returns are also accepted (the null-source matrix below covers both — value-type returns use `default(R)` instead of `null!`).
 3. **Resolve property**: The named property must exist on the destination type as either:
    - A settable property (`set` or `init`) — assigned via object initializer, OR
@@ -568,7 +568,7 @@ public partial DateTime ForgeAt(AuditEntry source)
 
 **Null-source behavior matrix for `[ExtractProperty]`:**
 
-The source-null guard is governed by the existing forger-level **`NullHandling`** enum (`ReturnNull` is the v1.5/v1.6 default; `ThrowException` is the opt-in fail-fast mode). `NullPropertyHandling` is **not** consulted here — that enum governs property-to-property assignments inside a multi-property forger, not the top-level source-null check of a single-element extraction. The same matrix applies to `[WrapProperty]` for null-primitive sources of reference type. In generated code, reference-type returns use `return null!;`, while value-type returns (including nullable value types) use `return default(R);`.
+The source-null guard is governed by the existing forger-level **`NullHandling`** enum (`ReturnNull` is the v1.5/v1.6 default; `ThrowException` is the opt-in fail-fast mode). `NullPropertyHandling` is **not** consulted here — that enum governs property-to-property assignments inside a multi-property forger, not the top-level source-null check of a single-element extraction. The same matrix applies to `[WrapProperty]` for null-primitive sources of reference type **and for `Nullable<T>` (i.e., `T?`) primitive sources** — `Nullable<T>` participates in the guard via `source.HasValue` and uses `default(R)` (value return) or `null!` (reference return) on the null branch under `ReturnNull`, or throws under `ThrowException`. Plain (non-nullable) value-type primitives cannot be null and skip the guard entirely. In generated code, reference-type returns use `return null!;`, while value-type returns (including nullable value types) use `return default(R);`.
 
 | Source nullability | Return type | `NullHandling = ReturnNull` (default) | `NullHandling = ThrowException` |
 |--------------------|-------------|---------------------------------------|---------------------------------|
@@ -641,7 +641,7 @@ This makes `[ExtractProperty]` a more discoverable alternative to `SelectPropert
 |---------|-------------|
 | `[ConvertWith]` (method-level) | Mutually exclusive with `[ExtractProperty]`/`[WrapProperty]` — emit **FM0065** |
 | `[ForgeFrom]` / `[ForgeWith]` | Mutually exclusive with `[ExtractProperty]`/`[WrapProperty]` — emit **FM0065** |
-| `[ForgeProperty]` | Not applicable — single-element forges have no property-level mapping concept |
+| `[ForgeProperty]` | Not applicable — single-element forges have no property-level mapping concept. If `[ForgeProperty]` is present on the same partial method as `[ExtractProperty]`/`[WrapProperty]`, emit **FM0065** (same conflict diagnostic as `[ConvertWith]`/`[ForgeFrom]`/`[ForgeWith]`) |
 | `NullHandling` (forger-level) | Applied to the source null-check (defaults consistent with v1.6 behavior) |
 | `[ReverseForge]` | **Not auto-reversed**. To get the inverse pair, declare both `[ExtractProperty]` and `[WrapProperty]` methods explicitly |
 | `ConstructorPreference` (v1.6) | Used by `[WrapProperty]` to select an appropriate constructor when no parameterless one exists |
@@ -654,7 +654,7 @@ This makes `[ExtractProperty]` a more discoverable alternative to `SelectPropert
 
 | Code | Severity | Description |
 |------|----------|-------------|
-| **FM0065** | Error | Method '{0}' has conflicting attributes: `[ExtractProperty]`/`[WrapProperty]` cannot combine with `[ConvertWith]`, `[ForgeFrom]`, or `[ForgeWith]` |
+| **FM0065** | Error | Method '{0}' has conflicting attributes: `[ExtractProperty]`/`[WrapProperty]` cannot combine with `[ConvertWith]`, `[ForgeFrom]`, `[ForgeWith]`, or `[ForgeProperty]` |
 | **FM0066** | Error | `[ExtractProperty("{0}")]` not found on source type '{1}' for method '{2}', or not a public readable property |
 | **FM0067** | Error | `[ExtractProperty]` source property type '{0}' is incompatible with method return type '{1}' for method '{2}', and no supported coercion applies |
 | **FM0068** | Error | `[WrapProperty("{0}")]` not found as settable/init property or constructor parameter on destination type '{1}' for method '{2}' |
