@@ -347,6 +347,63 @@ public partial class TestForger
         Assert.Contains(diagnostics, d => d.Id == "FM0074");
     }
 
+    [Fact]
+    public void Generator_SelectProperty_NullableEnumDestination_WrapsCast()
+    {
+        var source = @"
+using System.Collections.Generic;
+using ForgeMap;
+
+public enum Color { Red, Green, Blue }
+public class Tag { public string Code { get; set; } = string.Empty; }
+public class SourceType { public List<Tag> Tags { get; set; } = new(); }
+public class DestType { public List<Color?> Tags { get; set; } = new(); }
+
+[ForgeMap]
+public partial class TestForger
+{
+    [ForgeProperty(nameof(SourceType.Tags), nameof(DestType.Tags), SelectProperty = nameof(Tag.Code))]
+    public partial DestType Forge(SourceType source);
+}";
+
+        var (diagnostics, trees) = RunGenerator(source);
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        var generated = string.Join("\n", trees.Select(t => t.GetText().ToString()));
+        Assert.Contains("(global::Color?)", generated);
+    }
+
+    [Fact]
+    public void Generator_SelectProperty_DerivedExplicitForgeWith_DoesNotInheritBaseProjection()
+    {
+        var source = @"
+using System.Collections.Generic;
+using ForgeMap;
+
+public class Tag { public string Name { get; set; } = string.Empty; }
+public class BaseSource { public List<Tag> Tags { get; set; } = new(); }
+public class BaseDest { public List<string> Tags { get; set; } = new(); }
+public class DerivedSource : BaseSource { }
+public class DerivedDest : BaseDest { }
+
+[ForgeMap]
+public partial class TestForger
+{
+    [ForgeProperty(nameof(BaseSource.Tags), nameof(BaseDest.Tags), SelectProperty = nameof(Tag.Name))]
+    public partial BaseDest ForgeBase(BaseSource source);
+
+    [IncludeBaseForge(typeof(BaseSource), typeof(BaseDest))]
+    [ForgeWith(nameof(DerivedDest.Tags), nameof(BuildTags))]
+    public partial DerivedDest ForgeDerived(DerivedSource source);
+
+    public static List<string> BuildTags(DerivedSource s) => new();
+}";
+
+        var (diagnostics, _) = RunGenerator(source);
+        // Must NOT report FM0072 — the base projection should be skipped because the
+        // derived method explicitly overrode Tags with [ForgeWith]
+        Assert.DoesNotContain(diagnostics, d => d.Id == "FM0072");
+    }
+
     private static (IReadOnlyList<Diagnostic> Diagnostics, IReadOnlyList<SyntaxTree> GeneratedTrees) RunGenerator(string source)
     {
         return TestHelper.RunGenerator(source);

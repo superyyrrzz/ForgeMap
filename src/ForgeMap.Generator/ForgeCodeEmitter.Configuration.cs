@@ -547,9 +547,14 @@ internal sealed partial class ForgeCodeEmitter
                     propertyConvertWithMappings[kvp.Key] = kvp.Value;
             }
 
-            // Merge base SelectProperty mappings using first-wins semantics
+            // Merge base SelectProperty mappings using first-wins semantics.
+            // Skip when the derived method explicitly overrides this dest property — otherwise
+            // a base projection can leak past the override and either apply the wrong projection
+            // or trigger a bogus FM0072 conflict against the derived [ForgeFrom]/[ForgeWith].
             foreach (var kvp in baseSelectPropertyMappings)
             {
+                if (IsExplicitlyConfigured(kvp.Key))
+                    continue;
                 if (!selectPropertyMappings.ContainsKey(kvp.Key))
                     selectPropertyMappings[kvp.Key] = kvp.Value;
             }

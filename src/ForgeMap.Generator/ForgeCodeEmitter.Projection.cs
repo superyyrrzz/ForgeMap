@@ -183,18 +183,22 @@ internal sealed partial class ForgeCodeEmitter
         {
             var destEnumUnderlying = GetNullableUnderlyingType(destElemType) ?? destElemType;
             var enumFqn = $"global::{destEnumUnderlying.ToDisplayString()}";
+            // For Nullable<TEnum> destination element, wrap with (TEnum?) so Select preserves
+            // the nullable element type and the materialized List<TEnum?> assignment compiles.
+            var destIsNullable = GetNullableUnderlyingType(destElemType) != null;
+            var nullableCast = destIsNullable ? $"({enumFqn}?)" : string.Empty;
             // Mode 1 (TryParse): inline conditional, returns default on failure
             if (_config.StringToEnum == 1)
             {
-                return $"(global::System.Enum.TryParse<{enumFqn}>({rawAccess}, true, out var __sel_enum) ? __sel_enum : default({enumFqn}))";
+                return $"{nullableCast}(global::System.Enum.TryParse<{enumFqn}>({rawAccess}, true, out var __sel_enum) ? __sel_enum : default({enumFqn}))";
             }
             // Mode 3 (StrictParse): no null guard, throws on null/empty/invalid
             if (_config.StringToEnum == 3)
             {
-                return $"({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), {rawAccess}, true)";
+                return $"{nullableCast}({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), {rawAccess}, true)";
             }
             // Mode 0 (Parse, default): null-safe guard returning default for null/empty
-            return $"string.IsNullOrEmpty({rawAccess}) ? default({enumFqn}) : ({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), {rawAccess}, true)";
+            return $"{nullableCast}(string.IsNullOrEmpty({rawAccess}) ? default({enumFqn}) : ({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), {rawAccess}, true))";
         }
 
         // 4) enum -> string
