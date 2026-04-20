@@ -166,7 +166,7 @@ private static List<ApiResourceClaim> WrapClaims(List<string> types)
 
 ### Diagnostics
 
-> **Diagnostic ID note**: `docs/SPEC-future-advanced-mapping.md` (a speculative, unscheduled spec) tentatively allocates FM0055–FM0060 to auto-flattening / `[ForgeDictionary]`. v1.7 is the next concrete release, so it claims FM0055–FM0073 here; if the future spec is ever promoted, its diagnostics will be renumbered to start above v1.7's allocation.
+> **Diagnostic ID note**: `docs/SPEC-future-advanced-mapping.md` (a speculative, unscheduled spec) tentatively allocates FM0055–FM0060 to auto-flattening / `[ForgeDictionary]`. v1.7 is the next concrete release, so it claims FM0055–FM0074 here; if the future spec is ever promoted, its diagnostics will be renumbered to start above v1.7's allocation.
 
 | Code | Severity | Description |
 |------|----------|-------------|
@@ -379,7 +379,7 @@ For `init`/`required` properties and constructor parameters, the conditional has
 |------|----------|-------------|
 | **FM0060** | Error | Property '{0}' has both `Condition` and `SkipWhen` set — choose one |
 | **FM0061** | Error | Predicate method '{0}' for property '{1}' not found or has the wrong signature. Expected: `bool {0}(T)` where `T` is assignable from the source property/source type |
-| **FM0062** | Error | `Condition`/`SkipWhen` cannot be applied to property '{0}' because it is set via constructor or `init`/`required`. Use `[ForgeFrom]` instead |
+| **FM0062** | Error | `Condition`/`SkipWhen` cannot be applied to property '{0}' because it is set via constructor or marked `required`. (Plain non-`required` `init` members are allowed: skipping just leaves the initializer unset.) Use `[ForgeFrom]` instead |
 | **FM0063** | Error | Property '{0}' has conflicting attributes: `Condition`/`SkipWhen` cannot combine with `[ForgeFrom]` or `[ForgeWith]` targeting the same destination |
 | **FM0064** | Info (disabled) | Conditional assignment applied for property '{0}' via `{1}` |
 
@@ -505,7 +505,7 @@ public partial class EntityPrimitiveMapper
    - A settable property (`set` or `init`) — assigned via object initializer, OR
    - A constructor parameter on a constructor that the v1.6 `ConstructorPreference` rules can select (single ctor with one matching parameter, or all other parameters optional with defaults).
 4. **Validate type compatibility**: The parameter type must be assignable from the source parameter type, with the same coercion candidates as `[ExtractProperty]` (in reverse).
-5. **Constructor selection delegates to the existing pipeline**: When a constructor-path strategy is being evaluated (steps 7–8 below), the generator reuses the v1.6 constructor-resolution logic in full — including `[ForgeConstructor]` (explicit pick), **FM0013** (ambiguous best constructor), and **FM0047** (`[ForgeConstructor]` parameter types not found). `[WrapProperty]` does not introduce a parallel constructor selector; `ConstructorPreference` only governs the *order* in which initializer-vs-constructor strategies are tried, not the constructor-scoring algorithm itself.
+5. **Constructor selection delegates to the existing pipeline**: When a constructor-path strategy is being evaluated (steps 7–8 below), the generator reuses the v1.6 constructor-resolution logic in full — including `[ForgeConstructor]` (explicit pick), **FM0013** (ambiguous best constructor), and **FM0047** (`[ForgeConstructor]` parameter types not found). `[WrapProperty]` does not introduce a parallel constructor selector; `ConstructorPreference` only governs the *order* in which initializer-vs-constructor strategies are tried, not the constructor-scoring algorithm itself. **Wrap-specific tie-break**: when the general scorer reports ambiguity (FM0013), the wrap algorithm prefers the unique constructor whose *only* parameter (or only required parameter) matches the named member before falling back to FM0013 — this avoids spurious ambiguity errors for the common single-value-wrap case where the type happens to expose multiple convenience ctors.
 6. **Enumerate viable emit strategies** for the named member:
    - **Object initializer** (`new TDest { Prop = source }`): viable when (a) a parameterless constructor exists, (b) the named member is settable or `init`, AND (c) no *other* member of `TDest` is `required` (members only marked `init` without `required` are optional and do **not** block this path).
    - **Constructor with named parameter** (`new TDest(prop: source)`): viable when there is a public constructor (selected via the existing pipeline above — `[ForgeConstructor]` if present, otherwise the highest-scoring auto-resolved constructor) whose parameter matching the named member can be filled, all *other* parameters of that constructor are optional (have default values), AND every `required` member of `TDest` not also a constructor parameter is satisfied. Because `[WrapProperty]` only has one input value to spend, members not satisfied by the constructor *cannot* be filled by an appended object initializer — there is no source data for them.
@@ -580,6 +580,8 @@ The source-null guard is governed by the existing forger-level **`NullHandling`*
 | Value type | Any | No guard emitted (cannot be null) | No guard emitted |
 
 For per-property-style coalescing semantics (e.g., return a non-`default` value on null), users should keep the partial method manual or use a `[ConvertWith]` factory — `[ExtractProperty]`/`[WrapProperty]` are deliberately limited to the two `NullHandling` modes the rest of the API already supports.
+
+> **Data-corruption note for value-type returns**: Under the default `NullHandling.ReturnNull`, a value-type return collapses a null source to `default(R)` — meaning `0`, `DateTime.MinValue`, `Guid.Empty`, etc. For domain models where these defaults are valid data and would silently misrepresent "missing", emit **FM0074** (info, opt-in) on every value-type-return `[ExtractProperty]`/`[WrapProperty]` so users can audit each site and choose `NullHandling.ThrowException` or change the return type to `R?` where the distinction matters. The diagnostic is opt-in (info) rather than an error because for many domains (counts, flags, defaultable IDs) `default(R)` is the intended fallback; making it an error would force `?`-returns on cases where they are pure noise.
 
 **`[WrapProperty]` — settable destination property:**
 
@@ -659,6 +661,7 @@ This makes `[ExtractProperty]` a more discoverable alternative to `SelectPropert
 | **FM0069** | Error | `[WrapProperty]` source parameter type '{0}' is incompatible with destination property/parameter type '{1}' for method '{2}', and no supported coercion applies |
 | **FM0070** | Error | `[ExtractProperty]`/`[WrapProperty]` partial method '{0}' has invalid signature — must have exactly one parameter and a non-void return type |
 | **FM0071** | Error | `[WrapProperty]` cannot construct '{0}' because these `required` members are unsatisfied: {1}. Add a constructor that accepts these members, mark them `init` without `required`, or write the partial body manually |
+| **FM0074** | Info (disabled) | `[ExtractProperty]`/`[WrapProperty]` method '{0}' returns value type '{1}' under `NullHandling.ReturnNull`; null sources will collapse to `default({1})`. Audit and consider `NullHandling.ThrowException` or a nullable return type if the distinction matters |
 
 ### Behavioral Contract
 
@@ -706,6 +709,7 @@ This makes `[ExtractProperty]` a more discoverable alternative to `SelectPropert
 | FM0070 | Error | `ForgeMap` | Extract/Wrap | Invalid partial method signature |
 | FM0071 | Error | `ForgeMap` | Wrap | Required members of destination type cannot be satisfied |
 | FM0072 | Error | `ForgeMap` | Projection | `SelectProperty` conflicts with `[ForgeFrom]` / `[ForgeWith]` |
+| FM0074 | Info | `ForgeMap` | Extract/Wrap | Value-type return under `NullHandling.ReturnNull` collapses null source to `default(R)` (opt-in audit) |
 
 ---
 
