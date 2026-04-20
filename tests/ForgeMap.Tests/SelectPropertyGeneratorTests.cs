@@ -243,6 +243,64 @@ public partial class TestForger
         Assert.Contains(diagnostics, d => d.Id == "FM0072");
     }
 
+    [Fact]
+    public void Generator_SelectProperty_StringToEnum_TryParseMode_HonorsConfig()
+    {
+        var source = @"
+using System.Collections.Generic;
+using ForgeMap;
+
+[assembly: ForgeMapDefaults(StringToEnum = StringToEnumConversion.TryParse)]
+
+public enum Color { Red, Green, Blue }
+public class Tag { public string Code { get; set; } = string.Empty; }
+public class SourceType { public List<Tag> Tags { get; set; } = new(); }
+public class DestType { public List<Color> Tags { get; set; } = new(); }
+
+[ForgeMap]
+public partial class TestForger
+{
+    [ForgeProperty(nameof(SourceType.Tags), nameof(DestType.Tags), SelectProperty = nameof(Tag.Code))]
+    public partial DestType Forge(SourceType source);
+}";
+
+        var (diagnostics, trees) = RunGenerator(source);
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        var generated = string.Join("\n", trees.Select(t => t.GetText().ToString()));
+        Assert.Contains("Enum.TryParse", generated);
+    }
+
+    [Fact]
+    public void Generator_SelectProperty_InheritedViaIncludeBaseForge_PropagatesProjection()
+    {
+        var source = @"
+using System.Collections.Generic;
+using ForgeMap;
+
+public class Tag { public string Name { get; set; } = string.Empty; }
+public class BaseSource { public List<Tag> Tags { get; set; } = new(); }
+public class BaseDest { public List<string> Tags { get; set; } = new(); }
+public class DerivedSource : BaseSource { public int Extra { get; set; } }
+public class DerivedDest : BaseDest { public int Extra { get; set; } }
+
+[ForgeMap]
+public partial class TestForger
+{
+    [ForgeProperty(nameof(BaseSource.Tags), nameof(BaseDest.Tags), SelectProperty = nameof(Tag.Name))]
+    public partial BaseDest ForgeBase(BaseSource source);
+
+    [IncludeBaseForge(typeof(BaseSource), typeof(BaseDest))]
+    public partial DerivedDest ForgeDerived(DerivedSource source);
+}";
+
+        var (diagnostics, trees) = RunGenerator(source);
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        var generated = string.Join("\n", trees.Select(t => t.GetText().ToString()));
+        // Both methods should emit Select projection on Tags
+        var selectCount = System.Text.RegularExpressions.Regex.Matches(generated, @"\.Select\(").Count;
+        Assert.True(selectCount >= 2, $"Expected projection in both base+derived; saw {selectCount}");
+    }
+
     private static (IReadOnlyList<Diagnostic> Diagnostics, IReadOnlyList<SyntaxTree> GeneratedTrees) RunGenerator(string source)
     {
         return TestHelper.RunGenerator(source);

@@ -170,13 +170,22 @@ internal sealed partial class ForgeCodeEmitter
         var enumCast = TryGenerateCompatibleEnumCast(projectedType, destElemType, rawAccess);
         if (enumCast != null) return enumCast;
 
-        // 3) string -> enum
+        // 3) string -> enum (honors _config.StringToEnum mode)
         if (_config.StringToEnum != 2 && IsStringToEnumPair(projectedType, destElemType))
         {
-            // Use a simple inline guard form mirroring spec sample:
-            // string.IsNullOrEmpty(__x.Code) ? default(RoleCode) : (RoleCode)Enum.Parse(typeof(RoleCode), __x.Code, true)
             var destEnumUnderlying = GetNullableUnderlyingType(destElemType) ?? destElemType;
             var enumFqn = $"global::{destEnumUnderlying.ToDisplayString()}";
+            // Mode 1 (TryParse): inline conditional, returns default on failure
+            if (_config.StringToEnum == 1)
+            {
+                return $"(global::System.Enum.TryParse<{enumFqn}>({rawAccess}, true, out var __sel_enum) ? __sel_enum : default({enumFqn}))";
+            }
+            // Mode 3 (StrictParse): no null guard, throws on null/empty/invalid
+            if (_config.StringToEnum == 3)
+            {
+                return $"({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), {rawAccess}, true)";
+            }
+            // Mode 0 (Parse, default): null-safe guard returning default for null/empty
             return $"string.IsNullOrEmpty({rawAccess}) ? default({enumFqn}) : ({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), {rawAccess}, true)";
         }
 

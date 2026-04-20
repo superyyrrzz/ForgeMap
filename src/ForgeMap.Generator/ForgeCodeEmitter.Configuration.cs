@@ -387,6 +387,7 @@ internal sealed partial class ForgeCodeEmitter
         Dictionary<string, int> nullPropertyHandlingOverrides,
         Dictionary<string, ExistingTargetConfig>? existingTargetProperties,
         Dictionary<string, (string? MethodName, string? ConverterTypeName, INamedTypeSymbol? ConverterTypeSymbol)> propertyConvertWithMappings,
+        Dictionary<string, string> selectPropertyMappings,
         HashSet<string> visited)
     {
         var includeBaseForges = GetIncludeBaseForgeAttributes(method);
@@ -464,7 +465,8 @@ internal sealed partial class ForgeCodeEmitter
             var baseNullPropertyHandlingOverrides = GetNullPropertyHandlingOverrides(baseMethod);
             var baseExistingTargetProperties = GetExistingTargetProperties(baseMethod);
             var basePropertyConvertWithMappings = GetPropertyConvertWithMappings(baseMethod);
-            ResolveInheritedConfig(baseMethod, forger, context, baseIgnored, basePropertyMappings, baseResolverMappings, baseForgeWithMappings, baseNullPropertyHandlingOverrides, existingTargetProperties != null ? baseExistingTargetProperties : null, basePropertyConvertWithMappings, visited);
+            var baseSelectPropertyMappings = GetSelectPropertyMappings(baseMethod);
+            ResolveInheritedConfig(baseMethod, forger, context, baseIgnored, basePropertyMappings, baseResolverMappings, baseForgeWithMappings, baseNullPropertyHandlingOverrides, existingTargetProperties != null ? baseExistingTargetProperties : null, basePropertyConvertWithMappings, baseSelectPropertyMappings, visited);
 
             // Merge all base config into derived using first-wins semantics + FM0021 override reporting
             var diagLocation = attrData.ApplicationSyntaxReference?.GetSyntax().GetLocation() ?? method.Locations.FirstOrDefault();
@@ -544,6 +546,13 @@ internal sealed partial class ForgeCodeEmitter
                 if (!propertyConvertWithMappings.ContainsKey(kvp.Key))
                     propertyConvertWithMappings[kvp.Key] = kvp.Value;
             }
+
+            // Merge base SelectProperty mappings using first-wins semantics
+            foreach (var kvp in baseSelectPropertyMappings)
+            {
+                if (!selectPropertyMappings.ContainsKey(kvp.Key))
+                    selectPropertyMappings[kvp.Key] = kvp.Value;
+            }
         }
     }
 
@@ -566,7 +575,7 @@ internal sealed partial class ForgeCodeEmitter
         var propertyConvertWithMappings = GetPropertyConvertWithMappings(method);
         var selectPropertyMappings = GetSelectPropertyMappings(method);
 
-        ResolveInheritedConfig(method, forger, context, ignoredProperties, propertyMappings, resolverMappings, forgeWithMappings, nullPropertyHandlingOverrides, existingTargetProperties, propertyConvertWithMappings, new HashSet<string>());
+        ResolveInheritedConfig(method, forger, context, ignoredProperties, propertyMappings, resolverMappings, forgeWithMappings, nullPropertyHandlingOverrides, existingTargetProperties, propertyConvertWithMappings, selectPropertyMappings, new HashSet<string>());
 
         var beforeForgeHooks = GetBeforeForgeHooks(method)
             .Select(h => ValidateBeforeForgeHook(h, sourceType, forger, context, method))
