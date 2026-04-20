@@ -181,7 +181,7 @@ private static List<ApiResourceClaim> WrapClaims(List<string> types)
 | Scenario | Behavior |
 |----------|----------|
 | Source enumerable, dest enumerable, element types compatible | `Select(x => x.Prop)` materialized to dest wrapper |
-| Source `null` | Result property is `null` (default `NullHandling.ReturnNull` on the forger) — or governed by `NullPropertyHandling` when an outer property-level null mode applies |
+| Source property value is `null` | Result property is governed by the generated projection expression (`source.Src?.Select(...)`) and `NullPropertyHandling` for the member; this is distinct from top-level source-parameter `NullHandling` |
 | Source empty | Empty destination collection |
 | Projected element type needs coercion | Coercion applied inside `Select` lambda |
 | `SelectProperty` not found on element type | FM0056 |
@@ -484,7 +484,7 @@ public partial class EntityPrimitiveMapper
 
 1. **Validate signature**: The decorated partial method must have exactly one parameter (the source) and a non-`void` return type.
 2. **Resolve property**: The named property must exist on the source parameter type as a public readable instance property.
-3. **Validate type compatibility**: The property type must be assignable to the return type, optionally through built-in coercions (string↔enum, `DateTimeOffset→DateTime`, wrapper unwrap, nullability widening).
+3. **Validate type compatibility**: The property type must be assignable to the return type, optionally through built-in coercions (string↔enum, `DateTimeOffset→DateTime`, wrapper unwrap, nullability widening/narrowing — narrowing is permitted under the same rules as Feature 1: when the source is annotated nullable but the return is non-nullable, a `!` is applied; the nullability annotation is advisory and does not block compilation).
 4. **Generate body**: Emit a null-guarded return.
 
 ### Resolution Algorithm — `[WrapProperty]`
@@ -575,7 +575,7 @@ For per-property-style coalescing semantics (e.g., return a non-`default` value 
 ```csharp
 public partial ClientScope? ForgeScopeEntity(string source)
 {
-    if (source == null) return null;
+    if (source == null) return null!;
     return new ClientScope { Scope = source };
 }
 ```
@@ -586,7 +586,7 @@ public partial ClientScope? ForgeScopeEntity(string source)
 // ClientScope has only `public ClientScope(string scope)` accessible
 public partial ClientScope? ForgeScopeEntity(string source)
 {
-    if (source == null) return null;
+    if (source == null) return null!;
     return new ClientScope(scope: source);
 }
 ```
