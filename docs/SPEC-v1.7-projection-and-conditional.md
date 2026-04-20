@@ -276,7 +276,8 @@ public partial class SourceConditionMapper
    - For `Condition`: must accept exactly one parameter assignable from the source property type, return `bool`. Otherwise emit **FM0061**.
    - For `SkipWhen`: must accept exactly one parameter assignable from the source object type, return `bool`. Otherwise emit **FM0061**.
 4. **Generate guarded assignment**: Wrap the destination assignment expression in an `if` (for property/object-initializer cases, see Generated Code).
-5. **Compose with `ConvertWith` and `SelectProperty`**: The guard runs first; the converter/projection runs only when the guard passes.
+5. **Check for conflicting per-property mapping directives**: If the same destination property is also targeted by `[ForgeFrom]` or `[ForgeWith]`, emit **FM0063** instead of composing the directives.
+6. **Compose with `ConvertWith` and `SelectProperty`**: After conflict validation succeeds, the guard runs first; the converter/projection runs only when the guard passes.
 
 ### Generated Code
 
@@ -322,12 +323,15 @@ if (IsNotNull(source.CreatedAt))
 
 ```csharp
 // Condition is on the source collection (List<...>); projection runs only on assignment.
+// The generator caches the source property to a local so the getter is evaluated once,
+// then uses that cached value for both the predicate call and the projection.
 // Null-flow rule: same as above — when the predicate returns true, the generator
-// drops the `?.` chain and accesses the collection directly. If the predicate
+// drops the `?.` chain and accesses the cached collection directly. If the predicate
 // does NOT actually guard against null, this becomes a NullReferenceException at
 // runtime; documenting the contract is the user's responsibility.
-if (HasItems(source.Lines))
-    destination.ProductNames = source.Lines.Select(__x => __x.ProductName).ToList();
+var __lines = source.Lines;
+if (HasItems(__lines))
+    destination.ProductNames = __lines.Select(__x => __x.ProductName).ToList();
 ```
 
 > **Design note — why not `source.Lines != null && HasItems(source.Lines)`?**
@@ -485,28 +489,30 @@ public partial class EntityPrimitiveMapper
 
 ### Resolution Algorithm — `[ExtractProperty]`
 
-1. **Validate signature**: The decorated partial method must have exactly one parameter (the source) and a non-`void` return type.
-2. **Resolve property**: The named property must exist on the source parameter type as a public readable instance property.
-3. **Validate type compatibility**: The property type must be assignable to the return type, optionally through built-in coercions (string↔enum, `DateTimeOffset→DateTime`, wrapper unwrap, nullability widening/narrowing — narrowing is permitted under the same rules as Feature 1: when the source is annotated nullable but the return is non-nullable, a `!` is applied; the nullability annotation is advisory and does not block compilation).
-4. **Generate body**: Emit a null-guarded return.
+1. **Validate conflicting attributes**: The decorated partial method must not also be annotated with `[ConvertWith]`, `[ForgeFrom]`, or `[ForgeWith]`. If any of those method-level attributes are present, emit **FM0065** and stop.
+2. **Validate signature**: The decorated partial method must have exactly one parameter (the source) and a non-`void` return type.
+3. **Resolve property**: The named property must exist on the source parameter type as a public readable instance property.
+4. **Validate type compatibility**: The property type must be assignable to the return type, optionally through built-in coercions (string↔enum, `DateTimeOffset→DateTime`, wrapper unwrap, nullability widening/narrowing — narrowing is permitted under the same rules as Feature 1: when the source is annotated nullable but the return is non-nullable, a `!` is applied; the nullability annotation is advisory and does not block compilation).
+5. **Generate body**: Emit a null-guarded return.
 
 ### Resolution Algorithm — `[WrapProperty]`
 
-1. **Validate signature**: Exactly one parameter (the primitive) and a non-`void` reference-type return.
-2. **Resolve property**: The named property must exist on the destination type as either:
+1. **Validate conflicting attributes**: The decorated partial method must not also be annotated with `[ConvertWith]`, `[ForgeFrom]`, or `[ForgeWith]`. If any of those method-level attributes are present, emit **FM0065** and stop.
+2. **Validate signature**: Exactly one parameter (the primitive) and a non-`void` return. Reference-type returns are the primary use case; value-type returns are also accepted (the null-source matrix below covers both — value-type returns use `default(R)` instead of `null!`).
+3. **Resolve property**: The named property must exist on the destination type as either:
    - A settable property (`set` or `init`) — assigned via object initializer, OR
    - A constructor parameter on a constructor that the v1.6 `ConstructorPreference` rules can select (single ctor with one matching parameter, or all other parameters optional with defaults).
-3. **Validate type compatibility**: The parameter type must be assignable from the source parameter type, with the same coercion candidates as `[ExtractProperty]` (in reverse).
-4. **Constructor selection delegates to the existing pipeline**: When a constructor-path strategy is being evaluated (steps 6–7 below), the generator reuses the v1.6 constructor-resolution logic in full — including `[ForgeConstructor]` (explicit pick), **FM0013** (ambiguous best constructor), and **FM0047** (`[ForgeConstructor]` parameter types not found). `[WrapProperty]` does not introduce a parallel constructor selector; `ConstructorPreference` only governs the *order* in which initializer-vs-constructor strategies are tried, not the constructor-scoring algorithm itself.
-5. **Enumerate viable emit strategies** for the named member:
+4. **Validate type compatibility**: The parameter type must be assignable from the source parameter type, with the same coercion candidates as `[ExtractProperty]` (in reverse).
+5. **Constructor selection delegates to the existing pipeline**: When a constructor-path strategy is being evaluated (steps 7–8 below), the generator reuses the v1.6 constructor-resolution logic in full — including `[ForgeConstructor]` (explicit pick), **FM0013** (ambiguous best constructor), and **FM0047** (`[ForgeConstructor]` parameter types not found). `[WrapProperty]` does not introduce a parallel constructor selector; `ConstructorPreference` only governs the *order* in which initializer-vs-constructor strategies are tried, not the constructor-scoring algorithm itself.
+6. **Enumerate viable emit strategies** for the named member:
    - **Object initializer** (`new TDest { Prop = source }`): viable when (a) a parameterless constructor exists, (b) the named member is settable or `init`, AND (c) no *other* member of `TDest` is `required` (members only marked `init` without `required` are optional and do **not** block this path).
    - **Constructor with named parameter** (`new TDest(prop: source)`): viable when there is a public constructor (selected via the existing pipeline above — `[ForgeConstructor]` if present, otherwise the highest-scoring auto-resolved constructor) whose parameter matching the named member can be filled, all *other* parameters of that constructor are optional (have default values), AND every `required` member of `TDest` not also a constructor parameter is satisfied. Because `[WrapProperty]` only has one input value to spend, members not satisfied by the constructor *cannot* be filled by an appended object initializer — there is no source data for them.
-6. **Pick a strategy** in deterministic precedence — first viable strategy wins, but if the first-preferred strategy is *not* viable the algorithm falls through to the next one rather than failing immediately:
+7. **Pick a strategy** in deterministic precedence — first viable strategy wins, but if the first-preferred strategy is *not* viable the algorithm falls through to the next one rather than failing immediately:
    1. `ConstructorPreference.PreferParameterless` → object initializer if viable, otherwise constructor if viable, otherwise FM0068/FM0071.
    2. `ConstructorPreference.Auto` AND the named member is get-only → constructor if viable, otherwise FM0068.
    3. `ConstructorPreference.Auto` AND the named member is settable/init → object initializer if viable, otherwise constructor if viable, otherwise FM0068/FM0071.
-7. **Required-member error**: If neither strategy is viable solely because of unsatisfied `required` members on `TDest`, emit **FM0071** (more specific than FM0068). FM0071 names the unsatisfied `required` members so the user knows what's blocking emit.
-8. **Generate body**: Emit `new TDest { Prop = source }` or `new TDest(prop: source)` per the chosen strategy.
+8. **Required-member error**: If neither strategy is viable solely because of unsatisfied `required` members on `TDest`, emit **FM0071** (more specific than FM0068). FM0071 names the unsatisfied `required` members so the user knows what's blocking emit.
+9. **Generate body**: Emit `new TDest { Prop = source }` or `new TDest(prop: source)` per the chosen strategy.
 
 ### Generated Code
 
