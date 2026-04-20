@@ -48,7 +48,7 @@ public sealed class ForgePropertyAttribute : Attribute
 
     /// <summary>
     /// Name of a property on the source collection's element type to project.
-    /// When set, generates `source.Src?.Select(x => x.SelectProperty).To&lt;TDest&gt;()`.
+    /// When set, generates `source.Src?.Select(x => x.&lt;member named by SelectProperty&gt;).To&lt;TDest&gt;()`.
     /// Use nameof() for compile-time safety.
     /// Mutually exclusive with ConvertWith on the same [ForgeProperty].
     /// </summary>
@@ -76,10 +76,10 @@ public partial class ApiResourceMapper
 2. **Validate exclusivity**: If `ConvertWith` or `ConvertWithType` is also set on the same `[ForgeProperty]`, emit **FM0058**. The three are mutually exclusive — they all replace the per-property assignment expression and have no defined composition order.
 3. **Validate source side**: The source property must be an enumerable type (`IEnumerable<TElement>`, `IReadOnlyCollection<TElement>`, array, etc.). Otherwise emit **FM0055**.
 4. **Resolve projection member**: Find a public, non-static, get-accessible property on `TElement` named `SelectProperty`. Otherwise emit **FM0056**.
-5. **Validate destination side**: The destination property must be an enumerable type whose element type is either:
+5. **Validate destination side**: The destination property must be an enumerable type. If it is not, emit **FM0073** (non-enumerable destination). When the destination *is* enumerable, its element type must be either:
    - Directly assignable from the projected property's type, OR
    - Reachable through built-in coercions (string↔enum, `DateTimeOffset→DateTime`, allowlisted wrapper unwrap, nullability widening/narrowing). The selected coercion is applied inside the `Select` lambda.
-   - Otherwise emit **FM0057**.
+   - Otherwise emit **FM0057** (element type incompatibility).
 6. **Choose materialization**: Use existing collection-coercion logic (`.ToList()`, `.ToArray()`, `ImmutableArray.CreateRange`, etc.) based on the destination wrapper type.
 
 ### Generated Code
@@ -171,6 +171,7 @@ private static List<ApiResourceClaim> WrapClaims(List<string> types)
 | **FM0055** | Error | `SelectProperty` set on '{0}' but source property type '{1}' is not enumerable |
 | **FM0056** | Error | `SelectProperty = "{0}"` not found on element type '{1}' for property '{2}' (or not a public readable property) |
 | **FM0057** | Error | Projected property '{0}' (type '{1}') is not assignable to destination element type '{2}' for property '{3}', and no built-in coercion applies |
+| **FM0073** | Error | `SelectProperty` set on '{0}' but destination property type '{1}' is not enumerable |
 | **FM0058** | Error | Property '{0}' has more than one of `SelectProperty`, `ConvertWith`, `ConvertWithType` set on the same `[ForgeProperty]` — choose one |
 | **FM0059** | Info (disabled) | Projection applied for property '{0}': `{1}.Select(x => x.{2})` |
 
@@ -179,11 +180,11 @@ private static List<ApiResourceClaim> WrapClaims(List<string> types)
 | Scenario | Behavior |
 |----------|----------|
 | Source enumerable, dest enumerable, element types compatible | `Select(x => x.Prop)` materialized to dest wrapper |
-| Source `null` | Result property is `null` (with `NullForgiving`) or governed by `NullPropertyHandling` |
+| Source `null` | Result property is `null` (default `NullHandling.ReturnNull` on the forger) — or governed by `NullPropertyHandling` when an outer property-level null mode applies |
 | Source empty | Empty destination collection |
 | Projected element type needs coercion | Coercion applied inside `Select` lambda |
 | `SelectProperty` not found on element type | FM0056 |
-| Destination not enumerable | FM0057 |
+| Destination not enumerable | FM0073 |
 
 ### Competitor Comparison
 
@@ -514,12 +515,25 @@ public partial string? ForgeScope(ClientScope source)
 }
 ```
 
-**`[ExtractProperty]` — value-type source:**
+**`[ExtractProperty]` — reference-type source, value-type return:**
 
 ```csharp
 public partial int ForgeId(ClientScope source)
 {
+    if (source == null) throw new global::System.ArgumentNullException(nameof(source));
     return source.Id;
+}
+```
+
+(With the default `NullHandling.ReturnNull`, the guard would emit `if (source == null) return default(int);` instead. The `throw` form above corresponds to `NullHandling.ThrowException`. See the matrix below.)
+
+**`[ExtractProperty]` — value-type source:**
+
+```csharp
+// No null guard emitted — value types cannot be null
+public partial string ForgeLabel(int source)
+{
+    return source.ToString();
 }
 ```
 
@@ -659,6 +673,7 @@ This makes `[ExtractProperty]` a more discoverable alternative to `SelectPropert
 | FM0055 | Error | `ForgeMap` | Projection | `SelectProperty` set but source not enumerable |
 | FM0056 | Error | `ForgeMap` | Projection | `SelectProperty` not found on element type |
 | FM0057 | Error | `ForgeMap` | Projection | Projected element type not assignable to dest element |
+| FM0073 | Error | `ForgeMap` | Projection | `SelectProperty` destination type is not enumerable |
 | FM0058 | Error | `ForgeMap` | Projection | `SelectProperty` and `ConvertWith` both set |
 | FM0059 | Info (disabled) | `ForgeMap` | Projection | Projection applied for property |
 | FM0060 | Error | `ForgeMap` | Conditional | `Condition` and `SkipWhen` both set |
