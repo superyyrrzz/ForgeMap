@@ -80,7 +80,7 @@ public partial class ApiResourceMapper
    - Directly assignable from the projected property's type, OR
    - Reachable through built-in coercions (string↔enum, `DateTimeOffset→DateTime`, allowlisted wrapper unwrap, nullability widening/narrowing). The selected coercion is applied inside the `Select` lambda.
    - Otherwise emit **FM0057** (element type incompatibility).
-6. **Choose materialization**: Use existing collection-coercion logic (`.ToList()`, `.ToArray()`, `ImmutableArray.CreateRange`, etc.) based on the destination wrapper type.
+6. **Choose materialization**: Use the existing v1.5 collection-coercion logic based on the destination wrapper type (for example, `.ToList()`, `.ToArray()`, `new HashSet<T>(...)`, or `new ReadOnlyCollection<T>(...)`).
 
 ### Generated Code
 
@@ -531,10 +531,15 @@ public partial int ForgeId(ClientScope source)
 **`[ExtractProperty]` — value-type source:**
 
 ```csharp
-// No null guard emitted — value types cannot be null
-public partial string ForgeLabel(int source)
+public readonly struct LabelToken
 {
-    return source.ToString();
+    public string Label { get; init; }
+}
+
+// No null guard emitted — value types cannot be null
+public partial string ForgeLabel(LabelToken source)
+{
+    return source.Label;
 }
 ```
 
@@ -642,7 +647,6 @@ This makes `[ExtractProperty]` a more discoverable alternative to `SelectPropert
 | **FM0069** | Error | `[WrapProperty]` source parameter type '{0}' not assignable to destination property/parameter type '{1}' for method '{2}' |
 | **FM0070** | Error | `[ExtractProperty]`/`[WrapProperty]` partial method '{0}' has invalid signature — must have exactly one parameter and a non-void return type |
 | **FM0071** | Error | `[WrapProperty]` cannot construct '{0}' because these `required` members are unsatisfied: {1}. Add a constructor that accepts these members, mark them `init` without `required`, or write the partial body manually |
-| **FM0072** | Error | Property '{0}' has `SelectProperty` set on `[ForgeProperty]` and is also targeted by `[ForgeFrom]` / `[ForgeWith]` — choose one |
 
 ### Behavioral Contract
 
