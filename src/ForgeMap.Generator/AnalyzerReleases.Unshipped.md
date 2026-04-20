@@ -5,3 +5,10 @@
 
 Rule ID | Category | Severity | Notes
 --------|----------|----------|-------
+FM0055 | ForgeMap | Error | SelectPropertySourceNotEnumerable
+FM0056 | ForgeMap | Error | SelectPropertyMemberNotFound
+FM0057 | ForgeMap | Error | SelectPropertyElementTypeIncompatible
+FM0058 | ForgeMap | Error | SelectPropertyConflictsWithConverter
+FM0059 | ForgeMap | Disabled | SelectPropertyApplied
+FM0072 | ForgeMap | Error | SelectPropertyConflictsWithForgeFromOrWith
+FM0073 | ForgeMap | Error | SelectPropertyDestinationNotEnumerable

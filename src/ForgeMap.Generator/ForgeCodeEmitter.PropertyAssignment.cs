@@ -30,11 +30,24 @@ internal sealed partial class ForgeCodeEmitter
         List<(string DestPropName, string SourceExpr, string LocalVarName, string? AssignExpr)>? skipNullAssignments = null,
         List<(string DestPropName, string Block)>? postConstructionCollections = null,
         List<string>? preConstructionBlocks = null,
-        Dictionary<string, (string? MethodName, string? ConverterTypeName, INamedTypeSymbol? ConverterTypeSymbol)>? propertyConvertWithMappings = null)
+        Dictionary<string, (string? MethodName, string? ConverterTypeName, INamedTypeSymbol? ConverterTypeSymbol)>? propertyConvertWithMappings = null,
+        Dictionary<string, string>? selectPropertyMappings = null)
     {
         // Skip ignored properties
         if (ignoredProperties.Contains(destProp.Name))
             return null;
+
+        // v1.7 SelectProperty projection has highest precedence among per-property directives.
+        if (selectPropertyMappings != null && selectPropertyMappings.ContainsKey(destProp.Name))
+        {
+            var projection = TryGenerateProjectionAssignment(
+                destProp, sourceParam, sourceType,
+                propertyMappings, selectPropertyMappings, resolverMappings, forgeWithMappings,
+                propertyConvertWithMappings, nullPropertyHandlingOverrides,
+                context, method, postConstructionCollections);
+            if (projection.Applicable)
+                return projection.Expression; // null when failed or skipped (post-construction)
+        }
 
         // Check for per-property ConvertWith
         if (propertyConvertWithMappings != null && propertyConvertWithMappings.TryGetValue(destProp.Name, out var convertWithInfo))

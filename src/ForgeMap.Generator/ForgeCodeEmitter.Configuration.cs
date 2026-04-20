@@ -197,6 +197,32 @@ internal sealed partial class ForgeCodeEmitter
     }
 
     /// <summary>
+    /// Gets per-property SelectProperty mappings from [ForgeProperty(SelectProperty=...)] attributes.
+    /// Returns a dictionary mapping destination property name to the projected element-member name.
+    /// </summary>
+    private Dictionary<string, string> GetSelectPropertyMappings(IMethodSymbol method)
+    {
+        var result = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var attr in GetMethodAttributes(method, _forgePropertyAttributeSymbol))
+        {
+            if (attr.ConstructorArguments.Length < 2)
+                continue;
+            var destinationProperty = attr.ConstructorArguments[1].Value as string;
+            if (string.IsNullOrEmpty(destinationProperty))
+                continue;
+
+            foreach (var named in attr.NamedArguments)
+            {
+                if (named.Key == "SelectProperty" && named.Value.Value is string memberName && !string.IsNullOrEmpty(memberName))
+                {
+                    result[destinationProperty!] = memberName;
+                }
+            }
+        }
+        return result;
+    }
+
+    /// <summary>
     /// Gets resolver mappings from [ForgeFrom] attributes.
     /// Returns a dictionary mapping destination property name to resolver method name.
     /// </summary>
@@ -538,6 +564,7 @@ internal sealed partial class ForgeCodeEmitter
         var nullPropertyHandlingOverrides = GetNullPropertyHandlingOverrides(method);
         var existingTargetProperties = GetExistingTargetProperties(method);
         var propertyConvertWithMappings = GetPropertyConvertWithMappings(method);
+        var selectPropertyMappings = GetSelectPropertyMappings(method);
 
         ResolveInheritedConfig(method, forger, context, ignoredProperties, propertyMappings, resolverMappings, forgeWithMappings, nullPropertyHandlingOverrides, existingTargetProperties, propertyConvertWithMappings, new HashSet<string>());
 
@@ -559,7 +586,8 @@ internal sealed partial class ForgeCodeEmitter
             afterForgeHooks,
             nullPropertyHandlingOverrides,
             existingTargetProperties,
-            propertyConvertWithMappings);
+            propertyConvertWithMappings,
+            selectPropertyMappings);
     }
 
     /// <summary>

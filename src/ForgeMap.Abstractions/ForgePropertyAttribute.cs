@@ -76,4 +76,12 @@ public sealed class ForgePropertyAttribute : Attribute
     /// Cannot be combined with <see cref="ConvertWith"/> (method name).
     /// </summary>
     public Type? ConvertWithType { get; set; }
+
+    /// <summary>
+    /// Name of a property on the source collection's element type to project.
+    /// When set, generates <c>source.Src?.Select(x =&gt; x.&lt;member named by SelectProperty&gt;).To&lt;TDest&gt;()</c>.
+    /// Use <c>nameof()</c> for compile-time safety.
+    /// Mutually exclusive with <see cref="ConvertWith"/> and <see cref="ConvertWithType"/> on the same <c>[ForgeProperty]</c>.
+    /// </summary>
+    public string? SelectProperty { get; set; }
 }

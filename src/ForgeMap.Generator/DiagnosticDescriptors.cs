@@ -440,4 +440,60 @@ internal static class DiagnosticDescriptors
         category: Category,
         defaultSeverity: DiagnosticSeverity.Info,
         isEnabledByDefault: false);
+
+    public static readonly DiagnosticDescriptor SelectPropertySourceNotEnumerable = new(
+        id: "FM0055",
+        title: "SelectProperty requires an enumerable source property",
+        messageFormat: "SelectProperty set on '{0}' but source property type '{1}' is not enumerable",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor SelectPropertyMemberNotFound = new(
+        id: "FM0056",
+        title: "SelectProperty member not found on element type",
+        messageFormat: "SelectProperty = \"{0}\" not found on element type '{1}' for property '{2}' (or not a public readable property)",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor SelectPropertyElementTypeIncompatible = new(
+        id: "FM0057",
+        title: "SelectProperty projected type incompatible with destination element type",
+        messageFormat: "Projected property '{0}' (type '{1}') is not assignable to destination element type '{2}' for property '{3}', and no built-in coercion applies",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor SelectPropertyConflictsWithConverter = new(
+        id: "FM0058",
+        title: "SelectProperty conflicts with ConvertWith / ConvertWithType",
+        messageFormat: "Property '{0}' has more than one of SelectProperty, ConvertWith, ConvertWithType set on the same [ForgeProperty] — choose one",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor SelectPropertyApplied = new(
+        id: "FM0059",
+        title: "Projection applied for property",
+        messageFormat: "Projection applied for property '{0}': {1}.Select(x => x.{2})",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Info,
+        isEnabledByDefault: false);
+
+    public static readonly DiagnosticDescriptor SelectPropertyConflictsWithForgeFromOrWith = new(
+        id: "FM0072",
+        title: "SelectProperty conflicts with [ForgeFrom] / [ForgeWith]",
+        messageFormat: "Property '{0}' has SelectProperty set on [ForgeProperty] and is also targeted by [ForgeFrom] / [ForgeWith] — choose one",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor SelectPropertyDestinationNotEnumerable = new(
+        id: "FM0073",
+        title: "SelectProperty destination property is not enumerable",
+        messageFormat: "SelectProperty set on '{0}' but destination property type '{1}' is not enumerable",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
 }
