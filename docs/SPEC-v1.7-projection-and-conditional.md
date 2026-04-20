@@ -333,7 +333,7 @@ if (IsNotNull(source.CreatedAt))
 // runtime; documenting the contract is the user's responsibility.
 var __lines = source.Lines;
 if (HasItems(__lines))
-    destination.ProductNames = __lines.Select(__x => __x.ProductName).ToList();
+    destination.ProductNames = __lines!.Select(__x => __x.ProductName).ToList();
 ```
 
 > **Design note — why not `source.Lines != null && HasItems(source.Lines)`?**
