@@ -276,8 +276,10 @@ public partial class SourceConditionMapper
    - For `Condition`: must accept exactly one parameter assignable from the source property type, return `bool`. Otherwise emit **FM0061**.
    - For `SkipWhen`: must accept exactly one parameter assignable from the source object type, return `bool`. Otherwise emit **FM0061**.
 4. **Generate guarded assignment**: Wrap the destination assignment expression in an `if` (for property/object-initializer cases, see Generated Code).
-5. **Check for conflicting per-property mapping directives**: If the same destination property is also targeted by `[ForgeFrom]` or `[ForgeWith]`, emit **FM0063** instead of composing the directives.
-6. **Compose with `ConvertWith` and `SelectProperty`**: After conflict validation succeeds, the guard runs first; the converter/projection runs only when the guard passes.
+5. **Check for conflicting per-property mapping directives**:
+   - If the same destination property is also targeted by `[ForgeFrom]` or `[ForgeWith]`, emit **FM0063** instead of composing the directives.
+   - If `SelectProperty` is also configured on the same `[ForgeProperty]` *and* `[ForgeFrom]`/`[ForgeWith]` targets it, prefer **FM0072** (the projection-feature's more specific conflict) and suppress **FM0063** for the same destination property to avoid double-reporting.
+6. **Compose with `ConvertWith` and `SelectProperty`**: After conflict validation succeeds (no **FM0063**/**FM0072** conflict applies), the guard runs first; the converter/projection runs only when the guard passes.
 
 ### Generated Code
 
