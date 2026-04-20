@@ -425,7 +425,7 @@ DTO/domain layers expect just `string`. Today, ForgeMap supports only object↔o
 Two new method-level attributes:
 
 - **`[ExtractProperty(name)]`**: Emits a partial body that returns `source.<name>` (with null-guard).
-- **`[WrapProperty(name)]`**: Emits a partial body that returns `new TDest { <name> = source }` (with null-guard).
+- **`[WrapProperty(name)]`**: Emits a partial body that wraps `source` into `TDest` by assigning `<name>`, using either an object-initializer form (`new TDest { <name> = source }`) or a compatible constructor form (`new TDest(<name>: source)`) as applicable (with null-guard).
 
 Both are method-level (not property-level) because they describe the *shape* of the entire forge method (the destination *is* the projected primitive, or the destination *is* the wrapping entity). They are intentionally narrower than `[ConvertWith]`: the generator validates the shape and emits a one-line body without requiring user code.
 
@@ -449,10 +449,10 @@ public sealed class ExtractPropertyAttribute : Attribute
 /// Marks a partial forge method that constructs a new destination object from the
 /// source primitive by assigning or binding it to the named property.
 /// The method must have signature `partial TEntity MethodName(TPrimitive source)`.
-/// The destination type must either support setting an init/settable property with the
-/// named property name after construction, or expose an accessible constructor (including
-/// one resolvable via the v1.6 ConstructorPreference rules) with a parameter matching that
-/// named property name.
+/// The destination type must either support assigning the named property during
+/// construction or object initialization (for example, via a settable or init-only
+/// property), or expose an accessible constructor (including one resolvable via the
+/// v1.6 ConstructorPreference rules) with a parameter matching that named property name.
 /// The generator emits the appropriate construction form with null-guarding as needed.
 /// </summary>
 [AttributeUsage(AttributeTargets.Method, AllowMultiple = false, Inherited = false)]
