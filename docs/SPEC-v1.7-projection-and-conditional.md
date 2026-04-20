@@ -154,7 +154,7 @@ private static List<ApiResourceClaim> WrapClaims(List<string> types)
 |---------|-------------|
 | `ConvertWith` (v1.6) | Mutually exclusive with `SelectProperty` on the same `[ForgeProperty]` — emit **FM0058** |
 | `ConvertWithType` (v1.6) | Mutually exclusive with `SelectProperty` on the same `[ForgeProperty]` — emit **FM0058** |
-| `[ForgeFrom]` / `[ForgeWith]` | Resolver/forge takes precedence — `SelectProperty` ignored |
+| `[ForgeFrom]` / `[ForgeWith]` | Mutually exclusive with `SelectProperty` on the same destination property — emit **FM0072** rather than silently letting the resolver/forge win |
 | `[Ignore]` | Ignore wins — projection skipped |
 | `NullPropertyHandling` | Wraps the projection expression (same pattern as collection coercion) |
 | Collection coercion (v1.5) | Materialization respects destination wrapper type |
@@ -491,9 +491,10 @@ public partial class EntityPrimitiveMapper
    - A settable property (`set` or `init`) — assigned via object initializer, OR
    - A constructor parameter on a constructor that the v1.6 `ConstructorPreference` rules can select (single ctor with one matching parameter, or all other parameters optional with defaults).
 3. **Validate type compatibility**: The parameter type must be assignable from the source parameter type, with the same coercion candidates as `[ExtractProperty]` (in reverse).
+4. **Constructor selection delegates to the existing pipeline**: When a constructor-path strategy is being evaluated (steps 5–6 below), the generator reuses the v1.6 constructor-resolution logic in full — including `[ForgeConstructor]` (explicit pick), **FM0013** (ambiguous best constructor), and **FM0047** (`[ForgeConstructor]` parameter types not found). `[WrapProperty]` does not introduce a parallel constructor selector; `ConstructorPreference` only governs the *order* in which initializer-vs-constructor strategies are tried, not the constructor-scoring algorithm itself.
 4. **Enumerate viable emit strategies** for the named member:
    - **Object initializer** (`new TDest { Prop = source }`): viable when (a) a parameterless constructor exists, (b) the named member is settable or `init`, AND (c) no *other* member of `TDest` is `required` (members only marked `init` without `required` are optional and do **not** block this path).
-   - **Constructor with named parameter** (`new TDest(prop: source)`): viable when there is a public constructor whose parameter matching the named member can be filled, all *other* parameters of that constructor are optional (have default values), AND every `required` member of `TDest` is satisfied by either that constructor or by an object initializer the generator could append (`new TDest(...) { OtherRequired = … }` is **not** allowed because the generator has no source data for the other required members — those would still trigger FM0071).
+   - **Constructor with named parameter** (`new TDest(prop: source)`): viable when there is a public constructor (selected via the existing pipeline above — `[ForgeConstructor]` if present, otherwise the highest-scoring auto-resolved constructor) whose parameter matching the named member can be filled, all *other* parameters of that constructor are optional (have default values), AND every `required` member of `TDest` not also a constructor parameter is satisfied. Because `[WrapProperty]` only has one input value to spend, members not satisfied by the constructor *cannot* be filled by an appended object initializer — there is no source data for them.
 5. **Pick a strategy** in deterministic precedence — first viable strategy wins, but if the first-preferred strategy is *not* viable the algorithm falls through to the next one rather than failing immediately:
    1. `ConstructorPreference.PreferParameterless` → object initializer if viable, otherwise constructor if viable, otherwise FM0068/FM0071.
    2. `ConstructorPreference.Auto` AND the named member is get-only → constructor if viable, otherwise FM0068.
@@ -626,6 +627,7 @@ This makes `[ExtractProperty]` a more discoverable alternative to `SelectPropert
 | **FM0069** | Error | `[WrapProperty]` source parameter type '{0}' not assignable to destination property/parameter type '{1}' for method '{2}' |
 | **FM0070** | Error | `[ExtractProperty]`/`[WrapProperty]` partial method '{0}' has invalid signature — must have exactly one parameter and a non-void return type |
 | **FM0071** | Error | `[WrapProperty]` cannot construct '{0}' because these `required` members are unsatisfied: {1}. Add a constructor that accepts these members, mark them `init` without `required`, or write the partial body manually |
+| **FM0072** | Error | Property '{0}' has `SelectProperty` set on `[ForgeProperty]` and is also targeted by `[ForgeFrom]` / `[ForgeWith]` — choose one |
 
 ### Behavioral Contract
 
@@ -671,6 +673,7 @@ This makes `[ExtractProperty]` a more discoverable alternative to `SelectPropert
 | FM0069 | Error | `ForgeMap` | Wrap | Type incompatible |
 | FM0070 | Error | `ForgeMap` | Extract/Wrap | Invalid partial method signature |
 | FM0071 | Error | `ForgeMap` | Wrap | Required members of destination type cannot be satisfied |
+| FM0072 | Error | `ForgeMap` | Projection | `SelectProperty` conflicts with `[ForgeFrom]` / `[ForgeWith]` |
 
 ---
 
