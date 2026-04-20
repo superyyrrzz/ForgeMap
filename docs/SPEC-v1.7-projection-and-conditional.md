@@ -27,7 +27,7 @@ Entity collections frequently hold objects with one meaningful field (e.g., `Lis
 public partial ApiResourceDto Forge(ApiResource source);
 
 private static List<string> ResolveClaims(ApiResource s)
-    => s.UserClaims?.Select(x => x.Type).ToList();
+    => s.UserClaims?.Select(x => x.Type).ToList() ?? new List<string>();
 ```
 
 For a single mapper with 5–10 such projections (typical of identity/auth domain models), this defeats the source-generator value proposition.
@@ -92,8 +92,8 @@ public partial OrderDto Forge(OrderEntity source)
     if (source == null) return null!;
 
     var __result = new OrderDto();
-    __result.ProductNames = source.Lines?.Select(__x => __x.ProductName).ToList();
-    __result.Tags = source.Tags?.Select(__x => __x.Name).ToList();
+    __result.ProductNames = source.Lines is { } __lines ? __lines.Select(__x => __x.ProductName).ToList() : null!;
+    __result.Tags = source.Tags is { } __tags ? __tags.Select(__x => __x.Name).ToList() : null!;
     return __result;
 }
 ```
@@ -126,7 +126,7 @@ __result.RoleCodes = source.Roles?.Select(__x => string.IsNullOrEmpty(__x.Code)
 **Destination collection coercion (`List<Entity>` → `IReadOnlyList<string>`):**
 
 ```csharp
-__result.Items = source.Lines?.Select(__x => __x.ProductName).ToList();
+__result.Items = source.Lines is { } __lines ? __lines.Select(__x => __x.ProductName).ToList() : null!;
 // Coerced to IReadOnlyList<string> via existing v1.5 collection-coercion machinery.
 ```
 
@@ -145,7 +145,7 @@ Example reverse using `ConvertWith`:
 public partial ApiResource ForgeEntity(ApiResourceDto source);
 
 private static List<ApiResourceClaim> WrapClaims(List<string> types)
-    => types?.Select(t => new ApiResourceClaim { Type = t }).ToList();
+    => types?.Select(t => new ApiResourceClaim { Type = t }).ToList() ?? new List<ApiResourceClaim>();
 ```
 
 ### Interaction with Existing Features
@@ -617,7 +617,7 @@ public partial class ClientMapper
 }
 
 // Generated parent body:
-__result.Scopes = source.Scopes?.Select(__x => ForgeScope(__x)).ToList();
+__result.Scopes = source.Scopes is { } __scopes ? __scopes.Select(__x => ForgeScope(__x)).ToList() : null!;
 ```
 
 This makes `[ExtractProperty]` a more discoverable alternative to `SelectProperty` (v1.7 Feature 1) when the same projection is reused across many parents. Both end up with equivalent performance; `SelectProperty` is for one-off inline cases, `[ExtractProperty]` is for shared single-element forgers.
