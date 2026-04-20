@@ -323,6 +323,10 @@ if (HasItems(source.Lines))
     destination.ProductNames = source.Lines.Select(__x => __x.ProductName).ToList();
 ```
 
+> **Design note — why not `source.Lines != null && HasItems(source.Lines)`?**
+>
+> The generator deliberately does **not** synthesize an extra `!= null` guard around the user's predicate. `Condition` is a contract: the user asserts the predicate returns `true` only when the value is safe to dereference. Adding a redundant null check would (a) double-evaluate predicates with side effects, (b) hide buggy predicates by silently turning a logic error into a no-op, and (c) duplicate the role `NullPropertyHandling` already plays for the "skip null" case. Users who want a pure "skip null" guard should use `NullPropertyHandling.SkipNull` (no predicate needed) or write their predicate to include the null check explicitly. Misuse surfaces as a `NullReferenceException` at runtime — diagnostic **FM0064** (info, opt-in) reports each conditional emit so audits can find risky predicates.
+
 **`Condition`/`SkipWhen` on a *new-instance* mapper (non-`ForgeInto`):**
 
 When the destination is constructed fresh (no existing target), a skipped assignment leaves the destination property at its **default-constructed value** (i.e., whatever the parameterless ctor or object initializer would produce without that property). This means:
