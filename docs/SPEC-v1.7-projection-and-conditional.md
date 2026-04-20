@@ -166,6 +166,8 @@ private static List<ApiResourceClaim> WrapClaims(List<string> types)
 
 ### Diagnostics
 
+> **Diagnostic ID note**: `docs/SPEC-future-advanced-mapping.md` (a speculative, unscheduled spec) tentatively allocates FM0055–FM0060 to auto-flattening / `[ForgeDictionary]`. v1.7 is the next concrete release, so it claims FM0055–FM0073 here; if the future spec is ever promoted, its diagnostics will be renumbered to start above v1.7's allocation.
+
 | Code | Severity | Description |
 |------|----------|-------------|
 | **FM0055** | Error | `SelectProperty` set on '{0}' but source property type '{1}' is not enumerable |
@@ -444,13 +446,14 @@ public sealed class ExtractPropertyAttribute : Attribute
 }
 
 /// <summary>
-/// Marks a partial forge method that constructs a new destination object by setting
-/// a single property to the source primitive.
+/// Marks a partial forge method that constructs a new destination object from the
+/// source primitive by assigning or binding it to the named property.
 /// The method must have signature `partial TEntity MethodName(TPrimitive source)`.
-/// The destination type must have an accessible parameterless constructor (or one
-/// resolvable via the v1.6 ConstructorPreference rules) and a settable/init property
-/// matching the named property name.
-/// The generator emits `new TEntity { PropertyName = source }` with appropriate null-guard.
+/// The destination type must either support setting an init/settable property with the
+/// named property name after construction, or expose an accessible constructor (including
+/// one resolvable via the v1.6 ConstructorPreference rules) with a parameter matching that
+/// named property name.
+/// The generator emits the appropriate construction form with null-guarding as needed.
 /// </summary>
 [AttributeUsage(AttributeTargets.Method, AllowMultiple = false, Inherited = false)]
 public sealed class WrapPropertyAttribute : Attribute
