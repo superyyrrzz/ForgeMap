@@ -173,6 +173,7 @@ private static List<ApiResourceClaim> WrapClaims(List<string> types)
 | **FM0057** | Error | Projected property '{0}' (type '{1}') is not assignable to destination element type '{2}' for property '{3}', and no built-in coercion applies |
 | **FM0073** | Error | `SelectProperty` set on '{0}' but destination property type '{1}' is not enumerable |
 | **FM0058** | Error | Property '{0}' has more than one of `SelectProperty`, `ConvertWith`, `ConvertWithType` set on the same `[ForgeProperty]` — choose one |
+| **FM0072** | Error | Property '{0}' has `SelectProperty` set on `[ForgeProperty]` and is also targeted by `[ForgeFrom]` / `[ForgeWith]` — choose one |
 | **FM0059** | Info (disabled) | Projection applied for property '{0}': `{1}.Select(x => x.{2})` |
 
 ### Behavioral Contract
@@ -191,7 +192,7 @@ private static List<ApiResourceClaim> WrapClaims(List<string> types)
 | Aspect | AutoMapper | Mapperly | ForgeMap v1.7 |
 |--------|-----------|---------|---------------|
 | Projection in member mapping | ✅ `MapFrom(s => s.Coll.Select(...))` | ✅ Via `MapProperty` with method | ✅ `[ForgeProperty(SelectProperty = ...)]` |
-| Compile-time validation | ❌ Runtime | ✅ | ✅ FM0055–FM0058 |
+| Compile-time validation | ❌ Runtime | ✅ | ✅ FM0055–FM0058, FM0072–FM0073 |
 | Auto-coerce projected element | ✅ Runtime | Partial | ✅ Composes with v1.4/v1.6 coercions |
 
 ---
@@ -393,7 +394,7 @@ For `init`/`required` properties and constructor parameters, the conditional has
 |--------|-----------|---------|---------------|
 | Per-property condition | ✅ `.Condition()` / `.PreCondition()` | ⚠️ Limited (`MapPropertyFromSource` with method) | ✅ `Condition` + `SkipWhen` |
 | Source-level vs value-level | ✅ Both | ❌ | ✅ Both (separate attributes) |
-| Compile-time validation | ❌ Runtime | ✅ | ✅ FM0061 |
+| Compile-time validation | ❌ Runtime | ✅ | ✅ FM0060–FM0064 |
 | Works with existing-target mapping | ✅ | ✅ | ✅ Primary use case |
 
 ---
@@ -492,16 +493,16 @@ public partial class EntityPrimitiveMapper
    - A settable property (`set` or `init`) — assigned via object initializer, OR
    - A constructor parameter on a constructor that the v1.6 `ConstructorPreference` rules can select (single ctor with one matching parameter, or all other parameters optional with defaults).
 3. **Validate type compatibility**: The parameter type must be assignable from the source parameter type, with the same coercion candidates as `[ExtractProperty]` (in reverse).
-4. **Constructor selection delegates to the existing pipeline**: When a constructor-path strategy is being evaluated (steps 5–6 below), the generator reuses the v1.6 constructor-resolution logic in full — including `[ForgeConstructor]` (explicit pick), **FM0013** (ambiguous best constructor), and **FM0047** (`[ForgeConstructor]` parameter types not found). `[WrapProperty]` does not introduce a parallel constructor selector; `ConstructorPreference` only governs the *order* in which initializer-vs-constructor strategies are tried, not the constructor-scoring algorithm itself.
-4. **Enumerate viable emit strategies** for the named member:
+4. **Constructor selection delegates to the existing pipeline**: When a constructor-path strategy is being evaluated (steps 6–7 below), the generator reuses the v1.6 constructor-resolution logic in full — including `[ForgeConstructor]` (explicit pick), **FM0013** (ambiguous best constructor), and **FM0047** (`[ForgeConstructor]` parameter types not found). `[WrapProperty]` does not introduce a parallel constructor selector; `ConstructorPreference` only governs the *order* in which initializer-vs-constructor strategies are tried, not the constructor-scoring algorithm itself.
+5. **Enumerate viable emit strategies** for the named member:
    - **Object initializer** (`new TDest { Prop = source }`): viable when (a) a parameterless constructor exists, (b) the named member is settable or `init`, AND (c) no *other* member of `TDest` is `required` (members only marked `init` without `required` are optional and do **not** block this path).
    - **Constructor with named parameter** (`new TDest(prop: source)`): viable when there is a public constructor (selected via the existing pipeline above — `[ForgeConstructor]` if present, otherwise the highest-scoring auto-resolved constructor) whose parameter matching the named member can be filled, all *other* parameters of that constructor are optional (have default values), AND every `required` member of `TDest` not also a constructor parameter is satisfied. Because `[WrapProperty]` only has one input value to spend, members not satisfied by the constructor *cannot* be filled by an appended object initializer — there is no source data for them.
-5. **Pick a strategy** in deterministic precedence — first viable strategy wins, but if the first-preferred strategy is *not* viable the algorithm falls through to the next one rather than failing immediately:
+6. **Pick a strategy** in deterministic precedence — first viable strategy wins, but if the first-preferred strategy is *not* viable the algorithm falls through to the next one rather than failing immediately:
    1. `ConstructorPreference.PreferParameterless` → object initializer if viable, otherwise constructor if viable, otherwise FM0068/FM0071.
    2. `ConstructorPreference.Auto` AND the named member is get-only → constructor if viable, otherwise FM0068.
    3. `ConstructorPreference.Auto` AND the named member is settable/init → object initializer if viable, otherwise constructor if viable, otherwise FM0068/FM0071.
-6. **Required-member error**: If neither strategy is viable solely because of unsatisfied `required` members on `TDest`, emit **FM0071** (more specific than FM0068). FM0071 names the unsatisfied `required` members so the user knows what's blocking emit.
-7. **Generate body**: Emit `new TDest { Prop = source }` or `new TDest(prop: source)` per the chosen strategy.
+7. **Required-member error**: If neither strategy is viable solely because of unsatisfied `required` members on `TDest`, emit **FM0071** (more specific than FM0068). FM0071 names the unsatisfied `required` members so the user knows what's blocking emit.
+8. **Generate body**: Emit `new TDest { Prop = source }` or `new TDest(prop: source)` per the chosen strategy.
 
 ### Generated Code
 
@@ -661,7 +662,7 @@ This makes `[ExtractProperty]` a more discoverable alternative to `SelectPropert
 |--------|-----------|---------|---------------|
 | Entity → primitive | ✅ `ConstructUsing(s => s.X)` | ⚠️ Manual `MapProperty` method | ✅ `[ExtractProperty]` |
 | Primitive → entity | ✅ `.ConstructUsing()` + `MapFrom` | ⚠️ Manual | ✅ `[WrapProperty]` |
-| Compile-time validation | ❌ Runtime | ✅ | ✅ FM0066–FM0070 |
+| Compile-time validation | ❌ Runtime | ✅ | ✅ FM0065–FM0071 |
 | Composes with collection mapping | ✅ Runtime | ✅ | ✅ Auto-wired into parent forgers |
 
 ---
