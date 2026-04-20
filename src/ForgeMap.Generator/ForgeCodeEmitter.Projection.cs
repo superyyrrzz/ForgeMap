@@ -152,7 +152,7 @@ internal sealed partial class ForgeCodeEmitter
         }
 
         // Default: ternary with null fallback
-        var nullFallback = ProjectionNullFallback(destProp.Type, strategy);
+        var nullFallback = ProjectionNullFallback(destProp.Type, strategy, sourcePropName);
         return ProjectionEmitResult.FromExpression($"{sourceExpr} is {{ }} {collLocal} ? {materialized} : {nullFallback}");
     }
 
@@ -238,7 +238,7 @@ internal sealed partial class ForgeCodeEmitter
     /// <summary>
     /// Computes the null-fallback expression used when the source collection is null.
     /// </summary>
-    private static string ProjectionNullFallback(ITypeSymbol destCollType, int strategy)
+    private static string ProjectionNullFallback(ITypeSymbol destCollType, int strategy, string sourcePath)
     {
         // strategy: 0 NullForgiving, 1 SkipNull (handled upstream), 2 CoalesceToDefault, 3 Throw, 4 CoalesceToNew
         var destDisplay = destCollType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
@@ -254,6 +254,7 @@ internal sealed partial class ForgeCodeEmitter
                 switch (def)
                 {
                     case "System.Collections.Generic.IEnumerable<T>":
+                        return $"global::System.Linq.Enumerable.Empty<{elemDisplay}>()";
                     case "System.Collections.Generic.IList<T>":
                     case "System.Collections.Generic.ICollection<T>":
                     case "System.Collections.Generic.IReadOnlyList<T>":
@@ -270,7 +271,7 @@ internal sealed partial class ForgeCodeEmitter
         }
         if (strategy == 3) // Throw
         {
-            return $"throw new global::System.ArgumentNullException(\"source\", \"SelectProperty source collection is null and NullPropertyHandling = ThrowException.\")";
+            return $"throw new global::System.ArgumentNullException(\"{sourcePath}\", \"SelectProperty source collection '{sourcePath}' is null and NullPropertyHandling = ThrowException.\")";
         }
         // NullForgiving (default) or SkipNull-on-init-only fallback
         return "null!";
