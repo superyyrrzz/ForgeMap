@@ -162,9 +162,17 @@ internal sealed partial class ForgeCodeEmitter
     /// </summary>
     private string? BuildProjectionLambdaBody(ITypeSymbol projectedType, ITypeSymbol destElemType, string rawAccess)
     {
-        // 1) Direct assignment
+        // 1) Direct assignment — but unwrap Nullable<T> -> T because Select preserves
+        //    element type, so emitting x.Id as-is for int? -> int produces IEnumerable<int?>
+        //    which won't materialize into List<int>.
         if (CanAssign(projectedType, destElemType))
+        {
+            var srcUnderlying = GetNullableUnderlyingType(projectedType);
+            var destUnderlying = GetNullableUnderlyingType(destElemType);
+            if (srcUnderlying != null && destUnderlying == null)
+                return $"{rawAccess}.GetValueOrDefault()";
             return rawAccess;
+        }
 
         // 2) Compatible enum cast (different namespaces, same members)
         var enumCast = TryGenerateCompatibleEnumCast(projectedType, destElemType, rawAccess);

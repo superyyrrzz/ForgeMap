@@ -301,6 +301,30 @@ public partial class TestForger
         Assert.True(selectCount >= 2, $"Expected projection in both base+derived; saw {selectCount}");
     }
 
+    [Fact]
+    public void Generator_SelectProperty_NullableValueElement_ToNonNullable_UnwrapsValue()
+    {
+        var source = @"
+using System.Collections.Generic;
+using ForgeMap;
+
+public class Tag { public int? Id { get; set; } }
+public class SourceType { public List<Tag> Tags { get; set; } = new(); }
+public class DestType { public List<int> Tags { get; set; } = new(); }
+
+[ForgeMap]
+public partial class TestForger
+{
+    [ForgeProperty(nameof(SourceType.Tags), nameof(DestType.Tags), SelectProperty = nameof(Tag.Id))]
+    public partial DestType Forge(SourceType source);
+}";
+
+        var (diagnostics, trees) = RunGenerator(source);
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        var generated = string.Join("\n", trees.Select(t => t.GetText().ToString()));
+        Assert.Contains("GetValueOrDefault", generated);
+    }
+
     private static (IReadOnlyList<Diagnostic> Diagnostics, IReadOnlyList<SyntaxTree> GeneratedTrees) RunGenerator(string source)
     {
         return TestHelper.RunGenerator(source);
