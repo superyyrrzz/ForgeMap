@@ -325,6 +325,28 @@ public partial class TestForger
         Assert.Contains("GetValueOrDefault", generated);
     }
 
+    [Fact]
+    public void Generator_SelectProperty_OnForgeIntoMethod_EmitsFM0074Warning()
+    {
+        var source = @"
+using System.Collections.Generic;
+using ForgeMap;
+
+public class Tag { public string Name { get; set; } = string.Empty; }
+public class SourceType { public List<Tag> Tags { get; set; } = new(); }
+public class DestType { public List<string> Tags { get; set; } = new(); }
+
+[ForgeMap]
+public partial class TestForger
+{
+    [ForgeProperty(nameof(SourceType.Tags), nameof(DestType.Tags), SelectProperty = nameof(Tag.Name))]
+    public partial void ForgeInto(SourceType source, [UseExistingValue] DestType dest);
+}";
+
+        var (diagnostics, _) = RunGenerator(source);
+        Assert.Contains(diagnostics, d => d.Id == "FM0074");
+    }
+
     private static (IReadOnlyList<Diagnostic> Diagnostics, IReadOnlyList<SyntaxTree> GeneratedTrees) RunGenerator(string source)
     {
         return TestHelper.RunGenerator(source);

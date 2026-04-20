@@ -38,6 +38,19 @@ internal sealed partial class ForgeCodeEmitter
         var nullPropertyHandlingOverrides = cfg.NullPropertyHandlingOverrides;
         var existingTargetProperties = cfg.ExistingTargetProperties;
 
+        // FM0074: SelectProperty is not yet supported on ForgeInto methods — warn so users
+        // know it will be silently ignored rather than producing surprising mapping behavior.
+        if (cfg.SelectPropertyMappings.Count > 0)
+        {
+            var location = method.Locations.FirstOrDefault();
+            foreach (var destPropName in cfg.SelectPropertyMappings.Keys)
+            {
+                ReportDiagnosticIfNotSuppressed(context,
+                    DiagnosticDescriptors.SelectPropertyNotSupportedOnForgeInto,
+                    location, destPropName);
+            }
+        }
+
         // Method signature
         var accessibility = GetAccessibilityKeyword(method.DeclaredAccessibility);
         sb.AppendLine($"        {accessibility} partial void {method.Name}({sourceType.ToDisplayString()} {sourceParam}, {destinationType.ToDisplayString()} {destParam})");

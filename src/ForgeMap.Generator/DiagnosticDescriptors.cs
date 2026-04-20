@@ -496,4 +496,12 @@ internal static class DiagnosticDescriptors
         category: Category,
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor SelectPropertyNotSupportedOnForgeInto = new(
+        id: "FM0074",
+        title: "SelectProperty is not supported on ForgeInto / [UseExistingValue] methods",
+        messageFormat: "Property '{0}' uses SelectProperty on a ForgeInto method, which is not yet supported and will be ignored",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
 }
