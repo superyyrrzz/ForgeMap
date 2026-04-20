@@ -302,7 +302,11 @@ public partial void ForgeInto(RoleDto source, Role destination)
 **`Condition` composed with `ConvertWith`:**
 
 ```csharp
-// Condition runs against the raw source value; converter runs only on assignment
+// Condition runs against the raw source value; converter runs only on assignment.
+// Null-flow rule: when the source value's static type is nullable AND the
+// converter's parameter type is non-nullable, the generator emits `!` after the
+// condition check. The user opts into this contract by declaring `Condition` —
+// a predicate that returns true is assumed to have proved the value usable.
 if (IsNotNull(source.CreatedAt))
     destination.CreatedAt = ToUtcDateTime(source.CreatedAt!);
 ```
@@ -310,7 +314,11 @@ if (IsNotNull(source.CreatedAt))
 **`Condition` composed with `SelectProperty`:**
 
 ```csharp
-// Condition is on the source collection (List<...>); projection runs only on assignment
+// Condition is on the source collection (List<...>); projection runs only on assignment.
+// Null-flow rule: same as above — when the predicate returns true, the generator
+// drops the `?.` chain and accesses the collection directly. If the predicate
+// does NOT actually guard against null, this becomes a NullReferenceException at
+// runtime; documenting the contract is the user's responsibility.
 if (HasItems(source.Lines))
     destination.ProductNames = source.Lines.Select(__x => __x.ProductName).ToList();
 ```
@@ -476,7 +484,13 @@ public partial class EntityPrimitiveMapper
    - A settable property (`set` or `init`) — assigned via object initializer, OR
    - A constructor parameter on a constructor that the v1.6 `ConstructorPreference` rules can select (single ctor with one matching parameter, or all other parameters optional with defaults).
 3. **Validate type compatibility**: The parameter type must be assignable from the source parameter type, with the same coercion candidates as `[ExtractProperty]` (in reverse).
-4. **Generate body**: Emit `new TDest { Prop = source }` or `new TDest(prop: source)`.
+4. **Pick a single emit strategy** (precedence — first match wins, deterministic across generator runs):
+   1. `ConstructorPreference.PreferParameterless` AND a parameterless constructor exists AND the named member is a settable/init property → object initializer (`new TDest { Prop = source }`).
+   2. `ConstructorPreference.Auto` AND the named member is a get-only property reachable only via a constructor parameter → constructor (`new TDest(prop: source)`).
+   3. `ConstructorPreference.Auto` AND the named member is a settable/init property AND a parameterless constructor exists → object initializer.
+   4. `ConstructorPreference.Auto` AND no parameterless constructor exists → constructor with the matching parameter (other parameters must be optional).
+   5. None of the above → emit **FM0068**.
+5. **Generate body**: Emit `new TDest { Prop = source }` or `new TDest(prop: source)` per the strategy above.
 
 ### Generated Code
 
@@ -510,7 +524,20 @@ public partial DateTime ForgeAt(AuditEntry source)
 }
 ```
 
-(Null behavior here follows the method-level `NullHandling` configured on the forger; default is `NullForgiving` for reference-typed parameters, which preserves the v1.5/v1.6 contract.)
+**Null-source behavior matrix for `[ExtractProperty]`:**
+
+The source-null guard depends on the source parameter's nullability and the method's return type:
+
+| Source nullability | Return type | Default emit | Configurable via |
+|--------------------|-------------|--------------|------------------|
+| Reference type, nullable (`T?`) | Reference type, nullable (`R?`) | `if (source == null) return null;` then access | `NullHandling` |
+| Reference type, nullable (`T?`) | Reference type, non-nullable (`R`) | `NullForgiving`: `return null!;` for null source / `CoalesceToDefault`: `return default!;` / `ThrowException`: `throw ArgumentNullException` | `NullHandling` |
+| Reference type, nullable (`T?`) | **Value type** (`int`, `DateTime`, etc.) | `NullForgiving`/`CoalesceToDefault`: `return default(R);` / `ThrowException`: `throw ArgumentNullException` (the example above shows this case explicitly) | `NullHandling` |
+| Reference type, nullable (`T?`) | Nullable value type (`int?`) | `if (source == null) return null;` then access | `NullHandling` |
+| Reference type, non-nullable (`T`) | Any | No null guard emitted (compiler's flow analysis covers it) | n/a |
+| Value type | Any | No null guard emitted | n/a |
+
+The reference-source / value-type-return row is the case the example illustrates — `default(R)` is preferable to a silent `0` only when the user opts into `ThrowException`. Users who want the source-null case to surface as an exception must set `NullHandling = NullPropertyHandling.ThrowException` on the forger or method.
 
 **`[WrapProperty]` — settable destination property:**
 
