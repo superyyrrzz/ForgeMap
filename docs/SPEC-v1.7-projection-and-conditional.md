@@ -72,13 +72,15 @@ public partial class ApiResourceMapper
 
 ### Resolution Algorithm
 
-1. **Validate source side**: The source property must be an enumerable type (`IEnumerable<TElement>`, `IReadOnlyCollection<TElement>`, array, etc.). Otherwise emit **FM0055**.
-2. **Resolve projection member**: Find a public, non-static, get-accessible property on `TElement` named `SelectProperty`. Otherwise emit **FM0056**.
-3. **Validate destination side**: The destination property must be an enumerable type whose element type is either:
+1. **Detect attribute**: Check if a `[ForgeProperty]` has `SelectProperty` set (non-null).
+2. **Validate exclusivity**: If `ConvertWith` or `ConvertWithType` is also set on the same `[ForgeProperty]`, emit **FM0058**. The three are mutually exclusive — they all replace the per-property assignment expression and have no defined composition order.
+3. **Validate source side**: The source property must be an enumerable type (`IEnumerable<TElement>`, `IReadOnlyCollection<TElement>`, array, etc.). Otherwise emit **FM0055**.
+4. **Resolve projection member**: Find a public, non-static, get-accessible property on `TElement` named `SelectProperty`. Otherwise emit **FM0056**.
+5. **Validate destination side**: The destination property must be an enumerable type whose element type is either:
    - Directly assignable from the projected property's type, OR
    - Reachable through built-in coercions (string↔enum, `DateTimeOffset→DateTime`, allowlisted wrapper unwrap, nullability widening/narrowing). The selected coercion is applied inside the `Select` lambda.
    - Otherwise emit **FM0057**.
-4. **Choose materialization**: Use existing collection-coercion logic (`.ToList()`, `.ToArray()`, `ImmutableArray.CreateRange`, etc.) based on the destination wrapper type.
+6. **Choose materialization**: Use existing collection-coercion logic (`.ToList()`, `.ToArray()`, `ImmutableArray.CreateRange`, etc.) based on the destination wrapper type.
 
 ### Generated Code
 
@@ -151,6 +153,7 @@ private static List<ApiResourceClaim> WrapClaims(List<string> types)
 | Feature | Interaction |
 |---------|-------------|
 | `ConvertWith` (v1.6) | Mutually exclusive with `SelectProperty` on the same `[ForgeProperty]` — emit **FM0058** |
+| `ConvertWithType` (v1.6) | Mutually exclusive with `SelectProperty` on the same `[ForgeProperty]` — emit **FM0058** |
 | `[ForgeFrom]` / `[ForgeWith]` | Resolver/forge takes precedence — `SelectProperty` ignored |
 | `[Ignore]` | Ignore wins — projection skipped |
 | `NullPropertyHandling` | Wraps the projection expression (same pattern as collection coercion) |
@@ -168,7 +171,7 @@ private static List<ApiResourceClaim> WrapClaims(List<string> types)
 | **FM0055** | Error | `SelectProperty` set on '{0}' but source property type '{1}' is not enumerable |
 | **FM0056** | Error | `SelectProperty = "{0}"` not found on element type '{1}' for property '{2}' (or not a public readable property) |
 | **FM0057** | Error | Projected property '{0}' (type '{1}') is not assignable to destination element type '{2}' for property '{3}', and no built-in coercion applies |
-| **FM0058** | Error | Property '{0}' has both `SelectProperty` and `ConvertWith` set on the same `[ForgeProperty]` — choose one |
+| **FM0058** | Error | Property '{0}' has more than one of `SelectProperty`, `ConvertWith`, `ConvertWithType` set on the same `[ForgeProperty]` — choose one |
 | **FM0059** | Info (disabled) | Projection applied for property '{0}': `{1}.Select(x => x.{2})` |
 
 ### Behavioral Contract
@@ -494,7 +497,8 @@ public partial class EntityPrimitiveMapper
    3. `ConstructorPreference.Auto` AND the named member is a settable/init property AND a parameterless constructor exists → object initializer.
    4. `ConstructorPreference.Auto` AND no parameterless constructor exists → constructor with the matching parameter (other parameters must be optional).
    5. None of the above → emit **FM0068**.
-5. **Generate body**: Emit `new TDest { Prop = source }` or `new TDest(prop: source)` per the strategy above.
+5. **Required-member check (object-initializer path only)**: If the chosen strategy is an object initializer, scan the destination type for `required` members and `init` members not satisfied by a constructor (i.e., the chosen constructor is parameterless). If any such member exists *other* than the named property, emit **FM0071** — the generated `new TDest { Prop = source }` would otherwise fail to compile (`CS9035`). Constructor-path strategies are exempt because the constructor is responsible for satisfying its own required parameters.
+6. **Generate body**: Emit `new TDest { Prop = source }` or `new TDest(prop: source)` per the strategy above.
 
 ### Generated Code
 
@@ -530,18 +534,18 @@ public partial DateTime ForgeAt(AuditEntry source)
 
 **Null-source behavior matrix for `[ExtractProperty]`:**
 
-The source-null guard depends on the source parameter's nullability and the method's return type:
+The source-null guard is governed by the existing forger-level **`NullHandling`** enum (`ReturnNull` is the v1.5/v1.6 default; `ThrowException` is the opt-in fail-fast mode). `NullPropertyHandling` is **not** consulted here — that enum governs property-to-property assignments inside a multi-property forger, not the top-level source-null check of a single-element extraction. The same matrix applies to `[WrapProperty]` for null-primitive sources of reference type.
 
-| Source nullability | Return type | Default emit | Configurable via |
-|--------------------|-------------|--------------|------------------|
-| Reference type, nullable (`T?`) | Reference type, nullable (`R?`) | `if (source == null) return null;` then access | `NullHandling` |
-| Reference type, nullable (`T?`) | Reference type, non-nullable (`R`) | `NullForgiving`: `return null!;` for null source / `CoalesceToDefault`: `return default!;` / `ThrowException`: `throw ArgumentNullException` | `NullHandling` |
-| Reference type, nullable (`T?`) | **Value type** (`int`, `DateTime`, etc.) | `NullForgiving`/`CoalesceToDefault`: `return default(R);` / `ThrowException`: `throw ArgumentNullException` (the example above shows this case explicitly) | `NullHandling` |
-| Reference type, nullable (`T?`) | Nullable value type (`int?`) | `if (source == null) return null;` then access | `NullHandling` |
-| Reference type, non-nullable (`T`) | Any | No null guard emitted (compiler's flow analysis covers it) | n/a |
-| Value type | Any | No null guard emitted | n/a |
+| Source nullability | Return type | `NullHandling = ReturnNull` (default) | `NullHandling = ThrowException` |
+|--------------------|-------------|---------------------------------------|---------------------------------|
+| Reference type, nullable (`T?`) | Reference type, nullable (`R?`) | `if (source == null) return null;` then access | `if (source == null) throw new ArgumentNullException(nameof(source));` then access |
+| Reference type, nullable (`T?`) | Reference type, non-nullable (`R`) | `if (source == null) return null!;` then access | `if (source == null) throw …;` then access |
+| Reference type, nullable (`T?`) | **Value type** (`int`, `DateTime`, etc.) | `if (source == null) return default(R);` then access (the example above shows this case explicitly) | `if (source == null) throw …;` then access |
+| Reference type, nullable (`T?`) | Nullable value type (`int?`) | `if (source == null) return null;` then access | `if (source == null) throw …;` then access |
+| Reference type, non-nullable (`T`) | Any | No guard emitted (source is annotated non-null) | No guard emitted |
+| Value type | Any | No guard emitted | No guard emitted |
 
-The reference-source / value-type-return row is the case the example illustrates — `default(R)` is preferable to a silent `0` only when the user opts into `ThrowException`. Users who want the source-null case to surface as an exception must set `NullHandling = NullPropertyHandling.ThrowException` on the forger or method.
+For per-property-style coalescing semantics (e.g., return a non-`default` value on null), users should keep the partial method manual or use a `[ConvertWith]` factory — `[ExtractProperty]`/`[WrapProperty]` are deliberately limited to the two `NullHandling` modes the rest of the API already supports.
 
 **`[WrapProperty]` — settable destination property:**
 
@@ -620,6 +624,7 @@ This makes `[ExtractProperty]` a more discoverable alternative to `SelectPropert
 | **FM0068** | Error | `[WrapProperty("{0}")]` not found as settable/init property or constructor parameter on destination type '{1}' for method '{2}' |
 | **FM0069** | Error | `[WrapProperty]` source parameter type '{0}' not assignable to destination property/parameter type '{1}' for method '{2}' |
 | **FM0070** | Error | `[ExtractProperty]`/`[WrapProperty]` partial method '{0}' has invalid signature — must have exactly one parameter and a non-void return type |
+| **FM0071** | Error | `[WrapProperty]` cannot use object-initializer emit on type '{0}' because it has unsatisfied required/init members ({1}) other than the wrapped property. Use a constructor that accepts these members, or write the partial body manually |
 
 ### Behavioral Contract
 
@@ -664,6 +669,7 @@ This makes `[ExtractProperty]` a more discoverable alternative to `SelectPropert
 | FM0068 | Error | `ForgeMap` | Wrap | Destination property/parameter not found |
 | FM0069 | Error | `ForgeMap` | Wrap | Type incompatible |
 | FM0070 | Error | `ForgeMap` | Extract/Wrap | Invalid partial method signature |
+| FM0071 | Error | `ForgeMap` | Wrap | Object-initializer path blocked by other required/init members |
 
 ---
 
