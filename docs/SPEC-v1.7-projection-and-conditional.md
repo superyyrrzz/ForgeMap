@@ -370,7 +370,7 @@ For `init`/`required` properties and constructor parameters, the conditional has
 | Code | Severity | Description |
 |------|----------|-------------|
 | **FM0060** | Error | Property '{0}' has both `Condition` and `SkipWhen` set — choose one |
-| **FM0061** | Error | Predicate method '{0}' for property '{1}' not found or wrong signature. Expected: `bool {0}({2})` |
+| **FM0061** | Error | Predicate method '{0}' for property '{1}' not found or has the wrong signature. Expected: `bool {0}(T)` where `T` is assignable from the source property/source type |
 | **FM0062** | Error | `Condition`/`SkipWhen` cannot be applied to property '{0}' because it is set via constructor or `init`/`required`. Use `[ForgeFrom]` instead |
 | **FM0063** | Error | Property '{0}' has conflicting attributes: `Condition`/`SkipWhen` cannot combine with `[ForgeFrom]` or `[ForgeWith]` targeting the same destination |
 | **FM0064** | Info (disabled) | Conditional assignment applied for property '{0}' via `{1}` |
@@ -627,7 +627,7 @@ This makes `[ExtractProperty]` a more discoverable alternative to `SelectPropert
 | Feature | Interaction |
 |---------|-------------|
 | `[ConvertWith]` (method-level) | Mutually exclusive with `[ExtractProperty]`/`[WrapProperty]` — emit **FM0065** |
-| `[ForgeFrom]` / `[ForgeWith]` | Not applicable — these attributes are on the partial method itself, replacing the body entirely |
+| `[ForgeFrom]` / `[ForgeWith]` | Mutually exclusive with `[ExtractProperty]`/`[WrapProperty]` — emit **FM0065** |
 | `[ForgeProperty]` | Not applicable — single-element forges have no property-level mapping concept |
 | `NullHandling` (forger-level) | Applied to the source null-check (defaults consistent with v1.6 behavior) |
 | `[ReverseForge]` | **Not auto-reversed**. To get the inverse pair, declare both `[ExtractProperty]` and `[WrapProperty]` methods explicitly |
@@ -643,9 +643,9 @@ This makes `[ExtractProperty]` a more discoverable alternative to `SelectPropert
 |------|----------|-------------|
 | **FM0065** | Error | Method '{0}' has conflicting attributes: `[ExtractProperty]`/`[WrapProperty]` cannot combine with `[ConvertWith]`, `[ForgeFrom]`, or `[ForgeWith]` |
 | **FM0066** | Error | `[ExtractProperty("{0}")]` not found on source type '{1}' for method '{2}', or not a public readable property |
-| **FM0067** | Error | `[ExtractProperty]` source property type '{0}' not assignable to method return type '{1}' for method '{2}' |
+| **FM0067** | Error | `[ExtractProperty]` source property type '{0}' is incompatible with method return type '{1}' for method '{2}', and no supported coercion applies |
 | **FM0068** | Error | `[WrapProperty("{0}")]` not found as settable/init property or constructor parameter on destination type '{1}' for method '{2}' |
-| **FM0069** | Error | `[WrapProperty]` source parameter type '{0}' not assignable to destination property/parameter type '{1}' for method '{2}' |
+| **FM0069** | Error | `[WrapProperty]` source parameter type '{0}' is incompatible with destination property/parameter type '{1}' for method '{2}', and no supported coercion applies |
 | **FM0070** | Error | `[ExtractProperty]`/`[WrapProperty]` partial method '{0}' has invalid signature — must have exactly one parameter and a non-void return type |
 | **FM0071** | Error | `[WrapProperty]` cannot construct '{0}' because these `required` members are unsatisfied: {1}. Add a constructor that accepts these members, mark them `init` without `required`, or write the partial body manually |
 
