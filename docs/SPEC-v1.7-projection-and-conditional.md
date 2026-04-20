@@ -491,14 +491,15 @@ public partial class EntityPrimitiveMapper
    - A settable property (`set` or `init`) — assigned via object initializer, OR
    - A constructor parameter on a constructor that the v1.6 `ConstructorPreference` rules can select (single ctor with one matching parameter, or all other parameters optional with defaults).
 3. **Validate type compatibility**: The parameter type must be assignable from the source parameter type, with the same coercion candidates as `[ExtractProperty]` (in reverse).
-4. **Pick a single emit strategy** (precedence — first match wins, deterministic across generator runs):
-   1. `ConstructorPreference.PreferParameterless` AND a parameterless constructor exists AND the named member is a settable/init property → object initializer (`new TDest { Prop = source }`).
-   2. `ConstructorPreference.Auto` AND the named member is a get-only property reachable only via a constructor parameter → constructor (`new TDest(prop: source)`).
-   3. `ConstructorPreference.Auto` AND the named member is a settable/init property AND a parameterless constructor exists → object initializer.
-   4. `ConstructorPreference.Auto` AND no parameterless constructor exists → constructor with the matching parameter (other parameters must be optional).
-   5. None of the above → emit **FM0068**.
-5. **Required-member check (object-initializer path only)**: If the chosen strategy is an object initializer, scan the destination type for `required` members and `init` members not satisfied by a constructor (i.e., the chosen constructor is parameterless). If any such member exists *other* than the named property, emit **FM0071** — the generated `new TDest { Prop = source }` would otherwise fail to compile (`CS9035`). Constructor-path strategies are exempt because the constructor is responsible for satisfying its own required parameters.
-6. **Generate body**: Emit `new TDest { Prop = source }` or `new TDest(prop: source)` per the strategy above.
+4. **Enumerate viable emit strategies** for the named member:
+   - **Object initializer** (`new TDest { Prop = source }`): viable when (a) a parameterless constructor exists, (b) the named member is settable or `init`, AND (c) no *other* member of `TDest` is `required` (members only marked `init` without `required` are optional and do **not** block this path).
+   - **Constructor with named parameter** (`new TDest(prop: source)`): viable when there is a public constructor whose parameter matching the named member can be filled, all *other* parameters of that constructor are optional (have default values), AND every `required` member of `TDest` is satisfied by either that constructor or by an object initializer the generator could append (`new TDest(...) { OtherRequired = … }` is **not** allowed because the generator has no source data for the other required members — those would still trigger FM0071).
+5. **Pick a strategy** in deterministic precedence — first viable strategy wins, but if the first-preferred strategy is *not* viable the algorithm falls through to the next one rather than failing immediately:
+   1. `ConstructorPreference.PreferParameterless` → object initializer if viable, otherwise constructor if viable, otherwise FM0068/FM0071.
+   2. `ConstructorPreference.Auto` AND the named member is get-only → constructor if viable, otherwise FM0068.
+   3. `ConstructorPreference.Auto` AND the named member is settable/init → object initializer if viable, otherwise constructor if viable, otherwise FM0068/FM0071.
+6. **Required-member error**: If neither strategy is viable solely because of unsatisfied `required` members on `TDest`, emit **FM0071** (more specific than FM0068). FM0071 names the unsatisfied `required` members so the user knows what's blocking emit.
+7. **Generate body**: Emit `new TDest { Prop = source }` or `new TDest(prop: source)` per the chosen strategy.
 
 ### Generated Code
 
@@ -542,8 +543,8 @@ The source-null guard is governed by the existing forger-level **`NullHandling`*
 | Reference type, nullable (`T?`) | Reference type, non-nullable (`R`) | `if (source == null) return null!;` then access | `if (source == null) throw …;` then access |
 | Reference type, nullable (`T?`) | **Value type** (`int`, `DateTime`, etc.) | `if (source == null) return default(R);` then access (the example above shows this case explicitly) | `if (source == null) throw …;` then access |
 | Reference type, nullable (`T?`) | Nullable value type (`int?`) | `if (source == null) return null;` then access | `if (source == null) throw …;` then access |
-| Reference type, non-nullable (`T`) | Any | No guard emitted (source is annotated non-null) | No guard emitted |
-| Value type | Any | No guard emitted | No guard emitted |
+| Reference type, non-nullable (`T`) | Any | `if (source == null) return /* default-shaped */;` — guard still emitted because non-nullable annotations are advisory and `NullHandling = ReturnNull` must apply uniformly | `if (source == null) throw new ArgumentNullException(nameof(source));` |
+| Value type | Any | No guard emitted (cannot be null) | No guard emitted |
 
 For per-property-style coalescing semantics (e.g., return a non-`default` value on null), users should keep the partial method manual or use a `[ConvertWith]` factory — `[ExtractProperty]`/`[WrapProperty]` are deliberately limited to the two `NullHandling` modes the rest of the API already supports.
 
@@ -624,7 +625,7 @@ This makes `[ExtractProperty]` a more discoverable alternative to `SelectPropert
 | **FM0068** | Error | `[WrapProperty("{0}")]` not found as settable/init property or constructor parameter on destination type '{1}' for method '{2}' |
 | **FM0069** | Error | `[WrapProperty]` source parameter type '{0}' not assignable to destination property/parameter type '{1}' for method '{2}' |
 | **FM0070** | Error | `[ExtractProperty]`/`[WrapProperty]` partial method '{0}' has invalid signature — must have exactly one parameter and a non-void return type |
-| **FM0071** | Error | `[WrapProperty]` cannot use object-initializer emit on type '{0}' because it has unsatisfied required/init members ({1}) other than the wrapped property. Use a constructor that accepts these members, or write the partial body manually |
+| **FM0071** | Error | `[WrapProperty]` cannot construct '{0}' because these `required` members are unsatisfied: {1}. Add a constructor that accepts these members, mark them `init` without `required`, or write the partial body manually |
 
 ### Behavioral Contract
 
@@ -669,7 +670,7 @@ This makes `[ExtractProperty]` a more discoverable alternative to `SelectPropert
 | FM0068 | Error | `ForgeMap` | Wrap | Destination property/parameter not found |
 | FM0069 | Error | `ForgeMap` | Wrap | Type incompatible |
 | FM0070 | Error | `ForgeMap` | Extract/Wrap | Invalid partial method signature |
-| FM0071 | Error | `ForgeMap` | Wrap | Object-initializer path blocked by other required/init members |
+| FM0071 | Error | `ForgeMap` | Wrap | Required members of destination type cannot be satisfied |
 
 ---
 
