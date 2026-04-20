@@ -34,7 +34,7 @@ For a single mapper with 5–10 such projections (typical of identity/auth domai
 
 ### Design
 
-Add a `SelectProperty` named property to `[ForgeProperty]`. When set, the generator emits `source.Src?.Select(x => x.SelectProperty).To<Collection>()` for that property. The element-type's projected property is resolved by name on the source collection's element type.
+Add a `SelectProperty` named property to `[ForgeProperty]`. When set, the generator emits `source.Src?.Select(x => x.<member named by SelectProperty>).To<Collection>()` for that property. The element-type's projected property is resolved by name on the source collection's element type.
 
 The destination collection wrapper type is determined by the existing collection-coercion machinery (v1.5 Feature 2). The element type of the destination must be assignable from the element-type's projected property type — otherwise the generator falls back to applying string↔enum or built-in coercions on the projected value (v1.6 Feature 4).
 
@@ -50,7 +50,7 @@ public sealed class ForgePropertyAttribute : Attribute
     /// Name of a property on the source collection's element type to project.
     /// When set, generates `source.Src?.Select(x => x.&lt;member named by SelectProperty&gt;).To&lt;TDest&gt;()`.
     /// Use nameof() for compile-time safety.
-    /// Mutually exclusive with ConvertWith on the same [ForgeProperty].
+    /// Mutually exclusive with ConvertWith and ConvertWithType on the same [ForgeProperty].
     /// </summary>
     public string? SelectProperty { get; set; }
 }
@@ -433,7 +433,8 @@ Both are method-level (not property-level) because they describe the *shape* of 
 /// <summary>
 /// Marks a partial forge method that returns a single property of the source object.
 /// The method must have signature `partial TPrimitive MethodName(TEntity source)`.
-/// The generator emits `source == null ? default : source.PropertyName`.
+/// The generator emits a null-guard governed by `NullHandling`, then returns
+/// `source.PropertyName` (with coercion if needed for the declared return type).
 /// </summary>
 [AttributeUsage(AttributeTargets.Method, AllowMultiple = false, Inherited = false)]
 public sealed class ExtractPropertyAttribute : Attribute
@@ -511,7 +512,7 @@ public partial class EntityPrimitiveMapper
 ```csharp
 public partial string? ForgeScope(ClientScope source)
 {
-    if (source == null) return null;
+    if (source == null) return null!;
     return source.Scope;
 }
 ```
@@ -556,15 +557,15 @@ public partial DateTime ForgeAt(AuditEntry source)
 
 **Null-source behavior matrix for `[ExtractProperty]`:**
 
-The source-null guard is governed by the existing forger-level **`NullHandling`** enum (`ReturnNull` is the v1.5/v1.6 default; `ThrowException` is the opt-in fail-fast mode). `NullPropertyHandling` is **not** consulted here — that enum governs property-to-property assignments inside a multi-property forger, not the top-level source-null check of a single-element extraction. The same matrix applies to `[WrapProperty]` for null-primitive sources of reference type.
+The source-null guard is governed by the existing forger-level **`NullHandling`** enum (`ReturnNull` is the v1.5/v1.6 default; `ThrowException` is the opt-in fail-fast mode). `NullPropertyHandling` is **not** consulted here — that enum governs property-to-property assignments inside a multi-property forger, not the top-level source-null check of a single-element extraction. The same matrix applies to `[WrapProperty]` for null-primitive sources of reference type. In generated code, reference-type returns use `return null!;`, while value-type returns (including nullable value types) use `return default(R);`.
 
 | Source nullability | Return type | `NullHandling = ReturnNull` (default) | `NullHandling = ThrowException` |
 |--------------------|-------------|---------------------------------------|---------------------------------|
-| Reference type, nullable (`T?`) | Reference type, nullable (`R?`) | `if (source == null) return null;` then access | `if (source == null) throw new ArgumentNullException(nameof(source));` then access |
+| Reference type, nullable (`T?`) | Reference type, nullable (`R?`) | `if (source == null) return null!;` then access | `if (source == null) throw new ArgumentNullException(nameof(source));` then access |
 | Reference type, nullable (`T?`) | Reference type, non-nullable (`R`) | `if (source == null) return null!;` then access | `if (source == null) throw …;` then access |
 | Reference type, nullable (`T?`) | **Value type** (`int`, `DateTime`, etc.) | `if (source == null) return default(R);` then access (the example above shows this case explicitly) | `if (source == null) throw …;` then access |
-| Reference type, nullable (`T?`) | Nullable value type (`int?`) | `if (source == null) return null;` then access | `if (source == null) throw …;` then access |
-| Reference type, non-nullable (`T`) | Any | `if (source == null) return /* default-shaped */;` — guard still emitted because non-nullable annotations are advisory and `NullHandling = ReturnNull` must apply uniformly | `if (source == null) throw new ArgumentNullException(nameof(source));` |
+| Reference type, nullable (`T?`) | Nullable value type (`int?`) | `if (source == null) return default(R);` then access | `if (source == null) throw …;` then access |
+| Reference type, non-nullable (`T`) | Any | `if (source == null) return null!;` for reference-type `R`, or `return default(R);` for value-type `R` — guard still emitted because non-nullable annotations are advisory and `NullHandling = ReturnNull` must apply uniformly | `if (source == null) throw new ArgumentNullException(nameof(source));` |
 | Value type | Any | No guard emitted (cannot be null) | No guard emitted |
 
 For per-property-style coalescing semantics (e.g., return a non-`default` value on null), users should keep the partial method manual or use a `[ConvertWith]` factory — `[ExtractProperty]`/`[WrapProperty]` are deliberately limited to the two `NullHandling` modes the rest of the API already supports.
