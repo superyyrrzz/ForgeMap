@@ -112,6 +112,7 @@ internal sealed partial class ForgeCodeEmitter
         var afterForgeHooks = cfg.AfterForgeHooks;
         var nullPropertyHandlingOverrides = cfg.NullPropertyHandlingOverrides;
         var propertyConvertWithMappings = cfg.PropertyConvertWithMappings;
+        var selectPropertyMappings = cfg.SelectPropertyMappings;
 
         // FM0028: ExistingTarget = true is only valid on [UseExistingValue] mutation methods
         if (cfg.ExistingTargetProperties.Count > 0)
@@ -175,21 +176,21 @@ internal sealed partial class ForgeCodeEmitter
                 sb, destinationType, sourceType, sourceParam, sourceProperties, destProperties,
                 ctorParamMappings, ctorCoveredDestProps, ignoredProperties, propertyMappings,
                 resolverMappings, forgeWithMappings, nullPropertyHandlingOverrides,
-                afterForgeHooks, forger, context, method, propertyConvertWithMappings);
+                afterForgeHooks, forger, context, method, propertyConvertWithMappings, selectPropertyMappings);
         }
         else if (hasAfterForge)
         {
             GenerateObjInitWithAfterForge(
                 sb, destinationType, sourceType, sourceParam, sourceProperties, destProperties,
                 ignoredProperties, propertyMappings, resolverMappings, forgeWithMappings,
-                nullPropertyHandlingOverrides, afterForgeHooks, forger, context, method, propertyConvertWithMappings);
+                nullPropertyHandlingOverrides, afterForgeHooks, forger, context, method, propertyConvertWithMappings, selectPropertyMappings);
         }
         else
         {
             GenerateSimpleObjectInit(
                 sb, destinationType, sourceType, sourceParam, sourceProperties, destProperties,
                 ignoredProperties, propertyMappings, resolverMappings, forgeWithMappings,
-                nullPropertyHandlingOverrides, forger, context, method, propertyConvertWithMappings);
+                nullPropertyHandlingOverrides, forger, context, method, propertyConvertWithMappings, selectPropertyMappings);
         }
 
         sb.AppendLine("        }");
@@ -301,7 +302,8 @@ internal sealed partial class ForgeCodeEmitter
         ForgerInfo forger,
         SourceProductionContext context,
         IMethodSymbol method,
-        Dictionary<string, (string? MethodName, string? ConverterTypeName, INamedTypeSymbol? ConverterTypeSymbol)>? propertyConvertWithMappings = null)
+        Dictionary<string, (string? MethodName, string? ConverterTypeName, INamedTypeSymbol? ConverterTypeSymbol)>? propertyConvertWithMappings = null,
+        Dictionary<string, string>? selectPropertyMappings = null)
     {
         // Constructor mapping: generate new Dest(param1: expr1, param2: expr2) { Prop = value, ... }
         // Using object initializer syntax so init-only properties work too
@@ -331,7 +333,7 @@ internal sealed partial class ForgeCodeEmitter
                destProp, sourceParam, sourceType, sourceProperties,
                propertyMappings, resolverMappings, forgeWithMappings, ignoredProperties, forger, context, method,
                nullPropertyHandlingOverrides, skipNullAssignmentsForCtor,
-                postConstructionCollectionsForCtor, preConstructionBlocksForCtor, propertyConvertWithMappings);
+                postConstructionCollectionsForCtor, preConstructionBlocksForCtor, propertyConvertWithMappings, selectPropertyMappings);
 
             if (assignment != null)
                 initAssignments.Add((destProp.Name, assignment));
@@ -408,7 +410,8 @@ internal sealed partial class ForgeCodeEmitter
         ForgerInfo forger,
         SourceProductionContext context,
         IMethodSymbol method,
-        Dictionary<string, (string? MethodName, string? ConverterTypeName, INamedTypeSymbol? ConverterTypeSymbol)>? propertyConvertWithMappings = null)
+        Dictionary<string, (string? MethodName, string? ConverterTypeName, INamedTypeSymbol? ConverterTypeSymbol)>? propertyConvertWithMappings = null,
+        Dictionary<string, string>? selectPropertyMappings = null)
     {
         // When AfterForge hooks exist, we need a variable to pass to the hooks
         var skipNullAssignmentsAfterForge = new List<(string DestPropName, string SourceExpr, string LocalVarName, string? AssignExpr)>();
@@ -422,7 +425,7 @@ internal sealed partial class ForgeCodeEmitter
                destProp, sourceParam, sourceType, sourceProperties,
                propertyMappings, resolverMappings, forgeWithMappings, ignoredProperties, forger, context, method,
                nullPropertyHandlingOverrides, skipNullAssignmentsAfterForge,
-                postConstructionCollectionsAfterForge, preConstructionBlocksAfterForge, propertyConvertWithMappings);
+                postConstructionCollectionsAfterForge, preConstructionBlocksAfterForge, propertyConvertWithMappings, selectPropertyMappings);
 
             if (assignment != null)
                 afterForgeAssignments.Add((destProp.Name, assignment));
@@ -480,7 +483,8 @@ internal sealed partial class ForgeCodeEmitter
         ForgerInfo forger,
         SourceProductionContext context,
         IMethodSymbol method,
-        Dictionary<string, (string? MethodName, string? ConverterTypeName, INamedTypeSymbol? ConverterTypeSymbol)>? propertyConvertWithMappings = null)
+        Dictionary<string, (string? MethodName, string? ConverterTypeName, INamedTypeSymbol? ConverterTypeSymbol)>? propertyConvertWithMappings = null,
+        Dictionary<string, string>? selectPropertyMappings = null)
     {
         // Object initializer pattern
         var skipNullAssignmentsPlain = new List<(string DestPropName, string SourceExpr, string LocalVarName, string? AssignExpr)>();
@@ -494,7 +498,7 @@ internal sealed partial class ForgeCodeEmitter
                 destProp, sourceParam, sourceType, sourceProperties,
                 propertyMappings, resolverMappings, forgeWithMappings, ignoredProperties, forger, context, method,
                 nullPropertyHandlingOverrides, skipNullAssignmentsPlain,
-                postConstructionCollectionsPlain, preConstructionBlocksPlain, propertyConvertWithMappings);
+                postConstructionCollectionsPlain, preConstructionBlocksPlain, propertyConvertWithMappings, selectPropertyMappings);
 
             if (assignment != null)
                 plainAssignments.Add((destProp.Name, assignment));

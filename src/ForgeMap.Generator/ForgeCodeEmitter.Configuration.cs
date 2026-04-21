@@ -197,6 +197,32 @@ internal sealed partial class ForgeCodeEmitter
     }
 
     /// <summary>
+    /// Gets per-property SelectProperty mappings from [ForgeProperty(SelectProperty=...)] attributes.
+    /// Returns a dictionary mapping destination property name to the projected element-member name.
+    /// </summary>
+    private Dictionary<string, string> GetSelectPropertyMappings(IMethodSymbol method)
+    {
+        var result = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var attr in GetMethodAttributes(method, _forgePropertyAttributeSymbol))
+        {
+            if (attr.ConstructorArguments.Length < 2)
+                continue;
+            var destinationProperty = attr.ConstructorArguments[1].Value as string;
+            if (string.IsNullOrEmpty(destinationProperty))
+                continue;
+
+            foreach (var named in attr.NamedArguments)
+            {
+                if (named.Key == "SelectProperty" && named.Value.Value is string memberName && !string.IsNullOrEmpty(memberName))
+                {
+                    result[destinationProperty!] = memberName;
+                }
+            }
+        }
+        return result;
+    }
+
+    /// <summary>
     /// Gets resolver mappings from [ForgeFrom] attributes.
     /// Returns a dictionary mapping destination property name to resolver method name.
     /// </summary>
@@ -361,6 +387,7 @@ internal sealed partial class ForgeCodeEmitter
         Dictionary<string, int> nullPropertyHandlingOverrides,
         Dictionary<string, ExistingTargetConfig>? existingTargetProperties,
         Dictionary<string, (string? MethodName, string? ConverterTypeName, INamedTypeSymbol? ConverterTypeSymbol)> propertyConvertWithMappings,
+        Dictionary<string, string> selectPropertyMappings,
         HashSet<string> visited)
     {
         var includeBaseForges = GetIncludeBaseForgeAttributes(method);
@@ -391,6 +418,8 @@ internal sealed partial class ForgeCodeEmitter
         var explicitPropertyMappings = new HashSet<string>(propertyMappings.Keys, StringComparer.Ordinal);
         var explicitResolverMappings = new HashSet<string>(resolverMappings.Keys, StringComparer.Ordinal);
         var explicitForgeWithMappings = new HashSet<string>(forgeWithMappings.Keys, StringComparer.Ordinal);
+        var explicitSelectPropertyMappings = new HashSet<string>(selectPropertyMappings.Keys, StringComparer.Ordinal);
+        var explicitPropertyConvertWithMappings = new HashSet<string>(propertyConvertWithMappings.Keys, StringComparer.Ordinal);
 
         foreach (var (baseSourceType, baseDestType, attrData) in includeBaseForges)
         {
@@ -438,18 +467,33 @@ internal sealed partial class ForgeCodeEmitter
             var baseNullPropertyHandlingOverrides = GetNullPropertyHandlingOverrides(baseMethod);
             var baseExistingTargetProperties = GetExistingTargetProperties(baseMethod);
             var basePropertyConvertWithMappings = GetPropertyConvertWithMappings(baseMethod);
-            ResolveInheritedConfig(baseMethod, forger, context, baseIgnored, basePropertyMappings, baseResolverMappings, baseForgeWithMappings, baseNullPropertyHandlingOverrides, existingTargetProperties != null ? baseExistingTargetProperties : null, basePropertyConvertWithMappings, visited);
+            var baseSelectPropertyMappings = GetSelectPropertyMappings(baseMethod);
+            ResolveInheritedConfig(baseMethod, forger, context, baseIgnored, basePropertyMappings, baseResolverMappings, baseForgeWithMappings, baseNullPropertyHandlingOverrides, existingTargetProperties != null ? baseExistingTargetProperties : null, basePropertyConvertWithMappings, baseSelectPropertyMappings, visited);
 
             // Merge all base config into derived using first-wins semantics + FM0021 override reporting
             var diagLocation = attrData.ApplicationSyntaxReference?.GetSyntax().GetLocation() ?? method.Locations.FirstOrDefault();
 
             bool IsExplicitlyConfigured(string propName) =>
                 explicitIgnored.Contains(propName) || explicitPropertyMappings.Contains(propName) ||
-                explicitResolverMappings.Contains(propName) || explicitForgeWithMappings.Contains(propName);
+                explicitResolverMappings.Contains(propName) || explicitForgeWithMappings.Contains(propName) ||
+                explicitSelectPropertyMappings.Contains(propName) || explicitPropertyConvertWithMappings.Contains(propName);
 
             bool IsAlreadyConfigured(string propName) =>
                 ignoredProperties.Contains(propName) || propertyMappings.ContainsKey(propName) ||
-                resolverMappings.ContainsKey(propName) || forgeWithMappings.ContainsKey(propName);
+                resolverMappings.ContainsKey(propName) || forgeWithMappings.ContainsKey(propName) ||
+                selectPropertyMappings.ContainsKey(propName) || propertyConvertWithMappings.ContainsKey(propName);
+
+            // Snapshot of dest props already configured by an EARLIER base in this includeBaseForges
+            // loop. Used by the SelectProperty merge below to detect cross-base leakage without
+            // false-positive against the current base's own propertyMappings/convertWith that were
+            // just merged in this same iteration.
+            var preExistingConfigured = new HashSet<string>(StringComparer.Ordinal);
+            preExistingConfigured.UnionWith(ignoredProperties);
+            preExistingConfigured.UnionWith(propertyMappings.Keys);
+            preExistingConfigured.UnionWith(resolverMappings.Keys);
+            preExistingConfigured.UnionWith(forgeWithMappings.Keys);
+            preExistingConfigured.UnionWith(selectPropertyMappings.Keys);
+            preExistingConfigured.UnionWith(propertyConvertWithMappings.Keys);
 
             foreach (var propName in baseIgnored)
             {
@@ -518,6 +562,24 @@ internal sealed partial class ForgeCodeEmitter
                 if (!propertyConvertWithMappings.ContainsKey(kvp.Key))
                     propertyConvertWithMappings[kvp.Key] = kvp.Value;
             }
+
+            // Merge base SelectProperty mappings using first-wins semantics.
+            // Skip when the derived method explicitly overrides this dest property — otherwise
+            // a base projection can leak past the override and either apply the wrong projection
+            // or trigger a bogus FM0072 conflict against the derived [ForgeFrom]/[ForgeWith].
+            // Also skip when an EARLIER base already configured this dest (via any mapping kind)
+            // so multi-[IncludeBaseForge] inheritance stays deterministic and a later base's
+            // projection can't attach to an earlier base's source mapping. Compared against the
+            // pre-existing snapshot so the current base's own paired mappings stay coherent.
+            foreach (var kvp in baseSelectPropertyMappings)
+            {
+                if (IsExplicitlyConfigured(kvp.Key))
+                    continue;
+                if (preExistingConfigured.Contains(kvp.Key))
+                    continue;
+                if (!selectPropertyMappings.ContainsKey(kvp.Key))
+                    selectPropertyMappings[kvp.Key] = kvp.Value;
+            }
         }
     }
 
@@ -538,8 +600,9 @@ internal sealed partial class ForgeCodeEmitter
         var nullPropertyHandlingOverrides = GetNullPropertyHandlingOverrides(method);
         var existingTargetProperties = GetExistingTargetProperties(method);
         var propertyConvertWithMappings = GetPropertyConvertWithMappings(method);
+        var selectPropertyMappings = GetSelectPropertyMappings(method);
 
-        ResolveInheritedConfig(method, forger, context, ignoredProperties, propertyMappings, resolverMappings, forgeWithMappings, nullPropertyHandlingOverrides, existingTargetProperties, propertyConvertWithMappings, new HashSet<string>());
+        ResolveInheritedConfig(method, forger, context, ignoredProperties, propertyMappings, resolverMappings, forgeWithMappings, nullPropertyHandlingOverrides, existingTargetProperties, propertyConvertWithMappings, selectPropertyMappings, new HashSet<string>());
 
         var beforeForgeHooks = GetBeforeForgeHooks(method)
             .Select(h => ValidateBeforeForgeHook(h, sourceType, forger, context, method))
@@ -559,7 +622,8 @@ internal sealed partial class ForgeCodeEmitter
             afterForgeHooks,
             nullPropertyHandlingOverrides,
             existingTargetProperties,
-            propertyConvertWithMappings);
+            propertyConvertWithMappings,
+            selectPropertyMappings);
     }
 
     /// <summary>

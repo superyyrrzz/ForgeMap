@@ -76,4 +76,18 @@ public sealed class ForgePropertyAttribute : Attribute
     /// Cannot be combined with <see cref="ConvertWith"/> (method name).
     /// </summary>
     public Type? ConvertWithType { get; set; }
+
+    /// <summary>
+    /// Name of a property on the source collection's element type to project.
+    /// When set, generates a LINQ <c>Select</c> over the source collection that reads the named member,
+    /// then materializes the result into the destination wrapper:
+    /// <c>List&lt;T&gt;</c>/<c>IList&lt;T&gt;</c>/<c>ICollection&lt;T&gt;</c>/<c>IReadOnlyList&lt;T&gt;</c>/<c>IReadOnlyCollection&lt;T&gt;</c> via <c>ToList()</c>;
+    /// arrays via <c>ToArray()</c>; <c>HashSet&lt;T&gt;</c> via the set constructor; <c>ReadOnlyCollection&lt;T&gt;</c> by wrapping a list;
+    /// or returned as <c>IEnumerable&lt;T&gt;</c> directly.
+    /// Built-in element coercions (enum cast, string↔enum, enum→string, <c>DateTimeOffset</c>→<c>DateTime</c>, <c>Nullable&lt;T&gt;</c> unwrap) are composed into the lambda.
+    /// Use <c>nameof()</c> for compile-time safety.
+    /// Mutually exclusive with <see cref="ConvertWith"/>, <see cref="ConvertWithType"/>, <c>[ForgeFrom]</c>, and <c>[ForgeWith]</c>
+    /// on the same destination property.
+    /// </summary>
+    public string? SelectProperty { get; set; }
 }

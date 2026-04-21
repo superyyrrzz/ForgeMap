@@ -1,0 +1,620 @@
+using Microsoft.CodeAnalysis;
+using Xunit;
+
+namespace ForgeMap.Tests;
+
+public class SelectPropertyGeneratorTests
+{
+    [Fact]
+    public void Generator_SelectProperty_ListOfEntityToListOfPrimitive_EmitsSelect()
+    {
+        var source = @"
+using System.Collections.Generic;
+using ForgeMap;
+
+public class Tag { public string Name { get; set; } = string.Empty; }
+public class SourceType { public List<Tag> Tags { get; set; } = new(); }
+public class DestType { public List<string> Tags { get; set; } = new(); }
+
+[ForgeMap]
+public partial class TestForger
+{
+    [ForgeProperty(nameof(SourceType.Tags), nameof(DestType.Tags), SelectProperty = nameof(Tag.Name))]
+    public partial DestType Forge(SourceType source);
+}";
+
+        var (diagnostics, trees) = RunGenerator(source);
+        var errors = diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error).ToList();
+        Assert.Empty(errors);
+
+        var generated = string.Join("\n", trees.Select(t => t.GetText().ToString()));
+        Assert.Contains(".Select(", generated);
+        Assert.Contains(".Name", generated);
+        Assert.Contains("ToList", generated);
+    }
+
+    [Fact]
+    public void Generator_SelectProperty_ArrayDestination_EmitsToArray()
+    {
+        var source = @"
+using System.Collections.Generic;
+using ForgeMap;
+
+public class Tag { public int Id { get; set; } }
+public class SourceType { public List<Tag> Tags { get; set; } = new(); }
+public class DestType { public int[] Tags { get; set; } = System.Array.Empty<int>(); }
+
+[ForgeMap]
+public partial class TestForger
+{
+    [ForgeProperty(nameof(SourceType.Tags), nameof(DestType.Tags), SelectProperty = nameof(Tag.Id))]
+    public partial DestType Forge(SourceType source);
+}";
+
+        var (diagnostics, trees) = RunGenerator(source);
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        var generated = string.Join("\n", trees.Select(t => t.GetText().ToString()));
+        Assert.Contains("ToArray", generated);
+    }
+
+    [Fact]
+    public void Generator_SelectProperty_HashSetDestination_EmitsHashSetCtor()
+    {
+        var source = @"
+using System.Collections.Generic;
+using ForgeMap;
+
+public class Tag { public string Name { get; set; } = string.Empty; }
+public class SourceType { public List<Tag> Tags { get; set; } = new(); }
+public class DestType { public HashSet<string> Tags { get; set; } = new(); }
+
+[ForgeMap]
+public partial class TestForger
+{
+    [ForgeProperty(nameof(SourceType.Tags), nameof(DestType.Tags), SelectProperty = nameof(Tag.Name))]
+    public partial DestType Forge(SourceType source);
+}";
+
+        var (diagnostics, trees) = RunGenerator(source);
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        var generated = string.Join("\n", trees.Select(t => t.GetText().ToString()));
+        Assert.Contains("HashSet", generated);
+    }
+
+    [Fact]
+    public void Generator_SelectProperty_ConflictsWithConvertWith_EmitsFM0058()
+    {
+        var source = @"
+using System.Collections.Generic;
+using ForgeMap;
+
+public class Tag { public string Name { get; set; } = string.Empty; }
+public class SourceType { public List<Tag> Tags { get; set; } = new(); }
+public class DestType { public List<string> Tags { get; set; } = new(); }
+
+public static class Conv { public static List<string> Do(List<Tag> t) => new(); }
+
+[ForgeMap]
+public partial class TestForger
+{
+    [ForgeProperty(nameof(SourceType.Tags), nameof(DestType.Tags),
+        SelectProperty = nameof(Tag.Name),
+        ConvertWith = nameof(Conv.Do))]
+    public partial DestType Forge(SourceType source);
+}";
+
+        var (diagnostics, _) = RunGenerator(source);
+        Assert.Contains(diagnostics, d => d.Id == "FM0058");
+    }
+
+    [Fact]
+    public void Generator_SelectProperty_SourceNotEnumerable_EmitsFM0055()
+    {
+        var source = @"
+using ForgeMap;
+
+public class SourceType { public string Tag { get; set; } = string.Empty; }
+public class DestType { public System.Collections.Generic.List<string> Tag { get; set; } = new(); }
+
+[ForgeMap]
+public partial class TestForger
+{
+    [ForgeProperty(nameof(SourceType.Tag), nameof(DestType.Tag), SelectProperty = ""Length"")]
+    public partial DestType Forge(SourceType source);
+}";
+
+        var (diagnostics, _) = RunGenerator(source);
+        Assert.Contains(diagnostics, d => d.Id == "FM0055");
+    }
+
+    [Fact]
+    public void Generator_SelectProperty_MemberNotFound_EmitsFM0056()
+    {
+        var source = @"
+using System.Collections.Generic;
+using ForgeMap;
+
+public class Tag { public string Name { get; set; } = string.Empty; }
+public class SourceType { public List<Tag> Tags { get; set; } = new(); }
+public class DestType { public List<string> Tags { get; set; } = new(); }
+
+[ForgeMap]
+public partial class TestForger
+{
+    [ForgeProperty(nameof(SourceType.Tags), nameof(DestType.Tags), SelectProperty = ""DoesNotExist"")]
+    public partial DestType Forge(SourceType source);
+}";
+
+        var (diagnostics, _) = RunGenerator(source);
+        Assert.Contains(diagnostics, d => d.Id == "FM0056");
+    }
+
+    [Fact]
+    public void Generator_SelectProperty_DestinationNotEnumerable_EmitsFM0073()
+    {
+        var source = @"
+using System.Collections.Generic;
+using ForgeMap;
+
+public class Tag { public string Name { get; set; } = string.Empty; }
+public class SourceType { public List<Tag> Tags { get; set; } = new(); }
+public class DestType { public string Tags { get; set; } = string.Empty; }
+
+[ForgeMap]
+public partial class TestForger
+{
+    [ForgeProperty(nameof(SourceType.Tags), nameof(DestType.Tags), SelectProperty = nameof(Tag.Name))]
+    public partial DestType Forge(SourceType source);
+}";
+
+        var (diagnostics, _) = RunGenerator(source);
+        Assert.Contains(diagnostics, d => d.Id == "FM0073");
+    }
+
+    [Fact]
+    public void Generator_SelectProperty_IncompatibleElementType_EmitsFM0057()
+    {
+        var source = @"
+using System.Collections.Generic;
+using ForgeMap;
+
+public class Tag { public Tag Self => this; public string Name { get; set; } = string.Empty; }
+public class SourceType { public List<Tag> Tags { get; set; } = new(); }
+public class DestType { public List<int> Tags { get; set; } = new(); }
+
+[ForgeMap]
+public partial class TestForger
+{
+    [ForgeProperty(nameof(SourceType.Tags), nameof(DestType.Tags), SelectProperty = nameof(Tag.Self))]
+    public partial DestType Forge(SourceType source);
+}";
+
+        var (diagnostics, _) = RunGenerator(source);
+        Assert.Contains(diagnostics, d => d.Id == "FM0057");
+    }
+
+    [Fact]
+    public void Generator_SelectProperty_EnumToString_ComposesCoercion()
+    {
+        var source = @"
+using System.Collections.Generic;
+using ForgeMap;
+
+public enum Color { Red, Green, Blue }
+public class Tag { public Color Color { get; set; } }
+public class SourceType { public List<Tag> Tags { get; set; } = new(); }
+public class DestType { public List<string> Tags { get; set; } = new(); }
+
+[ForgeMap]
+public partial class TestForger
+{
+    [ForgeProperty(nameof(SourceType.Tags), nameof(DestType.Tags), SelectProperty = nameof(Tag.Color))]
+    public partial DestType Forge(SourceType source);
+}";
+
+        var (diagnostics, trees) = RunGenerator(source);
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        var generated = string.Join("\n", trees.Select(t => t.GetText().ToString()));
+        Assert.Contains(".ToString()", generated);
+    }
+
+    [Fact]
+    public void Generator_SelectProperty_ConflictsWithForgeWith_EmitsFM0072()
+    {
+        var source = @"
+using System.Collections.Generic;
+using ForgeMap;
+
+public class Tag { public string Name { get; set; } = string.Empty; }
+public class SourceType { public List<Tag> Tags { get; set; } = new(); }
+public class DestType { public List<string> Tags { get; set; } = new(); }
+
+[ForgeMap]
+public partial class TestForger
+{
+    [ForgeProperty(nameof(SourceType.Tags), nameof(DestType.Tags), SelectProperty = nameof(Tag.Name))]
+    [ForgeWith(nameof(DestType.Tags), nameof(ProvideTags))]
+    public partial DestType Forge(SourceType source);
+
+    private static List<string> ProvideTags(SourceType s) => new();
+}";
+
+        var (diagnostics, _) = RunGenerator(source);
+        Assert.Contains(diagnostics, d => d.Id == "FM0072");
+    }
+
+    [Fact]
+    public void Generator_SelectProperty_StringToEnum_TryParseMode_HonorsConfig()
+    {
+        var source = @"
+using System.Collections.Generic;
+using ForgeMap;
+
+[assembly: ForgeMapDefaults(StringToEnum = StringToEnumConversion.TryParse)]
+
+public enum Color { Red, Green, Blue }
+public class Tag { public string Code { get; set; } = string.Empty; }
+public class SourceType { public List<Tag> Tags { get; set; } = new(); }
+public class DestType { public List<Color> Tags { get; set; } = new(); }
+
+[ForgeMap]
+public partial class TestForger
+{
+    [ForgeProperty(nameof(SourceType.Tags), nameof(DestType.Tags), SelectProperty = nameof(Tag.Code))]
+    public partial DestType Forge(SourceType source);
+}";
+
+        var (diagnostics, trees) = RunGenerator(source);
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        var generated = string.Join("\n", trees.Select(t => t.GetText().ToString()));
+        Assert.Contains("Enum.TryParse", generated);
+    }
+
+    [Fact]
+    public void Generator_SelectProperty_InheritedViaIncludeBaseForge_PropagatesProjection()
+    {
+        var source = @"
+using System.Collections.Generic;
+using ForgeMap;
+
+public class Tag { public string Name { get; set; } = string.Empty; }
+public class BaseSource { public List<Tag> Tags { get; set; } = new(); }
+public class BaseDest { public List<string> Tags { get; set; } = new(); }
+public class DerivedSource : BaseSource { public int Extra { get; set; } }
+public class DerivedDest : BaseDest { public int Extra { get; set; } }
+
+[ForgeMap]
+public partial class TestForger
+{
+    [ForgeProperty(nameof(BaseSource.Tags), nameof(BaseDest.Tags), SelectProperty = nameof(Tag.Name))]
+    public partial BaseDest ForgeBase(BaseSource source);
+
+    [IncludeBaseForge(typeof(BaseSource), typeof(BaseDest))]
+    public partial DerivedDest ForgeDerived(DerivedSource source);
+}";
+
+        var (diagnostics, trees) = RunGenerator(source);
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        var generated = string.Join("\n", trees.Select(t => t.GetText().ToString()));
+        // Both methods should emit Select projection on Tags
+        var selectCount = System.Text.RegularExpressions.Regex.Matches(generated, @"\.Select\(").Count;
+        Assert.True(selectCount >= 2, $"Expected projection in both base+derived; saw {selectCount}");
+    }
+
+    [Fact]
+    public void Generator_SelectProperty_NullableValueElement_ToNonNullable_UnwrapsValue()
+    {
+        var source = @"
+using System.Collections.Generic;
+using ForgeMap;
+
+public class Tag { public int? Id { get; set; } }
+public class SourceType { public List<Tag> Tags { get; set; } = new(); }
+public class DestType { public List<int> Tags { get; set; } = new(); }
+
+[ForgeMap]
+public partial class TestForger
+{
+    [ForgeProperty(nameof(SourceType.Tags), nameof(DestType.Tags), SelectProperty = nameof(Tag.Id))]
+    public partial DestType Forge(SourceType source);
+}";
+
+        var (diagnostics, trees) = RunGenerator(source);
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        var generated = string.Join("\n", trees.Select(t => t.GetText().ToString()));
+        Assert.Contains("GetValueOrDefault", generated);
+    }
+
+    [Fact]
+    public void Generator_SelectProperty_OnForgeIntoMethod_EmitsFM0075Warning()
+    {
+        var source = @"
+using System.Collections.Generic;
+using ForgeMap;
+
+public class Tag { public string Name { get; set; } = string.Empty; }
+public class SourceType { public List<Tag> Tags { get; set; } = new(); }
+public class DestType { public List<string> Tags { get; set; } = new(); }
+
+[ForgeMap]
+public partial class TestForger
+{
+    [ForgeProperty(nameof(SourceType.Tags), nameof(DestType.Tags), SelectProperty = nameof(Tag.Name))]
+    public partial void ForgeInto(SourceType source, [UseExistingValue] DestType dest);
+}";
+
+        var (diagnostics, _) = RunGenerator(source);
+        Assert.Contains(diagnostics, d => d.Id == "FM0075");
+    }
+
+    [Fact]
+    public void Generator_SelectProperty_NullableEnumDestination_WrapsCast()
+    {
+        var source = @"
+using System.Collections.Generic;
+using ForgeMap;
+
+public enum Color { Red, Green, Blue }
+public class Tag { public string Code { get; set; } = string.Empty; }
+public class SourceType { public List<Tag> Tags { get; set; } = new(); }
+public class DestType { public List<Color?> Tags { get; set; } = new(); }
+
+[ForgeMap]
+public partial class TestForger
+{
+    [ForgeProperty(nameof(SourceType.Tags), nameof(DestType.Tags), SelectProperty = nameof(Tag.Code))]
+    public partial DestType Forge(SourceType source);
+}";
+
+        var (diagnostics, trees) = RunGenerator(source);
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        var generated = string.Join("\n", trees.Select(t => t.GetText().ToString()));
+        Assert.Contains("(global::Color?)", generated);
+    }
+
+    [Fact]
+    public void Generator_SelectProperty_DerivedExplicitForgeWith_DoesNotInheritBaseProjection()
+    {
+        var source = @"
+using System.Collections.Generic;
+using ForgeMap;
+
+public class Tag { public string Name { get; set; } = string.Empty; }
+public class BaseSource { public List<Tag> Tags { get; set; } = new(); }
+public class BaseDest { public List<string> Tags { get; set; } = new(); }
+public class DerivedSource : BaseSource { }
+public class DerivedDest : BaseDest { }
+
+[ForgeMap]
+public partial class TestForger
+{
+    [ForgeProperty(nameof(BaseSource.Tags), nameof(BaseDest.Tags), SelectProperty = nameof(Tag.Name))]
+    public partial BaseDest ForgeBase(BaseSource source);
+
+    [IncludeBaseForge(typeof(BaseSource), typeof(BaseDest))]
+    [ForgeWith(nameof(DerivedDest.Tags), nameof(BuildTags))]
+    public partial DerivedDest ForgeDerived(DerivedSource source);
+
+    public static List<string> BuildTags(DerivedSource s) => new();
+}";
+
+        var (diagnostics, _) = RunGenerator(source);
+        // Must NOT report FM0072 — the base projection should be skipped because the
+        // derived method explicitly overrode Tags with [ForgeWith]
+        Assert.DoesNotContain(diagnostics, d => d.Id == "FM0072");
+    }
+
+    [Fact]
+    public void Generator_SelectProperty_CustomIEnumerableSource_RecognizedAsEnumerable()
+    {
+        var source = @"
+using System.Collections;
+using System.Collections.Generic;
+using ForgeMap;
+
+public class Tag { public string Name { get; set; } = string.Empty; }
+public class TagBag : IEnumerable<Tag>
+{
+    private readonly List<Tag> _items = new();
+    public IEnumerator<Tag> GetEnumerator() => _items.GetEnumerator();
+    IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+}
+public class SourceType { public TagBag Tags { get; set; } = new(); }
+public class DestType { public List<string> Tags { get; set; } = new(); }
+
+[ForgeMap]
+public partial class TestForger
+{
+    [ForgeProperty(nameof(SourceType.Tags), nameof(DestType.Tags), SelectProperty = nameof(Tag.Name))]
+    public partial DestType Forge(SourceType source);
+}";
+
+        var (diagnostics, trees) = RunGenerator(source);
+        Assert.DoesNotContain(diagnostics, d => d.Id == "FM0055");
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        var generated = string.Join("\n", trees.Select(t => t.GetText().ToString()));
+        Assert.Contains(".Select(", generated);
+    }
+
+    [Fact]
+    public void Generator_SelectProperty_StringToNullableEnum_NullOnEmptyOrFailure()
+    {
+        var source = @"
+using System.Collections.Generic;
+using ForgeMap;
+
+public enum Color { Red, Green, Blue }
+public class Tag { public string Code { get; set; } = string.Empty; }
+public class SourceType { public List<Tag> Tags { get; set; } = new(); }
+public class DestType { public List<Color?> Tags { get; set; } = new(); }
+
+[ForgeMap]
+public partial class TestForger
+{
+    [ForgeProperty(nameof(SourceType.Tags), nameof(DestType.Tags), SelectProperty = nameof(Tag.Code))]
+    public partial DestType Forge(SourceType source);
+}";
+
+        var (diagnostics, trees) = RunGenerator(source);
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        var generated = string.Join("\n", trees.Select(t => t.GetText().ToString()));
+        // Failure path for Nullable<TEnum> dest must be `null`, not `default(TEnum)` (= 0)
+        Assert.DoesNotContain("default(global::Color)", generated);
+        Assert.Contains("string.IsNullOrEmpty", generated);
+    }
+
+    [Fact]
+    public void Generator_SelectProperty_MultipleIncludeBaseForge_DoesNotLeakAcrossBases()
+    {
+        // Two bases (chained via inheritance so [IncludeBaseForge] is legal for both) both
+        // expose a 'Tags' destination. The first-listed base maps Tags via [ForgeProperty]
+        // (1:1, no projection). The second-listed base maps Tags via SelectProperty. First-wins
+        // must apply per-destination: the second base's projection MUST NOT attach itself to
+        // the first base's already-merged property mapping (that would project from a different
+        // source path and silently emit wrong code).
+        var source = @"
+using System.Collections.Generic;
+using ForgeMap;
+
+public class Tag { public string Name { get; set; } = string.Empty; }
+public class BaseSourceB { public List<Tag> Tags { get; set; } = new(); }
+public class BaseSourceA : BaseSourceB { public new List<string> Tags { get; set; } = new(); }
+public class DerivedSource : BaseSourceA { public int Extra { get; set; } }
+
+public class BaseDestB { public List<string> Tags { get; set; } = new(); }
+public class BaseDestA : BaseDestB { public new List<string> Tags { get; set; } = new(); }
+public class DerivedDest : BaseDestA { public int Extra { get; set; } }
+
+[ForgeMap]
+public partial class TestForger
+{
+    [ForgeProperty(nameof(BaseSourceA.Tags), nameof(BaseDestA.Tags))]
+    public partial BaseDestA ForgeBaseA(BaseSourceA source);
+
+    [ForgeProperty(nameof(BaseSourceB.Tags), nameof(BaseDestB.Tags), SelectProperty = nameof(Tag.Name))]
+    public partial BaseDestB ForgeBaseB(BaseSourceB source);
+
+    [IncludeBaseForge(typeof(BaseSourceA), typeof(BaseDestA))]
+    [IncludeBaseForge(typeof(BaseSourceB), typeof(BaseDestB))]
+    public partial DerivedDest ForgeDerived(DerivedSource source);
+}";
+
+        var (diagnostics, trees) = RunGenerator(source);
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        var generated = string.Join("\n", trees.Select(t => t.GetText().ToString()));
+        // ForgeDerived must NOT emit a projection for Tags — BaseA's plain mapping wins
+        // and BaseB's projection must be skipped because Tags was already configured by BaseA.
+        var derivedIdx = generated.IndexOf("ForgeDerived(");
+        Assert.True(derivedIdx >= 0);
+        var derivedSection = generated.Substring(derivedIdx);
+        var nextMethod = derivedSection.IndexOf("partial ", 50);
+        if (nextMethod > 0) derivedSection = derivedSection.Substring(0, nextMethod);
+        Assert.DoesNotContain(".Select(", derivedSection);
+    }
+
+    [Fact]
+    public void Generator_SelectProperty_SkipNull_EmitsPostConstructionGuardedAssignment()
+    {
+        var source = @"
+using System.Collections.Generic;
+using ForgeMap;
+
+public class Tag { public string Name { get; set; } = string.Empty; }
+public class SourceType { public List<Tag>? Tags { get; set; } }
+public class DestType { public List<string> Tags { get; set; } = new(); }
+
+[ForgeMap(NullPropertyHandling = NullPropertyHandling.SkipNull)]
+public partial class TestForger
+{
+    [ForgeProperty(nameof(SourceType.Tags), nameof(DestType.Tags), SelectProperty = nameof(Tag.Name))]
+    public partial DestType Forge(SourceType source);
+}";
+
+        var (diagnostics, trees) = RunGenerator(source);
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        var generated = string.Join("\n", trees.Select(t => t.GetText().ToString()));
+        Assert.Contains("source.Tags is { } __sel_Tags", generated);
+        Assert.Contains("result.Tags = global::System.Linq.Enumerable.ToList(", generated);
+        Assert.DoesNotContain("? global::System.Linq.Enumerable.ToList", generated);
+    }
+
+    [Fact]
+    public void Generator_SelectProperty_ThrowException_EmitsArgumentNullExceptionThrow()
+    {
+        var source = @"
+using System.Collections.Generic;
+using ForgeMap;
+
+public class Tag { public string Name { get; set; } = string.Empty; }
+public class SourceType { public List<Tag>? Tags { get; set; } }
+public class DestType { public List<string> Tags { get; set; } = new(); }
+
+[ForgeMap(NullPropertyHandling = NullPropertyHandling.ThrowException)]
+public partial class TestForger
+{
+    [ForgeProperty(nameof(SourceType.Tags), nameof(DestType.Tags), SelectProperty = nameof(Tag.Name))]
+    public partial DestType Forge(SourceType source);
+}";
+
+        var (diagnostics, trees) = RunGenerator(source);
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        var generated = string.Join("\n", trees.Select(t => t.GetText().ToString()));
+        Assert.Contains("throw new global::System.ArgumentNullException(\"Tags\"", generated);
+        Assert.Contains("NullPropertyHandling = ThrowException", generated);
+    }
+
+    [Fact]
+    public void Generator_SelectProperty_CoalesceToDefault_EmitsEmptyList()
+    {
+        var source = @"
+using System.Collections.Generic;
+using ForgeMap;
+
+public class Tag { public string Name { get; set; } = string.Empty; }
+public class SourceType { public List<Tag>? Tags { get; set; } }
+public class DestType { public List<string> Tags { get; set; } = new(); }
+
+[ForgeMap(NullPropertyHandling = NullPropertyHandling.CoalesceToDefault)]
+public partial class TestForger
+{
+    [ForgeProperty(nameof(SourceType.Tags), nameof(DestType.Tags), SelectProperty = nameof(Tag.Name))]
+    public partial DestType Forge(SourceType source);
+}";
+
+        var (diagnostics, trees) = RunGenerator(source);
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        var generated = string.Join("\n", trees.Select(t => t.GetText().ToString()));
+        Assert.Contains("? global::System.Linq.Enumerable.ToList(", generated);
+        Assert.Contains(": new global::System.Collections.Generic.List<string>()", generated);
+    }
+
+    [Fact]
+    public void Generator_SelectProperty_CoalesceToNew_ArrayDestination_EmitsEmptyArray()
+    {
+        var source = @"
+using System.Collections.Generic;
+using ForgeMap;
+
+public class Tag { public int Id { get; set; } }
+public class SourceType { public List<Tag>? Tags { get; set; } }
+public class DestType { public int[] Tags { get; set; } = System.Array.Empty<int>(); }
+
+[ForgeMap(NullPropertyHandling = NullPropertyHandling.CoalesceToNew)]
+public partial class TestForger
+{
+    [ForgeProperty(nameof(SourceType.Tags), nameof(DestType.Tags), SelectProperty = nameof(Tag.Id))]
+    public partial DestType Forge(SourceType source);
+}";
+
+        var (diagnostics, trees) = RunGenerator(source);
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        var generated = string.Join("\n", trees.Select(t => t.GetText().ToString()));
+        Assert.Contains("global::System.Linq.Enumerable.ToArray(", generated);
+        Assert.Contains(": global::System.Array.Empty<int>()", generated);
+    }
+
+    private static (IReadOnlyList<Diagnostic> Diagnostics, IReadOnlyList<SyntaxTree> GeneratedTrees) RunGenerator(string source)
+    {
+        return TestHelper.RunGenerator(source);
+    }
+}
