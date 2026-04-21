@@ -41,6 +41,52 @@ internal sealed partial class ForgeCodeEmitter
             SymbolEqualityComparer.Default.Equals(a.AttributeClass, _convertWithAttributeSymbol));
     }
 
+#pragma warning disable IDE0051 // Remove unused private members — consumed in tasks 4-7
+    private bool HasExtractPropertyAttribute(IMethodSymbol method)
+    {
+        if (_extractPropertyAttributeSymbol == null)
+            return false;
+
+        return method.GetAttributes().Any(a =>
+            SymbolEqualityComparer.Default.Equals(a.AttributeClass, _extractPropertyAttributeSymbol));
+    }
+
+    private bool HasWrapPropertyAttribute(IMethodSymbol method)
+    {
+        if (_wrapPropertyAttributeSymbol == null)
+            return false;
+
+        return method.GetAttributes().Any(a =>
+            SymbolEqualityComparer.Default.Equals(a.AttributeClass, _wrapPropertyAttributeSymbol));
+    }
+
+    /// <summary>
+    /// Returns the property-name argument from the [ExtractProperty] attribute on this method,
+    /// or null if the attribute is absent or malformed.
+    /// </summary>
+    private string? GetExtractPropertyName(IMethodSymbol method)
+    {
+        if (_extractPropertyAttributeSymbol == null) return null;
+        var attr = method.GetAttributes().FirstOrDefault(a =>
+            SymbolEqualityComparer.Default.Equals(a.AttributeClass, _extractPropertyAttributeSymbol));
+        if (attr == null || attr.ConstructorArguments.Length == 0) return null;
+        return attr.ConstructorArguments[0].Value as string;
+    }
+
+    /// <summary>
+    /// Returns the property-name argument from the [WrapProperty] attribute on this method,
+    /// or null if the attribute is absent or malformed.
+    /// </summary>
+    private string? GetWrapPropertyName(IMethodSymbol method)
+    {
+        if (_wrapPropertyAttributeSymbol == null) return null;
+        var attr = method.GetAttributes().FirstOrDefault(a =>
+            SymbolEqualityComparer.Default.Equals(a.AttributeClass, _wrapPropertyAttributeSymbol));
+        if (attr == null || attr.ConstructorArguments.Length == 0) return null;
+        return attr.ConstructorArguments[0].Value as string;
+    }
+#pragma warning restore IDE0051
+
     private bool HasUseExistingValueAttribute(IParameterSymbol param)
     {
         if (_useExistingValueAttributeSymbol == null)

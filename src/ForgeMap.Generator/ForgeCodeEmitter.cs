@@ -24,6 +24,8 @@ internal sealed partial class ForgeCodeEmitter
     private readonly INamedTypeSymbol? _convertWithAttributeSymbol;
     private readonly INamedTypeSymbol? _useExistingValueAttributeSymbol;
     private readonly INamedTypeSymbol? _forgeConstructorAttributeSymbol;
+    private readonly INamedTypeSymbol? _extractPropertyAttributeSymbol;
+    private readonly INamedTypeSymbol? _wrapPropertyAttributeSymbol;
     private readonly INamedTypeSymbol? _iTypeConverterOpenSymbol;
     private readonly INamedTypeSymbol? _iServiceProviderSymbol;
     private readonly INamedTypeSymbol? _iServiceScopeFactorySymbol;
@@ -88,6 +90,8 @@ internal sealed partial class ForgeCodeEmitter
         _convertWithAttributeSymbol = compilation.GetTypeByMetadataName("ForgeMap.ConvertWithAttribute");
         _useExistingValueAttributeSymbol = compilation.GetTypeByMetadataName("ForgeMap.UseExistingValueAttribute");
         _forgeConstructorAttributeSymbol = compilation.GetTypeByMetadataName("ForgeMap.ForgeConstructorAttribute");
+        _extractPropertyAttributeSymbol = compilation.GetTypeByMetadataName("ForgeMap.ExtractPropertyAttribute");
+        _wrapPropertyAttributeSymbol = compilation.GetTypeByMetadataName("ForgeMap.WrapPropertyAttribute");
         _iTypeConverterOpenSymbol = compilation.GetTypeByMetadataName("ForgeMap.ITypeConverter`2");
         _iServiceProviderSymbol = compilation.GetTypeByMetadataName("System.IServiceProvider");
         _iServiceScopeFactorySymbol = compilation.GetTypeByMetadataName("Microsoft.Extensions.DependencyInjection.IServiceScopeFactory");
