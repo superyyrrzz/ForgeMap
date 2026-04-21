@@ -31,11 +31,33 @@ internal sealed partial class ForgeCodeEmitter
         List<(string DestPropName, string Block)>? postConstructionCollections = null,
         List<string>? preConstructionBlocks = null,
         Dictionary<string, (string? MethodName, string? ConverterTypeName, INamedTypeSymbol? ConverterTypeSymbol)>? propertyConvertWithMappings = null,
-        Dictionary<string, string>? selectPropertyMappings = null)
+        Dictionary<string, string>? selectPropertyMappings = null,
+        Dictionary<string, string>? conditionMappings = null,
+        Dictionary<string, string>? skipWhenMappings = null,
+        bool isCtorBound = false)
     {
         // Skip ignored properties
         if (ignoredProperties.Contains(destProp.Name))
             return null;
+
+        // v1.7 Conditional (Condition / SkipWhen) — validate and report diagnostics
+        // before the assignment is built. The actual `if`-guard wrapping is applied
+        // by the caller (Forge writers / ForgeInto) because object initializers
+        // cannot contain `if`, and the writer already moves multi-statement
+        // emissions out of the initializer via postConstructionCollections.
+        if ((conditionMappings != null && conditionMappings.ContainsKey(destProp.Name))
+            || (skipWhenMappings != null && skipWhenMappings.ContainsKey(destProp.Name)))
+        {
+            ResolveConditionalForProperty(
+                destProp, sourceType,
+                conditionMappings ?? new Dictionary<string, string>(StringComparer.Ordinal),
+                skipWhenMappings ?? new Dictionary<string, string>(StringComparer.Ordinal),
+                propertyMappings,
+                selectPropertyMappings ?? new Dictionary<string, string>(StringComparer.Ordinal),
+                resolverMappings, forgeWithMappings,
+                isCtorBound,
+                forger, context, method);
+        }
 
         // v1.7 SelectProperty projection has highest precedence among per-property directives.
         if (selectPropertyMappings != null && selectPropertyMappings.ContainsKey(destProp.Name))

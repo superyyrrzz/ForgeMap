@@ -6,8 +6,6 @@ using static ForgeMap.Generator.TypeAnalysisHelper;
 namespace ForgeMap.Generator;
 
 // Helpers are defined here for an upcoming task; callers will be wired in later.
-#pragma warning disable IDE0051 // Remove unused private members
-#pragma warning disable IDE0060 // Remove unused parameter
 internal sealed partial class ForgeCodeEmitter
 {
     /// <summary>
@@ -154,6 +152,7 @@ internal sealed partial class ForgeCodeEmitter
     /// reporting diagnostics. Used by the Forge writer after GeneratePropertyAssignment
     /// has already validated the configuration and reported any errors.
     /// </summary>
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0060:Remove unused parameter", Justification = "Kept symmetric with ResolveConditionalForProperty for caller convenience.")]
     private ConditionalResolution TryResolveConditionalSilently(
         IPropertySymbol destProp,
         ITypeSymbol sourceType,
@@ -211,5 +210,3 @@ internal sealed partial class ForgeCodeEmitter
         return resolution.Kind == ConditionalKind.SkipWhen ? $"!{call}" : call;
     }
 }
-#pragma warning restore IDE0060
-#pragma warning restore IDE0051

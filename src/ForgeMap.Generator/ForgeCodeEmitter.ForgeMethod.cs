@@ -176,21 +176,21 @@ internal sealed partial class ForgeCodeEmitter
                 sb, destinationType, sourceType, sourceParam, sourceProperties, destProperties,
                 ctorParamMappings, ctorCoveredDestProps, ignoredProperties, propertyMappings,
                 resolverMappings, forgeWithMappings, nullPropertyHandlingOverrides,
-                afterForgeHooks, forger, context, method, propertyConvertWithMappings, selectPropertyMappings);
+                afterForgeHooks, forger, context, method, propertyConvertWithMappings, selectPropertyMappings, cfg.ConditionMappings, cfg.SkipWhenMappings);
         }
         else if (hasAfterForge)
         {
             GenerateObjInitWithAfterForge(
                 sb, destinationType, sourceType, sourceParam, sourceProperties, destProperties,
                 ignoredProperties, propertyMappings, resolverMappings, forgeWithMappings,
-                nullPropertyHandlingOverrides, afterForgeHooks, forger, context, method, propertyConvertWithMappings, selectPropertyMappings);
+                nullPropertyHandlingOverrides, afterForgeHooks, forger, context, method, propertyConvertWithMappings, selectPropertyMappings, cfg.ConditionMappings, cfg.SkipWhenMappings);
         }
         else
         {
             GenerateSimpleObjectInit(
                 sb, destinationType, sourceType, sourceParam, sourceProperties, destProperties,
                 ignoredProperties, propertyMappings, resolverMappings, forgeWithMappings,
-                nullPropertyHandlingOverrides, forger, context, method, propertyConvertWithMappings, selectPropertyMappings);
+                nullPropertyHandlingOverrides, forger, context, method, propertyConvertWithMappings, selectPropertyMappings, cfg.ConditionMappings, cfg.SkipWhenMappings);
         }
 
         sb.AppendLine("        }");
@@ -303,7 +303,9 @@ internal sealed partial class ForgeCodeEmitter
         SourceProductionContext context,
         IMethodSymbol method,
         Dictionary<string, (string? MethodName, string? ConverterTypeName, INamedTypeSymbol? ConverterTypeSymbol)>? propertyConvertWithMappings = null,
-        Dictionary<string, string>? selectPropertyMappings = null)
+        Dictionary<string, string>? selectPropertyMappings = null,
+        Dictionary<string, string>? conditionMappings = null,
+        Dictionary<string, string>? skipWhenMappings = null)
     {
         // Constructor mapping: generate new Dest(param1: expr1, param2: expr2) { Prop = value, ... }
         // Using object initializer syntax so init-only properties work too
@@ -313,6 +315,25 @@ internal sealed partial class ForgeCodeEmitter
         {
             if (mapping.PreConstructionBlock != null)
                 sb.AppendLine(mapping.PreConstructionBlock);
+        }
+
+        // FM0062 pre-pass: any [ForgeProperty(Condition=...)] / SkipWhen targeting a
+        // ctor-bound destination property must be flagged before we filter those props
+        // out of the initializer loop.
+        if (conditionMappings != null || skipWhenMappings != null)
+        {
+            foreach (var destProp in destProperties)
+            {
+                if (!ctorCoveredDestProps.Contains(destProp.Name))
+                    continue;
+                if ((conditionMappings != null && conditionMappings.ContainsKey(destProp.Name))
+                    || (skipWhenMappings != null && skipWhenMappings.ContainsKey(destProp.Name)))
+                {
+                    ReportDiagnosticIfNotSuppressed(context,
+                        DiagnosticDescriptors.ConditionalNotSupportedOnInitOrCtor,
+                        method.Locations.FirstOrDefault(), destProp.Name);
+                }
+            }
         }
 
         // Collect remaining property assignments for object initializer
@@ -333,10 +354,40 @@ internal sealed partial class ForgeCodeEmitter
                destProp, sourceParam, sourceType, sourceProperties,
                propertyMappings, resolverMappings, forgeWithMappings, ignoredProperties, forger, context, method,
                nullPropertyHandlingOverrides, skipNullAssignmentsForCtor,
-                postConstructionCollectionsForCtor, preConstructionBlocksForCtor, propertyConvertWithMappings, selectPropertyMappings);
+                postConstructionCollectionsForCtor, preConstructionBlocksForCtor, propertyConvertWithMappings, selectPropertyMappings, conditionMappings, skipWhenMappings, isCtorBound: false);
 
             if (assignment != null)
-                initAssignments.Add((destProp.Name, assignment));
+            {
+                var conditional = TryResolveConditionalSilently(
+                    destProp, sourceType,
+                    conditionMappings ?? new Dictionary<string, string>(StringComparer.Ordinal),
+                    skipWhenMappings ?? new Dictionary<string, string>(StringComparer.Ordinal),
+                    propertyMappings,
+                    selectPropertyMappings ?? new Dictionary<string, string>(StringComparer.Ordinal),
+                    resolverMappings, forgeWithMappings,
+                    isCtorBound: false, forger);
+                if (conditional.Applicable && !conditional.DidFail)
+                {
+                    string predicateArg;
+                    if (conditional.Kind == ConditionalKind.Condition)
+                    {
+                        var srcPath = propertyMappings.TryGetValue(destProp.Name, out var mapped) ? mapped : destProp.Name;
+                        var (srcExpr, _) = GenerateSourceExpressionWithNullInfo(sourceParam, srcPath, sourceType);
+                        predicateArg = srcExpr;
+                    }
+                    else
+                    {
+                        predicateArg = sourceParam;
+                    }
+                    var guard = BuildConditionalGuardExpression(in conditional, predicateArg);
+                    var block = $"            if ({guard})\n            {{\n                result.{destProp.Name} = {assignment};\n            }}";
+                    postConstructionCollectionsForCtor.Add((destProp.Name, block));
+                }
+                else
+                {
+                    initAssignments.Add((destProp.Name, assignment));
+                }
+            }
         }
 
         // Emit pre-construction blocks for init-only collection properties
@@ -411,7 +462,9 @@ internal sealed partial class ForgeCodeEmitter
         SourceProductionContext context,
         IMethodSymbol method,
         Dictionary<string, (string? MethodName, string? ConverterTypeName, INamedTypeSymbol? ConverterTypeSymbol)>? propertyConvertWithMappings = null,
-        Dictionary<string, string>? selectPropertyMappings = null)
+        Dictionary<string, string>? selectPropertyMappings = null,
+        Dictionary<string, string>? conditionMappings = null,
+        Dictionary<string, string>? skipWhenMappings = null)
     {
         // When AfterForge hooks exist, we need a variable to pass to the hooks
         var skipNullAssignmentsAfterForge = new List<(string DestPropName, string SourceExpr, string LocalVarName, string? AssignExpr)>();
@@ -425,10 +478,40 @@ internal sealed partial class ForgeCodeEmitter
                destProp, sourceParam, sourceType, sourceProperties,
                propertyMappings, resolverMappings, forgeWithMappings, ignoredProperties, forger, context, method,
                nullPropertyHandlingOverrides, skipNullAssignmentsAfterForge,
-                postConstructionCollectionsAfterForge, preConstructionBlocksAfterForge, propertyConvertWithMappings, selectPropertyMappings);
+                postConstructionCollectionsAfterForge, preConstructionBlocksAfterForge, propertyConvertWithMappings, selectPropertyMappings, conditionMappings, skipWhenMappings, isCtorBound: false);
 
             if (assignment != null)
-                afterForgeAssignments.Add((destProp.Name, assignment));
+            {
+                var conditional = TryResolveConditionalSilently(
+                    destProp, sourceType,
+                    conditionMappings ?? new Dictionary<string, string>(StringComparer.Ordinal),
+                    skipWhenMappings ?? new Dictionary<string, string>(StringComparer.Ordinal),
+                    propertyMappings,
+                    selectPropertyMappings ?? new Dictionary<string, string>(StringComparer.Ordinal),
+                    resolverMappings, forgeWithMappings,
+                    isCtorBound: false, forger);
+                if (conditional.Applicable && !conditional.DidFail)
+                {
+                    string predicateArg;
+                    if (conditional.Kind == ConditionalKind.Condition)
+                    {
+                        var srcPath = propertyMappings.TryGetValue(destProp.Name, out var mapped) ? mapped : destProp.Name;
+                        var (srcExpr, _) = GenerateSourceExpressionWithNullInfo(sourceParam, srcPath, sourceType);
+                        predicateArg = srcExpr;
+                    }
+                    else
+                    {
+                        predicateArg = sourceParam;
+                    }
+                    var guard = BuildConditionalGuardExpression(in conditional, predicateArg);
+                    var block = $"            if ({guard})\n            {{\n                result.{destProp.Name} = {assignment};\n            }}";
+                    postConstructionCollectionsAfterForge.Add((destProp.Name, block));
+                }
+                else
+                {
+                    afterForgeAssignments.Add((destProp.Name, assignment));
+                }
+            }
         }
 
         // Emit pre-construction blocks for init-only collection properties
@@ -484,7 +567,9 @@ internal sealed partial class ForgeCodeEmitter
         SourceProductionContext context,
         IMethodSymbol method,
         Dictionary<string, (string? MethodName, string? ConverterTypeName, INamedTypeSymbol? ConverterTypeSymbol)>? propertyConvertWithMappings = null,
-        Dictionary<string, string>? selectPropertyMappings = null)
+        Dictionary<string, string>? selectPropertyMappings = null,
+        Dictionary<string, string>? conditionMappings = null,
+        Dictionary<string, string>? skipWhenMappings = null)
     {
         // Object initializer pattern
         var skipNullAssignmentsPlain = new List<(string DestPropName, string SourceExpr, string LocalVarName, string? AssignExpr)>();
@@ -498,10 +583,40 @@ internal sealed partial class ForgeCodeEmitter
                 destProp, sourceParam, sourceType, sourceProperties,
                 propertyMappings, resolverMappings, forgeWithMappings, ignoredProperties, forger, context, method,
                 nullPropertyHandlingOverrides, skipNullAssignmentsPlain,
-                postConstructionCollectionsPlain, preConstructionBlocksPlain, propertyConvertWithMappings, selectPropertyMappings);
+                postConstructionCollectionsPlain, preConstructionBlocksPlain, propertyConvertWithMappings, selectPropertyMappings, conditionMappings, skipWhenMappings, isCtorBound: false);
 
             if (assignment != null)
-                plainAssignments.Add((destProp.Name, assignment));
+            {
+                var conditional = TryResolveConditionalSilently(
+                    destProp, sourceType,
+                    conditionMappings ?? new Dictionary<string, string>(StringComparer.Ordinal),
+                    skipWhenMappings ?? new Dictionary<string, string>(StringComparer.Ordinal),
+                    propertyMappings,
+                    selectPropertyMappings ?? new Dictionary<string, string>(StringComparer.Ordinal),
+                    resolverMappings, forgeWithMappings,
+                    isCtorBound: false, forger);
+                if (conditional.Applicable && !conditional.DidFail)
+                {
+                    string predicateArg;
+                    if (conditional.Kind == ConditionalKind.Condition)
+                    {
+                        var srcPath = propertyMappings.TryGetValue(destProp.Name, out var mapped) ? mapped : destProp.Name;
+                        var (srcExpr, _) = GenerateSourceExpressionWithNullInfo(sourceParam, srcPath, sourceType);
+                        predicateArg = srcExpr;
+                    }
+                    else
+                    {
+                        predicateArg = sourceParam;
+                    }
+                    var guard = BuildConditionalGuardExpression(in conditional, predicateArg);
+                    var block = $"            if ({guard})\n            {{\n                result.{destProp.Name} = {assignment};\n            }}";
+                    postConstructionCollectionsPlain.Add((destProp.Name, block));
+                }
+                else
+                {
+                    plainAssignments.Add((destProp.Name, assignment));
+                }
+            }
         }
 
         var needsResultVar = skipNullAssignmentsPlain.Count > 0 ||
