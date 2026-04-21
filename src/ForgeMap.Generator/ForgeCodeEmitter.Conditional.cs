@@ -305,6 +305,15 @@ internal sealed partial class ForgeCodeEmitter
         if (!conditional.Applicable || conditional.DidFail) return;
         var guard = BuildConditionalGuardExpression(in conditional, predicateArg);
 
+        // Wrap pre-existing post-construction entries first, before we append new ones
+        // from skipNull conversion (which already include the guard themselves).
+        for (int i = postCtorSnapshot; i < postConstructionCollections.Count; i++)
+        {
+            var (dest, block) = postConstructionCollections[i];
+            var indented = string.Join("\n", block.Split('\n').Select(l => l.Length == 0 ? l : "    " + l));
+            postConstructionCollections[i] = (dest, $"            if ({guard})\n            {{\n{indented}\n            }}");
+        }
+
         for (int i = skipNullSnapshot; i < skipNullAssignments.Count; i++)
         {
             var (dest, src, localVar, assign) = skipNullAssignments[i];
@@ -315,12 +324,5 @@ internal sealed partial class ForgeCodeEmitter
         }
         if (skipNullAssignments.Count > skipNullSnapshot)
             skipNullAssignments.RemoveRange(skipNullSnapshot, skipNullAssignments.Count - skipNullSnapshot);
-
-        for (int i = postCtorSnapshot; i < postConstructionCollections.Count; i++)
-        {
-            var (dest, block) = postConstructionCollections[i];
-            var indented = string.Join("\n", block.Split('\n').Select(l => l.Length == 0 ? l : "    " + l));
-            postConstructionCollections[i] = (dest, $"            if ({guard})\n            {{\n{indented}\n            }}");
-        }
     }
 }
