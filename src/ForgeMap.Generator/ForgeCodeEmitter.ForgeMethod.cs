@@ -371,7 +371,7 @@ internal sealed partial class ForgeCodeEmitter
                     string predicateArg;
                     if (conditional.Kind == ConditionalKind.Condition)
                     {
-                        var srcPath = propertyMappings.TryGetValue(destProp.Name, out var mapped) ? mapped : destProp.Name;
+                        var srcPath = ResolveSourcePropertyPath(destProp, sourceType, propertyMappings);
                         var (srcExpr, _) = GenerateSourceExpressionWithNullInfo(sourceParam, srcPath, sourceType);
                         predicateArg = srcExpr;
                     }
@@ -495,7 +495,7 @@ internal sealed partial class ForgeCodeEmitter
                     string predicateArg;
                     if (conditional.Kind == ConditionalKind.Condition)
                     {
-                        var srcPath = propertyMappings.TryGetValue(destProp.Name, out var mapped) ? mapped : destProp.Name;
+                        var srcPath = ResolveSourcePropertyPath(destProp, sourceType, propertyMappings);
                         var (srcExpr, _) = GenerateSourceExpressionWithNullInfo(sourceParam, srcPath, sourceType);
                         predicateArg = srcExpr;
                     }
@@ -600,7 +600,7 @@ internal sealed partial class ForgeCodeEmitter
                     string predicateArg;
                     if (conditional.Kind == ConditionalKind.Condition)
                     {
-                        var srcPath = propertyMappings.TryGetValue(destProp.Name, out var mapped) ? mapped : destProp.Name;
+                        var srcPath = ResolveSourcePropertyPath(destProp, sourceType, propertyMappings);
                         var (srcExpr, _) = GenerateSourceExpressionWithNullInfo(sourceParam, srcPath, sourceType);
                         predicateArg = srcExpr;
                     }

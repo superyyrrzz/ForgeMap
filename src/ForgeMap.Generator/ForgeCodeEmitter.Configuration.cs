@@ -476,6 +476,8 @@ internal sealed partial class ForgeCodeEmitter
         var explicitForgeWithMappings = new HashSet<string>(forgeWithMappings.Keys, StringComparer.Ordinal);
         var explicitSelectPropertyMappings = new HashSet<string>(selectPropertyMappings.Keys, StringComparer.Ordinal);
         var explicitPropertyConvertWithMappings = new HashSet<string>(propertyConvertWithMappings.Keys, StringComparer.Ordinal);
+        var explicitConditionMappings = new HashSet<string>(conditionMappings.Keys, StringComparer.Ordinal);
+        var explicitSkipWhenMappings = new HashSet<string>(skipWhenMappings.Keys, StringComparer.Ordinal);
 
         foreach (var (baseSourceType, baseDestType, attrData) in includeBaseForges)
         {
@@ -534,12 +536,14 @@ internal sealed partial class ForgeCodeEmitter
             bool IsExplicitlyConfigured(string propName) =>
                 explicitIgnored.Contains(propName) || explicitPropertyMappings.Contains(propName) ||
                 explicitResolverMappings.Contains(propName) || explicitForgeWithMappings.Contains(propName) ||
-                explicitSelectPropertyMappings.Contains(propName) || explicitPropertyConvertWithMappings.Contains(propName);
+                explicitSelectPropertyMappings.Contains(propName) || explicitPropertyConvertWithMappings.Contains(propName) ||
+                explicitConditionMappings.Contains(propName) || explicitSkipWhenMappings.Contains(propName);
 
             bool IsAlreadyConfigured(string propName) =>
                 ignoredProperties.Contains(propName) || propertyMappings.ContainsKey(propName) ||
                 resolverMappings.ContainsKey(propName) || forgeWithMappings.ContainsKey(propName) ||
-                selectPropertyMappings.ContainsKey(propName) || propertyConvertWithMappings.ContainsKey(propName);
+                selectPropertyMappings.ContainsKey(propName) || propertyConvertWithMappings.ContainsKey(propName) ||
+                conditionMappings.ContainsKey(propName) || skipWhenMappings.ContainsKey(propName);
 
             // Snapshot of dest props already configured by an EARLIER base in this includeBaseForges
             // loop. Used by the SelectProperty merge below to detect cross-base leakage without
@@ -552,6 +556,8 @@ internal sealed partial class ForgeCodeEmitter
             preExistingConfigured.UnionWith(forgeWithMappings.Keys);
             preExistingConfigured.UnionWith(selectPropertyMappings.Keys);
             preExistingConfigured.UnionWith(propertyConvertWithMappings.Keys);
+            preExistingConfigured.UnionWith(conditionMappings.Keys);
+            preExistingConfigured.UnionWith(skipWhenMappings.Keys);
 
             foreach (var propName in baseIgnored)
             {
@@ -641,12 +647,19 @@ internal sealed partial class ForgeCodeEmitter
 
             // Merge base Condition mappings using first-wins semantics. Skip when the derived
             // method explicitly configured this dest via any other kind ([ForgeFrom]/[ForgeWith]/
-            // [Ignore]/[ForgeProperty]/SelectProperty/ConvertWith) — otherwise the inherited
-            // Condition would attach to a different mapping and trigger spurious FM0063 or apply
-            // a guard the derived author didn't ask for.
+            // [Ignore]/[ForgeProperty]/SelectProperty/ConvertWith/SkipWhen) — otherwise the
+            // inherited Condition would attach to a different mapping and trigger spurious
+            // FM0063/FM0060, or apply a guard the derived author didn't ask for. Also skip when an
+            // EARLIER base already configured this dest (any kind) so multi-[IncludeBaseForge]
+            // inheritance stays deterministic.
             foreach (var kvp in baseConditionMappings)
             {
                 if (IsExplicitlyConfigured(kvp.Key))
+                {
+                    ReportDiagnosticIfNotSuppressed(context, DiagnosticDescriptors.IncludeBaseForgeOverridden, diagLocation, kvp.Key);
+                    continue;
+                }
+                if (preExistingConfigured.Contains(kvp.Key))
                     continue;
                 if (!conditionMappings.ContainsKey(kvp.Key))
                     conditionMappings[kvp.Key] = kvp.Value;
@@ -657,6 +670,11 @@ internal sealed partial class ForgeCodeEmitter
             foreach (var kvp in baseSkipWhenMappings)
             {
                 if (IsExplicitlyConfigured(kvp.Key))
+                {
+                    ReportDiagnosticIfNotSuppressed(context, DiagnosticDescriptors.IncludeBaseForgeOverridden, diagLocation, kvp.Key);
+                    continue;
+                }
+                if (preExistingConfigured.Contains(kvp.Key))
                     continue;
                 if (!skipWhenMappings.ContainsKey(kvp.Key))
                     skipWhenMappings[kvp.Key] = kvp.Value;
