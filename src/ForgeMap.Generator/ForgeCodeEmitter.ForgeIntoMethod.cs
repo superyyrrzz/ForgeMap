@@ -40,11 +40,20 @@ internal sealed partial class ForgeCodeEmitter
 
         // FM0075: SelectProperty is not yet supported on ForgeInto methods — warn so users
         // know it will be silently ignored rather than producing surprising mapping behavior.
+        // FM0072 still wins over FM0075 + FM0063 when SelectProperty conflicts with [ForgeFrom]/[ForgeWith]
+        // on the same destination: emit FM0072 here so the conflict is surfaced even though the
+        // ForgeInto path does not call into the projection emitter.
         if (cfg.SelectPropertyMappings.Count > 0)
         {
             var location = method.Locations.FirstOrDefault();
             foreach (var destPropName in cfg.SelectPropertyMappings.Keys)
             {
+                if (resolverMappings.ContainsKey(destPropName) || forgeWithMappings.ContainsKey(destPropName))
+                {
+                    ReportDiagnosticIfNotSuppressed(context,
+                        DiagnosticDescriptors.SelectPropertyConflictsWithForgeFromOrWith,
+                        location, destPropName);
+                }
                 ReportDiagnosticIfNotSuppressed(context,
                     DiagnosticDescriptors.SelectPropertyNotSupportedOnForgeInto,
                     location, destPropName);
@@ -83,7 +92,8 @@ internal sealed partial class ForgeCodeEmitter
                 sourceProperties, ignoredProperties, existingTargetProperties,
                 propertyMappings, resolverMappings, forgeWithMappings,
                 nullPropertyHandlingOverrides, forger, context, method,
-                cfg.ConditionMappings, cfg.SkipWhenMappings, cfg.SelectPropertyMappings);
+                cfg.ConditionMappings, cfg.SkipWhenMappings, cfg.SelectPropertyMappings,
+                cfg.PropertyConvertWithMappings);
         }
 
         // [AfterForge] callbacks
@@ -122,7 +132,8 @@ internal sealed partial class ForgeCodeEmitter
         IMethodSymbol method,
         Dictionary<string, string>? cfgConditionMappings = null,
         Dictionary<string, string>? cfgSkipWhenMappings = null,
-        Dictionary<string, string>? cfgSelectPropertyMappings = null)
+        Dictionary<string, string>? cfgSelectPropertyMappings = null,
+        Dictionary<string, (string? MethodName, string? ConverterTypeName, INamedTypeSymbol? ConverterTypeSymbol)>? cfgPropertyConvertWithMappings = null)
     {
         // Skip ignored properties
         if (ignoredProperties.Contains(destProp.Name))
@@ -314,6 +325,21 @@ internal sealed partial class ForgeCodeEmitter
                 DiagnosticDescriptors.ResolverMethodNotFound,
                 method.Locations.FirstOrDefault(),
                 forgingMethodName);
+            FlushConditionalGuard(sb, workingSb, conditional, sourceParam, destProp, propertyMappings, sourceNamedType);
+            return;
+        }
+
+        // Check for per-property [ForgeProperty(ConvertWith = ...)]
+        if (cfgPropertyConvertWithMappings != null
+            && cfgPropertyConvertWithMappings.TryGetValue(destProp.Name, out var convertWithInfo))
+        {
+            var convertExpr = GeneratePropertyConvertWithExpression(
+                destProp, convertWithInfo, sourceParam, sourceNamedType,
+                sourceProperties, propertyMappings, forger, context, method);
+            if (convertExpr != null)
+            {
+                workingSb.AppendLine($"            {destParam}.{destProp.Name} = {convertExpr};");
+            }
             FlushConditionalGuard(sb, workingSb, conditional, sourceParam, destProp, propertyMappings, sourceNamedType);
             return;
         }
