@@ -12,4 +12,4 @@ FM0058 | ForgeMap | Error | SelectPropertyConflictsWithConverter
 FM0059 | ForgeMap | Disabled | SelectPropertyApplied
 FM0072 | ForgeMap | Error | SelectPropertyConflictsWithForgeFromOrWith
 FM0073 | ForgeMap | Error | SelectPropertyDestinationNotEnumerable
-FM0074 | ForgeMap | Warning | SelectPropertyNotSupportedOnForgeInto
+FM0075 | ForgeMap | Warning | SelectPropertyNotSupportedOnForgeInto

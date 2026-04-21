@@ -326,7 +326,7 @@ public partial class TestForger
     }
 
     [Fact]
-    public void Generator_SelectProperty_OnForgeIntoMethod_EmitsFM0074Warning()
+    public void Generator_SelectProperty_OnForgeIntoMethod_EmitsFM0075Warning()
     {
         var source = @"
 using System.Collections.Generic;
@@ -344,7 +344,7 @@ public partial class TestForger
 }";
 
         var (diagnostics, _) = RunGenerator(source);
-        Assert.Contains(diagnostics, d => d.Id == "FM0074");
+        Assert.Contains(diagnostics, d => d.Id == "FM0075");
     }
 
     [Fact]
@@ -402,6 +402,65 @@ public partial class TestForger
         // Must NOT report FM0072 — the base projection should be skipped because the
         // derived method explicitly overrode Tags with [ForgeWith]
         Assert.DoesNotContain(diagnostics, d => d.Id == "FM0072");
+    }
+
+    [Fact]
+    public void Generator_SelectProperty_CustomIEnumerableSource_RecognizedAsEnumerable()
+    {
+        var source = @"
+using System.Collections;
+using System.Collections.Generic;
+using ForgeMap;
+
+public class Tag { public string Name { get; set; } = string.Empty; }
+public class TagBag : IEnumerable<Tag>
+{
+    private readonly List<Tag> _items = new();
+    public IEnumerator<Tag> GetEnumerator() => _items.GetEnumerator();
+    IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+}
+public class SourceType { public TagBag Tags { get; set; } = new(); }
+public class DestType { public List<string> Tags { get; set; } = new(); }
+
+[ForgeMap]
+public partial class TestForger
+{
+    [ForgeProperty(nameof(SourceType.Tags), nameof(DestType.Tags), SelectProperty = nameof(Tag.Name))]
+    public partial DestType Forge(SourceType source);
+}";
+
+        var (diagnostics, trees) = RunGenerator(source);
+        Assert.DoesNotContain(diagnostics, d => d.Id == "FM0055");
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        var generated = string.Join("\n", trees.Select(t => t.GetText().ToString()));
+        Assert.Contains(".Select(", generated);
+    }
+
+    [Fact]
+    public void Generator_SelectProperty_StringToNullableEnum_NullOnEmptyOrFailure()
+    {
+        var source = @"
+using System.Collections.Generic;
+using ForgeMap;
+
+public enum Color { Red, Green, Blue }
+public class Tag { public string Code { get; set; } = string.Empty; }
+public class SourceType { public List<Tag> Tags { get; set; } = new(); }
+public class DestType { public List<Color?> Tags { get; set; } = new(); }
+
+[ForgeMap]
+public partial class TestForger
+{
+    [ForgeProperty(nameof(SourceType.Tags), nameof(DestType.Tags), SelectProperty = nameof(Tag.Code))]
+    public partial DestType Forge(SourceType source);
+}";
+
+        var (diagnostics, trees) = RunGenerator(source);
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        var generated = string.Join("\n", trees.Select(t => t.GetText().ToString()));
+        // Failure path for Nullable<TEnum> dest must be `null`, not `default(TEnum)` (= 0)
+        Assert.DoesNotContain("default(global::Color)", generated);
+        Assert.Contains("string.IsNullOrEmpty", generated);
     }
 
     private static (IReadOnlyList<Diagnostic> Diagnostics, IReadOnlyList<SyntaxTree> GeneratedTrees) RunGenerator(string source)

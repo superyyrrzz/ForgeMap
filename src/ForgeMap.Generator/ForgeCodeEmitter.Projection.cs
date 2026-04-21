@@ -65,8 +65,11 @@ internal sealed partial class ForgeCodeEmitter
         if (sourceLeafType == null)
             return ProjectionEmitResult.NotApplicable();
 
-        // FM0055: source must be enumerable
-        var srcElemType = GetCollectionElementType(sourceLeafType);
+        // FM0055: source must be enumerable.
+        // Walk IEnumerable<T> on AllInterfaces as a fallback so user-defined sequences
+        // (ImmutableArray<T>, custom IEnumerable<T> implementers) are recognized — not
+        // only the wrapper set baked into GetCollectionElementType.
+        var srcElemType = GetCollectionElementType(sourceLeafType) ?? GetIEnumerableElementType(sourceLeafType);
         if (srcElemType == null)
         {
             ReportDiagnosticIfNotSuppressed(context,
@@ -152,7 +155,7 @@ internal sealed partial class ForgeCodeEmitter
         }
 
         // Default: ternary with null fallback
-        var nullFallback = ProjectionNullFallback(destProp.Type, strategy, sourcePropName);
+        var nullFallback = ProjectionNullFallback(destProp.Type, strategy, destProp.Name, sourcePropName);
         return ProjectionEmitResult.FromExpression($"{sourceExpr} is {{ }} {collLocal} ? {materialized} : {nullFallback}");
     }
 
@@ -185,20 +188,22 @@ internal sealed partial class ForgeCodeEmitter
             var enumFqn = $"global::{destEnumUnderlying.ToDisplayString()}";
             // For Nullable<TEnum> destination element, wrap with (TEnum?) so Select preserves
             // the nullable element type and the materialized List<TEnum?> assignment compiles.
+            // On null/empty/parse-failure the failure value is `null`, not (TEnum?)0.
             var destIsNullable = GetNullableUnderlyingType(destElemType) != null;
             var nullableCast = destIsNullable ? $"({enumFqn}?)" : string.Empty;
-            // Mode 1 (TryParse): inline conditional, returns default on failure
+            var failureValue = destIsNullable ? "null" : $"default({enumFqn})";
+            // Mode 1 (TryParse): inline conditional, returns failureValue on failure
             if (_config.StringToEnum == 1)
             {
-                return $"{nullableCast}(global::System.Enum.TryParse<{enumFqn}>({rawAccess}, true, out var __sel_enum) ? __sel_enum : default({enumFqn}))";
+                return $"(global::System.Enum.TryParse<{enumFqn}>({rawAccess}, true, out var __sel_enum) ? {nullableCast}__sel_enum : {failureValue})";
             }
             // Mode 3 (StrictParse): no null guard, throws on null/empty/invalid
             if (_config.StringToEnum == 3)
             {
                 return $"{nullableCast}({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), {rawAccess}, true)";
             }
-            // Mode 0 (Parse, default): null-safe guard returning default for null/empty
-            return $"{nullableCast}(string.IsNullOrEmpty({rawAccess}) ? default({enumFqn}) : ({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), {rawAccess}, true))";
+            // Mode 0 (Parse, default): null-safe guard returning failureValue for null/empty
+            return $"(string.IsNullOrEmpty({rawAccess}) ? {failureValue} : {nullableCast}({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), {rawAccess}, true))";
         }
 
         // 4) enum -> string
@@ -248,9 +253,39 @@ internal sealed partial class ForgeCodeEmitter
     }
 
     /// <summary>
+    /// Returns the element type T when <paramref name="type"/> implements <c>IEnumerable&lt;T&gt;</c>,
+    /// or <c>null</c> otherwise. Used as a fallback for user-defined or unsupported-wrapper
+    /// sequence types that <see cref="GetCollectionElementType"/> does not recognize.
+    /// String is excluded — it implements IEnumerable&lt;char&gt; but is not a "collection" here.
+    /// </summary>
+    private static ITypeSymbol? GetIEnumerableElementType(ITypeSymbol type)
+    {
+        if (type.SpecialType == SpecialType.System_String)
+            return null;
+
+        if (type is INamedTypeSymbol named
+            && named.IsGenericType
+            && named.OriginalDefinition.SpecialType == SpecialType.System_Collections_Generic_IEnumerable_T)
+        {
+            return named.TypeArguments[0];
+        }
+
+        foreach (var iface in type.AllInterfaces)
+        {
+            if (iface.IsGenericType
+                && iface.OriginalDefinition.SpecialType == SpecialType.System_Collections_Generic_IEnumerable_T)
+            {
+                return iface.TypeArguments[0];
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
     /// Computes the null-fallback expression used when the source collection is null.
     /// </summary>
-    private static string ProjectionNullFallback(ITypeSymbol destCollType, int strategy, string sourcePath)
+    private static string ProjectionNullFallback(ITypeSymbol destCollType, int strategy, string destPropName, string sourcePath)
     {
         // strategy: 0 NullForgiving, 1 SkipNull (handled upstream), 2 CoalesceToDefault, 3 Throw, 4 CoalesceToNew
         var destDisplay = destCollType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
@@ -283,7 +318,7 @@ internal sealed partial class ForgeCodeEmitter
         }
         if (strategy == 3) // Throw
         {
-            return $"throw new global::System.ArgumentNullException(\"{sourcePath}\", \"SelectProperty source collection '{sourcePath}' is null and NullPropertyHandling = ThrowException.\")";
+            return $"throw new global::System.ArgumentNullException(\"{destPropName}\", \"SelectProperty source collection '{sourcePath}' is null and NullPropertyHandling = ThrowException.\")";
         }
         // NullForgiving (default) or SkipNull-on-init-only fallback
         return "null!";

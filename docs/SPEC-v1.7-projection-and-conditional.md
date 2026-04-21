@@ -166,7 +166,7 @@ private static List<ApiResourceClaim> WrapClaims(List<string> types)
 
 ### Diagnostics
 
-> **Diagnostic ID note**: `docs/SPEC-future-advanced-mapping.md` (a speculative, unscheduled spec) tentatively allocates FM0055–FM0060 to auto-flattening / `[ForgeDictionary]`. v1.7 is the next concrete release, so it claims FM0055–FM0074 here; if the future spec is ever promoted, its diagnostics will be renumbered to start above v1.7's allocation.
+> **Diagnostic ID note**: `docs/SPEC-future-advanced-mapping.md` (a speculative, unscheduled spec) tentatively allocates FM0055–FM0060 to auto-flattening / `[ForgeDictionary]`. v1.7 is the next concrete release, so it claims FM0055–FM0075 here; if the future spec is ever promoted, its diagnostics will be renumbered to start above v1.7's allocation.
 
 | Code | Severity | Description |
 |------|----------|-------------|
@@ -177,6 +177,7 @@ private static List<ApiResourceClaim> WrapClaims(List<string> types)
 | **FM0058** | Error | Property '{0}' has more than one of `SelectProperty`, `ConvertWith`, `ConvertWithType` set on the same `[ForgeProperty]` — choose one |
 | **FM0072** | Error | Property '{0}' has `SelectProperty` set on `[ForgeProperty]` and is also targeted by `[ForgeFrom]` / `[ForgeWith]` — choose one |
 | **FM0059** | Info (disabled) | Projection applied for property '{0}': `{1}.Select(x => x.{2})` |
+| **FM0075** | Warning | Property '{0}' uses `SelectProperty` on a `ForgeInto` method, which is not yet supported and will be ignored |
 
 ### Behavioral Contract
 

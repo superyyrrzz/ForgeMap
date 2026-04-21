@@ -79,7 +79,12 @@ public sealed class ForgePropertyAttribute : Attribute
 
     /// <summary>
     /// Name of a property on the source collection's element type to project.
-    /// When set, generates <c>source.Src?.Select(x =&gt; x.&lt;member named by SelectProperty&gt;).To&lt;TDest&gt;()</c>.
+    /// When set, generates a LINQ <c>Select</c> over the source collection that reads the named member,
+    /// then materializes the result into the destination wrapper:
+    /// <c>List&lt;T&gt;</c>/<c>IList&lt;T&gt;</c>/<c>ICollection&lt;T&gt;</c>/<c>IReadOnlyList&lt;T&gt;</c>/<c>IReadOnlyCollection&lt;T&gt;</c> via <c>ToList()</c>;
+    /// arrays via <c>ToArray()</c>; <c>HashSet&lt;T&gt;</c> via the set constructor; <c>ReadOnlyCollection&lt;T&gt;</c> by wrapping a list;
+    /// or returned as <c>IEnumerable&lt;T&gt;</c> directly.
+    /// Built-in element coercions (enum cast, string↔enum, enum→string, <c>DateTimeOffset</c>→<c>DateTime</c>, <c>Nullable&lt;T&gt;</c> unwrap) are composed into the lambda.
     /// Use <c>nameof()</c> for compile-time safety.
     /// Mutually exclusive with <see cref="ConvertWith"/> and <see cref="ConvertWithType"/> on the same <c>[ForgeProperty]</c>.
     /// </summary>
