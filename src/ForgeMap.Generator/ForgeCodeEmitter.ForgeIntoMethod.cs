@@ -63,6 +63,31 @@ internal sealed partial class ForgeCodeEmitter
             }
         }
 
+        // FM0062 pre-pass for ForgeInto: Condition/SkipWhen on init-only or required destination
+        // properties is unsupported. The main loop filters init-only setters out, so without this
+        // pre-pass those configurations would be silently dropped instead of producing a diagnostic.
+        // [Ignore] still wins.
+        if (cfg.ConditionMappings.Count > 0 || cfg.SkipWhenMappings.Count > 0)
+        {
+            var location = method.Locations.FirstOrDefault();
+            var allDestProps = GetMappableProperties(destinationType).ToList();
+            foreach (var destPropName in cfg.ConditionMappings.Keys.Concat(cfg.SkipWhenMappings.Keys).Distinct())
+            {
+                if (ignoredProperties.Contains(destPropName))
+                    continue;
+                var destProp = allDestProps.FirstOrDefault(p => p.Name == destPropName);
+                if (destProp == null)
+                    continue;
+                var isInitOnly = destProp.SetMethod?.IsInitOnly == true;
+                if (isInitOnly || destProp.IsRequired)
+                {
+                    ReportDiagnosticIfNotSuppressed(context,
+                        DiagnosticDescriptors.ConditionalNotSupportedOnInitOrCtor,
+                        location, destPropName);
+                }
+            }
+        }
+
         // Method signature
         var accessibility = GetAccessibilityKeyword(method.DeclaredAccessibility);
         sb.AppendLine($"        {accessibility} partial void {method.Name}({sourceType.ToDisplayString()} {sourceParam}, {destinationType.ToDisplayString()} {destParam})");
