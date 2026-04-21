@@ -504,4 +504,44 @@ internal static class DiagnosticDescriptors
         category: Category,
         defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor ConditionAndSkipWhenBothSet = new(
+        id: "FM0060",
+        title: "Condition and SkipWhen are mutually exclusive",
+        messageFormat: "Property '{0}' has both Condition and SkipWhen set on the same [ForgeProperty] — choose one",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor ConditionalPredicateInvalid = new(
+        id: "FM0061",
+        title: "Conditional predicate method not found or has wrong signature",
+        messageFormat: "Predicate method '{0}' for property '{1}' was not found on the forger class or has the wrong signature; expected: bool {0}({2})",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor ConditionalNotSupportedOnInitOrCtor = new(
+        id: "FM0062",
+        title: "Condition/SkipWhen cannot be applied to init, required, or constructor-bound properties",
+        messageFormat: "Condition/SkipWhen cannot be applied to property '{0}' because it is set via constructor or init/required. Use [ForgeFrom] to choose between alternative constructions, or drop init if you need conditional post-construction assignment.",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor ConditionalConflictsWithForgeFromOrWith = new(
+        id: "FM0063",
+        title: "Condition/SkipWhen conflicts with [ForgeFrom] / [ForgeWith]",
+        messageFormat: "Property '{0}' has Condition/SkipWhen and is also targeted by [ForgeFrom] or [ForgeWith] — choose one",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor ConditionalAssignmentApplied = new(
+        id: "FM0064",
+        title: "Conditional assignment applied for property",
+        messageFormat: "Conditional assignment applied for property '{0}' via '{1}'",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Info,
+        isEnabledByDefault: false);
 }
