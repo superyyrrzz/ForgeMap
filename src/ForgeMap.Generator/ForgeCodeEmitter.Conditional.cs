@@ -231,13 +231,59 @@ internal sealed partial class ForgeCodeEmitter
     }
 
     /// <summary>
-     /// Builds the guard expression text used in <c>if (&lt;guard&gt;) ...</c>
-     /// for a resolved conditional. SkipWhen is negated.
-     /// </summary>
+    /// Builds the guard expression text used in <c>if (&lt;guard&gt;) ...</c>
+    /// for a resolved conditional. SkipWhen is negated.
+    /// </summary>
     private static string BuildConditionalGuardExpression(in ConditionalResolution resolution, string argExpr)
     {
         var call = $"{resolution.PredicateName}({argExpr})";
         return resolution.Kind == ConditionalKind.SkipWhen ? $"!{call}" : call;
+    }
+
+    /// <summary>
+    /// Resolves the per-property conditional configuration silently and derives the
+    /// predicate argument expression used in the guard. Returns the resolution and
+    /// (when applicable) the source-side expression for Condition or the source
+    /// parameter name for SkipWhen. predicateArg is null when the conditional is
+    /// not applicable or failed.
+    /// </summary>
+    private (ConditionalResolution Resolution, string? PredicateArg) ResolveConditionalAndPredicateArg(
+        IPropertySymbol destProp,
+        INamedTypeSymbol sourceType,
+        string sourceParam,
+        Dictionary<string, string> conditionMappings,
+        Dictionary<string, string> skipWhenMappings,
+        Dictionary<string, string> propertyMappings,
+        Dictionary<string, string> selectPropertyMappings,
+        Dictionary<string, string> resolverMappings,
+        Dictionary<string, string> forgeWithMappings,
+        ForgerInfo forger)
+    {
+        var conditional = TryResolveConditionalSilently(
+            destProp, sourceType,
+            conditionMappings,
+            skipWhenMappings,
+            propertyMappings,
+            selectPropertyMappings,
+            resolverMappings, forgeWithMappings,
+            isCtorBound: false, forger);
+
+        if (!conditional.Applicable || conditional.DidFail)
+            return (conditional, null);
+
+        string predicateArg;
+        if (conditional.Kind == ConditionalKind.Condition)
+        {
+            var srcPath = ResolveSourcePropertyPath(destProp, sourceType, propertyMappings);
+            var (srcExpr, _) = GenerateSourceExpressionWithNullInfo(sourceParam, srcPath, sourceType);
+            predicateArg = srcExpr;
+        }
+        else
+        {
+            predicateArg = sourceParam;
+        }
+
+        return (conditional, predicateArg);
     }
 
     /// <summary>

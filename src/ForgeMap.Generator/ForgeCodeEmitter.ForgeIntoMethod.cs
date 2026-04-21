@@ -141,7 +141,9 @@ internal sealed partial class ForgeCodeEmitter
             return;
 
         // v1.7 Conditional (Condition / SkipWhen) for ForgeInto.
-        // Resolution validates and reports diagnostics (FM0060–FM0064).
+        // Resolution validates and reports diagnostics FM0060–FM0063.
+        // FM0064 is deferred until the guarded assignment is actually emitted
+        // via FlushConditionalGuard / ReportConditionalAssignmentApplied.
         // On Applicable+!Failed we capture per-property emission to a temporary
         // StringBuilder and replay it inside an if-guard at every return point.
         var conditionMappings = cfgConditionMappings ?? new Dictionary<string, string>(StringComparer.Ordinal);

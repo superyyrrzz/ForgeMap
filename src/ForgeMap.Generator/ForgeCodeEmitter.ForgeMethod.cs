@@ -359,29 +359,13 @@ internal sealed partial class ForgeCodeEmitter
                nullPropertyHandlingOverrides, skipNullAssignmentsForCtor,
                 postConstructionCollectionsForCtor, preConstructionBlocksForCtor, propertyConvertWithMappings, selectPropertyMappings, conditionMappings, skipWhenMappings, isCtorBound: false);
 
-            var conditional = TryResolveConditionalSilently(
-                destProp, sourceType,
+            var (conditional, predicateArg) = ResolveConditionalAndPredicateArg(
+                destProp, sourceType, sourceParam,
                 conditionMappings ?? new Dictionary<string, string>(StringComparer.Ordinal),
                 skipWhenMappings ?? new Dictionary<string, string>(StringComparer.Ordinal),
                 propertyMappings,
                 selectPropertyMappings ?? new Dictionary<string, string>(StringComparer.Ordinal),
-                resolverMappings, forgeWithMappings,
-                isCtorBound: false, forger);
-
-            string? predicateArg = null;
-            if (conditional.Applicable && !conditional.DidFail)
-            {
-                if (conditional.Kind == ConditionalKind.Condition)
-                {
-                    var srcPath = ResolveSourcePropertyPath(destProp, sourceType, propertyMappings);
-                    var (srcExpr, _) = GenerateSourceExpressionWithNullInfo(sourceParam, srcPath, sourceType);
-                    predicateArg = srcExpr;
-                }
-                else
-                {
-                    predicateArg = sourceParam;
-                }
-            }
+                resolverMappings, forgeWithMappings, forger);
 
             if (assignment != null)
             {
@@ -503,29 +487,13 @@ internal sealed partial class ForgeCodeEmitter
                nullPropertyHandlingOverrides, skipNullAssignmentsAfterForge,
                 postConstructionCollectionsAfterForge, preConstructionBlocksAfterForge, propertyConvertWithMappings, selectPropertyMappings, conditionMappings, skipWhenMappings, isCtorBound: false);
 
-            var conditional = TryResolveConditionalSilently(
-                destProp, sourceType,
+            var (conditional, predicateArg) = ResolveConditionalAndPredicateArg(
+                destProp, sourceType, sourceParam,
                 conditionMappings ?? new Dictionary<string, string>(StringComparer.Ordinal),
                 skipWhenMappings ?? new Dictionary<string, string>(StringComparer.Ordinal),
                 propertyMappings,
                 selectPropertyMappings ?? new Dictionary<string, string>(StringComparer.Ordinal),
-                resolverMappings, forgeWithMappings,
-                isCtorBound: false, forger);
-
-            string? predicateArg = null;
-            if (conditional.Applicable && !conditional.DidFail)
-            {
-                if (conditional.Kind == ConditionalKind.Condition)
-                {
-                    var srcPath = ResolveSourcePropertyPath(destProp, sourceType, propertyMappings);
-                    var (srcExpr, _) = GenerateSourceExpressionWithNullInfo(sourceParam, srcPath, sourceType);
-                    predicateArg = srcExpr;
-                }
-                else
-                {
-                    predicateArg = sourceParam;
-                }
-            }
+                resolverMappings, forgeWithMappings, forger);
 
             if (assignment != null)
             {
@@ -628,29 +596,13 @@ internal sealed partial class ForgeCodeEmitter
                 nullPropertyHandlingOverrides, skipNullAssignmentsPlain,
                 postConstructionCollectionsPlain, preConstructionBlocksPlain, propertyConvertWithMappings, selectPropertyMappings, conditionMappings, skipWhenMappings, isCtorBound: false);
 
-            var conditional = TryResolveConditionalSilently(
-                destProp, sourceType,
+            var (conditional, predicateArg) = ResolveConditionalAndPredicateArg(
+                destProp, sourceType, sourceParam,
                 conditionMappings ?? new Dictionary<string, string>(StringComparer.Ordinal),
                 skipWhenMappings ?? new Dictionary<string, string>(StringComparer.Ordinal),
                 propertyMappings,
                 selectPropertyMappings ?? new Dictionary<string, string>(StringComparer.Ordinal),
-                resolverMappings, forgeWithMappings,
-                isCtorBound: false, forger);
-
-            string? predicateArg = null;
-            if (conditional.Applicable && !conditional.DidFail)
-            {
-                if (conditional.Kind == ConditionalKind.Condition)
-                {
-                    var srcPath = ResolveSourcePropertyPath(destProp, sourceType, propertyMappings);
-                    var (srcExpr, _) = GenerateSourceExpressionWithNullInfo(sourceParam, srcPath, sourceType);
-                    predicateArg = srcExpr;
-                }
-                else
-                {
-                    predicateArg = sourceParam;
-                }
-            }
+                resolverMappings, forgeWithMappings, forger);
 
             if (assignment != null)
             {
