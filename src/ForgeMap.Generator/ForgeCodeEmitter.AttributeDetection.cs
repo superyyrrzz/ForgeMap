@@ -41,7 +41,6 @@ internal sealed partial class ForgeCodeEmitter
             SymbolEqualityComparer.Default.Equals(a.AttributeClass, _convertWithAttributeSymbol));
     }
 
-#pragma warning disable IDE0051 // Remove unused private members — consumed in tasks 4-7
     private bool HasExtractPropertyAttribute(IMethodSymbol method)
     {
         if (_extractPropertyAttributeSymbol == null)
@@ -85,7 +84,6 @@ internal sealed partial class ForgeCodeEmitter
         if (attr == null || attr.ConstructorArguments.Length == 0) return null;
         return attr.ConstructorArguments[0].Value as string;
     }
-#pragma warning restore IDE0051
 
     private bool HasUseExistingValueAttribute(IParameterSymbol param)
     {

@@ -8,7 +8,6 @@ namespace ForgeMap.Generator;
 
 internal sealed partial class ForgeCodeEmitter
 {
-#pragma warning disable IDE0051 // Remove unused private members — wired up in tasks 5-7
     /// <summary>
     /// Generates the body of a partial method annotated with [ExtractProperty] or [WrapProperty].
     /// Validates that no conflicting method-level attributes are present (FM0065), the signature
@@ -392,12 +391,6 @@ internal sealed partial class ForgeCodeEmitter
     }
 
     /// <summary>
-    /// True when the property has a setter (set or init) and that setter is publicly accessible.
-    /// </summary>
-    private static bool IsSettableOrInit(IPropertySymbol prop)
-        => prop.SetMethod != null && prop.SetMethod.DeclaredAccessibility == Accessibility.Public;
-
-    /// <summary>
     /// True when the constructor is annotated [SetsRequiredMembers]. Matches the established
     /// detection pattern in ForgeCodeEmitter.NullHandling.cs.
     /// </summary>
@@ -510,5 +503,4 @@ internal sealed partial class ForgeCodeEmitter
 
         return (null, null);
     }
-#pragma warning restore IDE0051
 }
