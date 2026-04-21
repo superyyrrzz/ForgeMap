@@ -40,14 +40,51 @@ internal sealed partial class ForgeCodeEmitter
 
         // FM0075: SelectProperty is not yet supported on ForgeInto methods — warn so users
         // know it will be silently ignored rather than producing surprising mapping behavior.
+        // FM0072 still wins over FM0075 + FM0063 when SelectProperty conflicts with [ForgeFrom]/[ForgeWith]
+        // on the same destination: emit FM0072 here so the conflict is surfaced even though the
+        // ForgeInto path does not call into the projection emitter.
         if (cfg.SelectPropertyMappings.Count > 0)
         {
             var location = method.Locations.FirstOrDefault();
             foreach (var destPropName in cfg.SelectPropertyMappings.Keys)
             {
+                if (ignoredProperties.Contains(destPropName))
+                    continue;
+                if (resolverMappings.ContainsKey(destPropName) || forgeWithMappings.ContainsKey(destPropName))
+                {
+                    ReportDiagnosticIfNotSuppressed(context,
+                        DiagnosticDescriptors.SelectPropertyConflictsWithForgeFromOrWith,
+                        location, destPropName);
+                    continue;
+                }
                 ReportDiagnosticIfNotSuppressed(context,
                     DiagnosticDescriptors.SelectPropertyNotSupportedOnForgeInto,
                     location, destPropName);
+            }
+        }
+
+        // FM0062 pre-pass for ForgeInto: Condition/SkipWhen on init-only or required destination
+        // properties is unsupported. The main loop filters init-only setters out, so without this
+        // pre-pass those configurations would be silently dropped instead of producing a diagnostic.
+        // [Ignore] still wins.
+        if (cfg.ConditionMappings.Count > 0 || cfg.SkipWhenMappings.Count > 0)
+        {
+            var location = method.Locations.FirstOrDefault();
+            var allDestProps = GetMappableProperties(destinationType).ToList();
+            foreach (var destPropName in cfg.ConditionMappings.Keys.Concat(cfg.SkipWhenMappings.Keys).Distinct())
+            {
+                if (ignoredProperties.Contains(destPropName))
+                    continue;
+                var destProp = allDestProps.FirstOrDefault(p => p.Name == destPropName);
+                if (destProp == null)
+                    continue;
+                var isInitOnly = destProp.SetMethod?.IsInitOnly == true;
+                if (isInitOnly || destProp.IsRequired)
+                {
+                    ReportDiagnosticIfNotSuppressed(context,
+                        DiagnosticDescriptors.ConditionalNotSupportedOnInitOrCtor,
+                        location, destPropName);
+                }
             }
         }
 
@@ -82,7 +119,9 @@ internal sealed partial class ForgeCodeEmitter
                 sb, destProp, sourceParam, destParam, sourceType, sourceNamedType,
                 sourceProperties, ignoredProperties, existingTargetProperties,
                 propertyMappings, resolverMappings, forgeWithMappings,
-                nullPropertyHandlingOverrides, forger, context, method);
+                nullPropertyHandlingOverrides, forger, context, method,
+                cfg.ConditionMappings, cfg.SkipWhenMappings, cfg.SelectPropertyMappings,
+                cfg.PropertyConvertWithMappings);
         }
 
         // [AfterForge] callbacks
@@ -118,11 +157,39 @@ internal sealed partial class ForgeCodeEmitter
         Dictionary<string, int> nullPropertyHandlingOverrides,
         ForgerInfo forger,
         SourceProductionContext context,
-        IMethodSymbol method)
+        IMethodSymbol method,
+        Dictionary<string, string>? cfgConditionMappings = null,
+        Dictionary<string, string>? cfgSkipWhenMappings = null,
+        Dictionary<string, string>? cfgSelectPropertyMappings = null,
+        Dictionary<string, (string? MethodName, string? ConverterTypeName, INamedTypeSymbol? ConverterTypeSymbol)>? cfgPropertyConvertWithMappings = null)
     {
         // Skip ignored properties
         if (ignoredProperties.Contains(destProp.Name))
             return;
+
+        // v1.7 Conditional (Condition / SkipWhen) for ForgeInto.
+        // Resolution validates and reports diagnostics FM0060–FM0063.
+        // FM0064 is deferred until the guarded assignment is actually emitted
+        // via FlushConditionalGuard / ReportConditionalAssignmentApplied.
+        // On Applicable+!Failed we capture per-property emission to a temporary
+        // StringBuilder and replay it inside an if-guard at every return point.
+        var conditionMappings = cfgConditionMappings ?? new Dictionary<string, string>(StringComparer.Ordinal);
+        var skipWhenMappings = cfgSkipWhenMappings ?? new Dictionary<string, string>(StringComparer.Ordinal);
+        var conditional = ResolveConditionalForProperty(
+            destProp, sourceType,
+            conditionMappings, skipWhenMappings,
+            propertyMappings,
+            cfgSelectPropertyMappings ?? new Dictionary<string, string>(StringComparer.Ordinal),
+            resolverMappings, forgeWithMappings,
+            isCtorBound: false,
+            forger, context, method);
+
+        // On Failed, fall through and emit the unguarded assignment so output remains compilable.
+        StringBuilder workingSb = sb;
+        if (conditional.Applicable && !conditional.DidFail)
+        {
+            workingSb = new StringBuilder();
+        }
 
         // Handle ExistingTarget properties — update nested object in place
         if (existingTargetProperties.TryGetValue(destProp.Name, out var existingTargetCfg))
@@ -133,10 +200,27 @@ internal sealed partial class ForgeCodeEmitter
                 nullPropertyHandlingOverrides, forger, context, method);
             if (etBlock != null)
             {
-                sb.AppendLine(etBlock);
+                workingSb.AppendLine(etBlock);
+                FlushConditionalGuard(sb, workingSb, conditional, sourceParam, destProp, propertyMappings, sourceNamedType, context, method);
                 return;
             }
             // null means scalar or Replace collection — fall through to normal assignment
+        }
+
+        // Per-property [ForgeProperty(ConvertWith = ...)] takes precedence over
+        // [ForgeFrom]/[ForgeWith] to match GeneratePropertyAssignment's order.
+        if (cfgPropertyConvertWithMappings != null
+            && cfgPropertyConvertWithMappings.TryGetValue(destProp.Name, out var convertWithInfo))
+        {
+            var convertExpr = GeneratePropertyConvertWithExpression(
+                destProp, convertWithInfo, sourceParam, sourceNamedType,
+                sourceProperties, propertyMappings, forger, context, method);
+            if (convertExpr != null)
+            {
+                workingSb.AppendLine($"            {destParam}.{destProp.Name} = {convertExpr};");
+            }
+            FlushConditionalGuard(sb, workingSb, conditional, sourceParam, destProp, propertyMappings, sourceNamedType, context, method);
+            return;
         }
 
         // Check if this property has a resolver from [ForgeFrom]
@@ -172,6 +256,7 @@ internal sealed partial class ForgeCodeEmitter
                     DiagnosticDescriptors.ResolverMethodNotFound,
                     method.Locations.FirstOrDefault(),
                     resolverMethodName);
+                FlushConditionalGuard(sb, workingSb, conditional, sourceParam, destProp, propertyMappings, sourceNamedType, context, method);
                 return;
             }
 
@@ -211,10 +296,12 @@ internal sealed partial class ForgeCodeEmitter
                     DiagnosticDescriptors.InvalidResolverSignature,
                     method.Locations.FirstOrDefault(),
                     resolverMethodName);
+                FlushConditionalGuard(sb, workingSb, conditional, sourceParam, destProp, propertyMappings, sourceNamedType, context, method);
                 return;
             }
 
-            sb.AppendLine($"            {destParam}.{destProp.Name} = {resolverCall};");
+            workingSb.AppendLine($"            {destParam}.{destProp.Name} = {resolverCall};");
+            FlushConditionalGuard(sb, workingSb, conditional, sourceParam, destProp, propertyMappings, sourceNamedType, context, method);
             return;
         }
 
@@ -246,9 +333,9 @@ internal sealed partial class ForgeCodeEmitter
                         if (sourcePropertyType.IsReferenceType)
                         {
                             var localVarName = $"__forgeWith_{destProp.Name}";
-                            sb.AppendLine($"            if ({sourceExpr} is {{ }} {localVarName})");
-                            sb.AppendLine($"                {destParam}.{destProp.Name} = {nestedForgeMethod.Name}({localVarName});");
-                            sb.AppendLine($"            else");
+                            workingSb.AppendLine($"            if ({sourceExpr} is {{ }} {localVarName})");
+                            workingSb.AppendLine($"                {destParam}.{destProp.Name} = {nestedForgeMethod.Name}({localVarName});");
+                            workingSb.AppendLine($"            else");
                             string nullAssign;
                             if (destProp.Type.IsValueType)
                             {
@@ -268,12 +355,13 @@ internal sealed partial class ForgeCodeEmitter
                                     nullAssign = "null!";
                                 }
                             }
-                            sb.AppendLine($"                {destParam}.{destProp.Name} = {nullAssign};");
+                            workingSb.AppendLine($"                {destParam}.{destProp.Name} = {nullAssign};");
                         }
                         else
                         {
-                            sb.AppendLine($"            {destParam}.{destProp.Name} = {nestedForgeMethod.Name}({sourceExpr});");
+                            workingSb.AppendLine($"            {destParam}.{destProp.Name} = {nestedForgeMethod.Name}({sourceExpr});");
                         }
+                        FlushConditionalGuard(sb, workingSb, conditional, sourceParam, destProp, propertyMappings, sourceNamedType, context, method);
                         return;
                     }
                 }
@@ -283,6 +371,7 @@ internal sealed partial class ForgeCodeEmitter
                 DiagnosticDescriptors.ResolverMethodNotFound,
                 method.Locations.FirstOrDefault(),
                 forgingMethodName);
+            FlushConditionalGuard(sb, workingSb, conditional, sourceParam, destProp, propertyMappings, sourceNamedType, context, method);
             return;
         }
 
@@ -299,13 +388,14 @@ internal sealed partial class ForgeCodeEmitter
                 var enumCast = TryGenerateCompatibleEnumCast(sourceLeafType, destProp.Type, sourceExpr2, isLifted: isLiftedValueType);
                 if (enumCast != null)
                 {
-                    sb.AppendLine($"            {destParam}.{destProp.Name} = {enumCast};");
+                    workingSb.AppendLine($"            {destParam}.{destProp.Name} = {enumCast};");
+                    FlushConditionalGuard(sb, workingSb, conditional, sourceParam, destProp, propertyMappings, sourceNamedType, context, method);
                     return;
                 }
             }
             if (isLiftedValueType && destProp.Type.IsValueType && GetNullableUnderlyingType(destProp.Type) == null)
             {
-                sb.AppendLine($"            {destParam}.{destProp.Name} = ({destProp.Type.ToDisplayString()})({sourceExpr2})!;");
+                workingSb.AppendLine($"            {destParam}.{destProp.Name} = ({destProp.Type.ToDisplayString()})({sourceExpr2})!;");
             }
             else if (sourceLeafType != null && IsNullableToNonNullableReferenceType(sourceLeafType, destProp.Type))
             {
@@ -315,17 +405,17 @@ internal sealed partial class ForgeCodeEmitter
                 if (strategy == 1) // SkipNull
                 {
                     var localVar = GenerateSafeVariableName(destProp.Type) + "_" + destProp.Name;
-                    sb.AppendLine($"            if ({sourceExpr2} is {{ }} {localVar})");
-                    sb.AppendLine($"            {{");
-                    sb.AppendLine($"                {destParam}.{destProp.Name} = {localVar};");
-                    sb.AppendLine($"            }}");
+                    workingSb.AppendLine($"            if ({sourceExpr2} is {{ }} {localVar})");
+                    workingSb.AppendLine($"            {{");
+                    workingSb.AppendLine($"                {destParam}.{destProp.Name} = {localVar};");
+                    workingSb.AppendLine($"            }}");
                 }
                 else
                 {
                     var handledExpr = ApplyNullPropertyHandlingExpression(
                         sourceExpr2, destProp.Type, destProp.Name,
                         destProp.ContainingType.Name, strategy, method);
-                    sb.AppendLine($"            {destParam}.{destProp.Name} = {handledExpr ?? $"{sourceExpr2}!"};");
+                    workingSb.AppendLine($"            {destParam}.{destProp.Name} = {handledExpr ?? $"{sourceExpr2}!"};");
                 }
             }
             else
@@ -345,7 +435,7 @@ internal sealed partial class ForgeCodeEmitter
                             destParam, forger, context, method, nullPropertyHandlingOverrides);
                         if (collBlock != null)
                         {
-                            sb.AppendLine(collBlock);
+                            workingSb.AppendLine(collBlock);
                         }
                         else
                         {
@@ -353,7 +443,7 @@ internal sealed partial class ForgeCodeEmitter
                                 destProp, sourceLeafType, sourceExpr2,
                                 forger, context, method, nullPropertyHandlingOverrides);
                             if (autoWireResult != null)
-                                sb.AppendLine($"            {destParam}.{destProp.Name} = {autoWireResult};");
+                                workingSb.AppendLine($"            {destParam}.{destProp.Name} = {autoWireResult};");
                         }
                     }
                     // If auto-wire didn't resolve, skip — property stays unmapped
@@ -371,16 +461,17 @@ internal sealed partial class ForgeCodeEmitter
                             if (strategy2 == 1) // SkipNull — wrap with if-guard
                             {
                                 var localVar = "__strVal_" + SanitizeVarName(destProp.Name);
-                                sb.AppendLine($"            if ({sourceExpr2} is {{ }} {localVar})");
-                                sb.AppendLine($"            {{");
+                                workingSb.AppendLine($"            if ({sourceExpr2} is {{ }} {localVar})");
+                                workingSb.AppendLine($"            {{");
                                 // Generate conversion using the non-nullable local var
                                 var innerExpr = TryGenerateStringToEnumConversion(
                                     sourceLeafType.WithNullableAnnotation(NullableAnnotation.NotAnnotated), destProp.Type, localVar,
                                     destProp.Name, destProp.ContainingType.Name,
                                     nullPropertyHandlingOverrides, context, method);
                                 if (innerExpr != null)
-                                    sb.AppendLine($"                {destParam}.{destProp.Name} = {innerExpr};");
-                                sb.AppendLine($"            }}");
+                                    workingSb.AppendLine($"                {destParam}.{destProp.Name} = {innerExpr};");
+                                workingSb.AppendLine($"            }}");
+                                FlushConditionalGuard(sb, workingSb, conditional, sourceParam, destProp, propertyMappings, sourceNamedType, context, method);
                                 return;
                             }
                         }
@@ -391,7 +482,8 @@ internal sealed partial class ForgeCodeEmitter
                             nullPropertyHandlingOverrides, context, method);
                         if (enumConvExpr != null)
                         {
-                            sb.AppendLine($"            {destParam}.{destProp.Name} = {enumConvExpr};");
+                            workingSb.AppendLine($"            {destParam}.{destProp.Name} = {enumConvExpr};");
+                            FlushConditionalGuard(sb, workingSb, conditional, sourceParam, destProp, propertyMappings, sourceNamedType, context, method);
                             return;
                         }
                     }
@@ -408,31 +500,33 @@ internal sealed partial class ForgeCodeEmitter
                             if (strategy2 == 1) // SkipNull
                             {
                                 var localVar = "__enumStr_" + destProp.Name;
-                                sb.AppendLine($"            if ({enumStrExpr} is {{ }} {localVar})");
-                                sb.AppendLine($"            {{");
-                                sb.AppendLine($"                {destParam}.{destProp.Name} = {localVar};");
-                                sb.AppendLine($"            }}");
+                                workingSb.AppendLine($"            if ({enumStrExpr} is {{ }} {localVar})");
+                                workingSb.AppendLine($"            {{");
+                                workingSb.AppendLine($"                {destParam}.{destProp.Name} = {localVar};");
+                                workingSb.AppendLine($"            }}");
                             }
                             else
                             {
                                 var handledExpr = ApplyNullPropertyHandlingExpression(
                                     enumStrExpr, destProp.Type, destProp.Name,
                                     destProp.ContainingType.Name, strategy2, method);
-                                sb.AppendLine($"            {destParam}.{destProp.Name} = {handledExpr ?? $"{enumStrExpr}!"};");
+                                workingSb.AppendLine($"            {destParam}.{destProp.Name} = {handledExpr ?? $"{enumStrExpr}!"};");
                             }
                         }
                         else
                         {
-                            sb.AppendLine($"            {destParam}.{destProp.Name} = {enumStrExpr};");
+                            workingSb.AppendLine($"            {destParam}.{destProp.Name} = {enumStrExpr};");
                         }
+                        FlushConditionalGuard(sb, workingSb, conditional, sourceParam, destProp, propertyMappings, sourceNamedType, context, method);
                         return;
                     }
 
                     // Add null-forgiving operator if we used null-conditional and dest is non-nullable
                     var nullForgiving = hasNullConditional2 && destProp.Type.NullableAnnotation != NullableAnnotation.Annotated ? "!" : "";
-                    sb.AppendLine($"            {destParam}.{destProp.Name} = {sourceExpr2}{nullForgiving};");
+                    workingSb.AppendLine($"            {destParam}.{destProp.Name} = {sourceExpr2}{nullForgiving};");
                 }
             }
+            FlushConditionalGuard(sb, workingSb, conditional, sourceParam, destProp, propertyMappings, sourceNamedType, context, method);
             return;
         }
 
@@ -448,15 +542,15 @@ internal sealed partial class ForgeCodeEmitter
                 var sourceExprVal = $"{sourceParam}.{sourceProp.Name}";
                 if (strategy == 1) // SkipNull
                 {
-                    sb.AppendLine($"            if ({sourceExprVal} is {{ }} __val_{destProp.Name})");
-                    sb.AppendLine($"            {{");
-                    sb.AppendLine($"                {destParam}.{destProp.Name} = __val_{destProp.Name};");
-                    sb.AppendLine($"            }}");
+                    workingSb.AppendLine($"            if ({sourceExprVal} is {{ }} __val_{destProp.Name})");
+                    workingSb.AppendLine($"            {{");
+                    workingSb.AppendLine($"                {destParam}.{destProp.Name} = __val_{destProp.Name};");
+                    workingSb.AppendLine($"            }}");
                 }
                 else
                 {
                     var handledExpr = ApplyNullableValueTypeCtorHandling(sourceExprVal, destProp.Type, destProp.Name, destProp.ContainingType.Name, strategy);
-                    sb.AppendLine($"            {destParam}.{destProp.Name} = {handledExpr};");
+                    workingSb.AppendLine($"            {destParam}.{destProp.Name} = {handledExpr};");
                 }
             }
             else if (IsNullableToNonNullableReferenceType(sourceProp.Type, destProp.Type))
@@ -468,22 +562,22 @@ internal sealed partial class ForgeCodeEmitter
                 if (strategy == 1) // SkipNull
                 {
                     var localVar = GenerateSafeVariableName(destProp.Type) + "_" + destProp.Name;
-                    sb.AppendLine($"            if ({sourceExprConv} is {{ }} {localVar})");
-                    sb.AppendLine($"            {{");
-                    sb.AppendLine($"                {destParam}.{destProp.Name} = {localVar};");
-                    sb.AppendLine($"            }}");
+                    workingSb.AppendLine($"            if ({sourceExprConv} is {{ }} {localVar})");
+                    workingSb.AppendLine($"            {{");
+                    workingSb.AppendLine($"                {destParam}.{destProp.Name} = {localVar};");
+                    workingSb.AppendLine($"            }}");
                 }
                 else
                 {
                     var handledExpr = ApplyNullPropertyHandlingExpression(
                         sourceExprConv, destProp.Type, destProp.Name,
                         destProp.ContainingType.Name, strategy, method);
-                    sb.AppendLine($"            {destParam}.{destProp.Name} = {handledExpr ?? $"{sourceExprConv}!"};");
+                    workingSb.AppendLine($"            {destParam}.{destProp.Name} = {handledExpr ?? $"{sourceExprConv}!"};");
                 }
             }
             else
             {
-                sb.AppendLine($"            {destParam}.{destProp.Name} = {sourceParam}.{sourceProp.Name};");
+                workingSb.AppendLine($"            {destParam}.{destProp.Name} = {sourceParam}.{sourceProp.Name};");
             }
         }
         else if (sourceProp != null)
@@ -491,7 +585,7 @@ internal sealed partial class ForgeCodeEmitter
             // Compatible enum cast: EnumA -> EnumB (different namespaces, same members)
             var enumCastExpr = TryGenerateCompatibleEnumCast(sourceProp.Type, destProp.Type, $"{sourceParam}.{sourceProp.Name}");
             if (enumCastExpr != null)
-                sb.AppendLine($"            {destParam}.{destProp.Name} = {enumCastExpr};");
+                workingSb.AppendLine($"            {destParam}.{destProp.Name} = {enumCastExpr};");
             // String→enum auto-conversion
             else if (_config.StringToEnum != 2 && IsStringToEnumPair(sourceProp.Type, destProp.Type))
             {
@@ -504,15 +598,15 @@ internal sealed partial class ForgeCodeEmitter
                     if (strategy == 1) // SkipNull — wrap with if-guard
                     {
                         var localVar = "__strVal_" + SanitizeVarName(destProp.Name);
-                        sb.AppendLine($"            if ({srcExpr} is {{ }} {localVar})");
-                        sb.AppendLine($"            {{");
+                        workingSb.AppendLine($"            if ({srcExpr} is {{ }} {localVar})");
+                        workingSb.AppendLine($"            {{");
                         var innerExpr = TryGenerateStringToEnumConversion(
                             sourceProp.Type.WithNullableAnnotation(NullableAnnotation.NotAnnotated), destProp.Type, localVar,
                             destProp.Name, destProp.ContainingType.Name,
                             nullPropertyHandlingOverrides, context, method);
                         if (innerExpr != null)
-                            sb.AppendLine($"                {destParam}.{destProp.Name} = {innerExpr};");
-                        sb.AppendLine($"            }}");
+                            workingSb.AppendLine($"                {destParam}.{destProp.Name} = {innerExpr};");
+                        workingSb.AppendLine($"            }}");
                     }
                     else
                     {
@@ -521,7 +615,7 @@ internal sealed partial class ForgeCodeEmitter
                             destProp.Name, destProp.ContainingType.Name,
                             nullPropertyHandlingOverrides, context, method);
                         if (enumConvExpr != null)
-                            sb.AppendLine($"            {destParam}.{destProp.Name} = {enumConvExpr};");
+                            workingSb.AppendLine($"            {destParam}.{destProp.Name} = {enumConvExpr};");
                     }
                 }
                 else
@@ -531,7 +625,7 @@ internal sealed partial class ForgeCodeEmitter
                         destProp.Name, destProp.ContainingType.Name,
                         nullPropertyHandlingOverrides, context, method);
                     if (enumConvExpr != null)
-                        sb.AppendLine($"            {destParam}.{destProp.Name} = {enumConvExpr};");
+                        workingSb.AppendLine($"            {destParam}.{destProp.Name} = {enumConvExpr};");
                 }
             }
             // Enum→string auto-conversion
@@ -546,22 +640,22 @@ internal sealed partial class ForgeCodeEmitter
                     if (strategy == 1) // SkipNull
                     {
                         var localVar = "__enumStr_" + destProp.Name;
-                        sb.AppendLine($"            if ({enumStrExpr} is {{ }} {localVar})");
-                        sb.AppendLine($"            {{");
-                        sb.AppendLine($"                {destParam}.{destProp.Name} = {localVar};");
-                        sb.AppendLine($"            }}");
+                        workingSb.AppendLine($"            if ({enumStrExpr} is {{ }} {localVar})");
+                        workingSb.AppendLine($"            {{");
+                        workingSb.AppendLine($"                {destParam}.{destProp.Name} = {localVar};");
+                        workingSb.AppendLine($"            }}");
                     }
                     else
                     {
                         var handledExpr = ApplyNullPropertyHandlingExpression(
                             enumStrExpr, destProp.Type, destProp.Name,
                             destProp.ContainingType.Name, strategy);
-                        sb.AppendLine($"            {destParam}.{destProp.Name} = {handledExpr ?? $"{enumStrExpr}!"};");
+                        workingSb.AppendLine($"            {destParam}.{destProp.Name} = {handledExpr ?? $"{enumStrExpr}!"};");
                     }
                 }
                 else
                 {
-                    sb.AppendLine($"            {destParam}.{destProp.Name} = {enumStrExpr};");
+                    workingSb.AppendLine($"            {destParam}.{destProp.Name} = {enumStrExpr};");
                 }
             }
             else if (_config.AutoWireNestedMappings)
@@ -572,7 +666,7 @@ internal sealed partial class ForgeCodeEmitter
                     destParam, forger, context, method, nullPropertyHandlingOverrides);
                 if (collBlock != null)
                 {
-                    sb.AppendLine(collBlock);
+                    workingSb.AppendLine(collBlock);
                 }
                 else
                 {
@@ -580,10 +674,11 @@ internal sealed partial class ForgeCodeEmitter
                         destProp, sourceProp.Type, $"{sourceParam}.{sourceProp.Name}",
                         forger, context, method, nullPropertyHandlingOverrides);
                     if (autoWireResult != null)
-                        sb.AppendLine($"            {destParam}.{destProp.Name} = {autoWireResult};");
+                        workingSb.AppendLine($"            {destParam}.{destProp.Name} = {autoWireResult};");
                 }
             }
         }
+        FlushConditionalGuard(sb, workingSb, conditional, sourceParam, destProp, propertyMappings, sourceNamedType, context, method);
     }
 
     /// <summary>
@@ -1030,6 +1125,48 @@ internal sealed partial class ForgeCodeEmitter
         }
 
         return null;
+    }
+
+    private void FlushConditionalGuard(
+        StringBuilder destSb,
+        StringBuilder workingSb,
+        in ConditionalResolution conditional,
+        string sourceParam,
+        IPropertySymbol destProp,
+        Dictionary<string, string> propertyMappings,
+        INamedTypeSymbol sourceNamedType,
+        SourceProductionContext context,
+        IMethodSymbol method)
+    {
+        if (!conditional.Applicable || conditional.DidFail || ReferenceEquals(destSb, workingSb))
+            return;
+
+        string predicateArg;
+        if (conditional.Kind == ConditionalKind.Condition)
+        {
+            var srcPath = ResolveSourcePropertyPath(destProp, sourceNamedType, propertyMappings);
+            var (srcExpr, _) = GenerateSourceExpressionWithNullInfo(sourceParam, srcPath, sourceNamedType);
+            predicateArg = srcExpr;
+        }
+        else
+        {
+            predicateArg = sourceParam;
+        }
+
+        var guard = BuildConditionalGuardExpression(in conditional, predicateArg);
+        var inner = workingSb.ToString();
+        if (inner.Length == 0) return;
+
+        destSb.Append("            if (").Append(guard).AppendLine(")");
+        destSb.AppendLine("            {");
+        foreach (var line in inner.Split('\n'))
+        {
+            if (line.Length == 0) continue;
+            destSb.Append("    ").AppendLine(line.TrimEnd('\r'));
+        }
+        destSb.AppendLine("            }");
+        workingSb.Clear();
+        ReportConditionalAssignmentApplied(context, method, destProp, in conditional);
     }
 
     /// <summary>
