@@ -11,8 +11,8 @@ internal sealed partial class ForgeCodeEmitter
     /// <summary>
     /// Tries to generate a per-property LINQ projection expression for v1.7 SelectProperty.
     /// Returns the assignment expression (or null if a multi-statement post-construction block was added).
-    /// Returns ProjectionResult.NotApplicable when the property has no SelectProperty mapping.
-    /// Returns ProjectionResult.Failed when validation produced an error diagnostic.
+    /// Returns ProjectionEmitResult.NotApplicable when the property has no SelectProperty mapping.
+    /// Returns ProjectionEmitResult.Failed when validation produced an error diagnostic.
     /// </summary>
     private ProjectionEmitResult TryGenerateProjectionAssignment(
         IPropertySymbol destProp,
@@ -88,12 +88,16 @@ internal sealed partial class ForgeCodeEmitter
             return ProjectionEmitResult.Failed();
         }
 
-        // FM0056: SelectProperty member must exist on element type as public readable property
+        // FM0056: SelectProperty member must exist on element type as public readable property.
+        // Both the property and its getter must be public — `public string Name { private get; set; }`
+        // would otherwise pass DeclaredAccessibility but fail to compile when emitted.
         var elemMember = srcElemType
             .GetMembers(memberName)
             .OfType<IPropertySymbol>()
-            .FirstOrDefault(p => !p.IsStatic && p.GetMethod != null
-                && p.DeclaredAccessibility == Accessibility.Public);
+            .FirstOrDefault(p => !p.IsStatic
+                && p.DeclaredAccessibility == Accessibility.Public
+                && p.GetMethod != null
+                && p.GetMethod.DeclaredAccessibility == Accessibility.Public);
         if (elemMember == null)
         {
             ReportDiagnosticIfNotSuppressed(context,

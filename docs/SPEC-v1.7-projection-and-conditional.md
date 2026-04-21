@@ -173,7 +173,7 @@ private static List<ApiResourceClaim> WrapClaims(List<string> types)
 | **FM0055** | Error | `SelectProperty` set on '{0}' but source property type '{1}' is not enumerable |
 | **FM0056** | Error | `SelectProperty = "{0}"` not found on element type '{1}' for property '{2}' (or not a public readable property) |
 | **FM0057** | Error | Projected property '{0}' (type '{1}') is not assignable to destination element type '{2}' for property '{3}', and no built-in coercion applies |
-| **FM0073** | Error | `SelectProperty` set on '{0}' but destination property type '{1}' is not enumerable |
+| **FM0073** | Error | `SelectProperty` set on '{0}' but destination property type '{1}' is not a supported collection type for `SelectProperty` (supported: `T[]`, `List/IList/ICollection/IReadOnlyList/IReadOnlyCollection<T>`, `HashSet<T>`, `ReadOnlyCollection<T>`, `IEnumerable<T>`) |
 | **FM0058** | Error | Property '{0}' has more than one of `SelectProperty`, `ConvertWith`, `ConvertWithType` set on the same `[ForgeProperty]` — choose one |
 | **FM0072** | Error | Property '{0}' has `SelectProperty` set on `[ForgeProperty]` and is also targeted by `[ForgeFrom]` / `[ForgeWith]` — choose one |
 | **FM0059** | Info (disabled) | Projection applied for property '{0}': `{1}.Select(x => x.{2})` |
@@ -696,7 +696,7 @@ This makes `[ExtractProperty]` a more discoverable alternative to `SelectPropert
 | FM0055 | Error | `ForgeMap` | Projection | `SelectProperty` set but source not enumerable |
 | FM0056 | Error | `ForgeMap` | Projection | `SelectProperty` not found on element type |
 | FM0057 | Error | `ForgeMap` | Projection | Projected element type not assignable to dest element |
-| FM0073 | Error | `ForgeMap` | Projection | `SelectProperty` destination type is not enumerable |
+| FM0073 | Error | `ForgeMap` | Projection | `SelectProperty` destination is not a supported collection type |
 | FM0058 | Error | `ForgeMap` | Projection | `SelectProperty` and `ConvertWith` both set |
 | FM0059 | Info (disabled) | `ForgeMap` | Projection | Projection applied for property |
 | FM0060 | Error | `ForgeMap` | Conditional | `Condition` and `SkipWhen` both set |

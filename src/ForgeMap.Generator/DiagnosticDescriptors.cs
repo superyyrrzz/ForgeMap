@@ -491,8 +491,8 @@ internal static class DiagnosticDescriptors
 
     public static readonly DiagnosticDescriptor SelectPropertyDestinationNotEnumerable = new(
         id: "FM0073",
-        title: "SelectProperty destination property is not enumerable",
-        messageFormat: "SelectProperty set on '{0}' but destination property type '{1}' is not enumerable",
+        title: "Unsupported destination collection type for SelectProperty",
+        messageFormat: "SelectProperty set on '{0}' but destination property type '{1}' is not a supported collection type for SelectProperty (supported: T[], List/IList/ICollection/IReadOnlyList/IReadOnlyCollection<T>, HashSet<T>, ReadOnlyCollection<T>, IEnumerable<T>)",
         category: Category,
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true);
