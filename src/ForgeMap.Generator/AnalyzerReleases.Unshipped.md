@@ -18,3 +18,11 @@ FM0064 | ForgeMap | Disabled | ConditionalAssignmentApplied
 FM0072 | ForgeMap | Error | SelectPropertyConflictsWithForgeFromOrWith
 FM0073 | ForgeMap | Error | SelectPropertyDestinationNotEnumerable
 FM0075 | ForgeMap | Warning | SelectPropertyNotSupportedOnForgeInto
+FM0065 | ForgeMap | Error | ExtractWrapConflictsWithMethodAttributes
+FM0066 | ForgeMap | Error | ExtractPropertyNotFound
+FM0067 | ForgeMap | Error | ExtractPropertyTypeIncompatible
+FM0068 | ForgeMap | Error | WrapPropertyNotFound
+FM0069 | ForgeMap | Error | WrapPropertyTypeIncompatible
+FM0070 | ForgeMap | Error | ExtractWrapInvalidSignature
+FM0071 | ForgeMap | Error | WrapPropertyRequiredMembersUnsatisfied
+FM0074 | ForgeMap | Disabled | ExtractWrapValueTypeReturnUnderReturnNull
