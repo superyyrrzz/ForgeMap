@@ -90,4 +90,24 @@ public sealed class ForgePropertyAttribute : Attribute
     /// on the same destination property.
     /// </summary>
     public string? SelectProperty { get; set; }
+
+    /// <summary>
+    /// Name of a predicate method on the forger class. Called with the source property value;
+    /// when it returns false, the destination assignment is skipped.
+    /// Signature: <c>bool MethodName(TSourceProperty value)</c>. Static or instance, any accessibility.
+    /// Mutually exclusive with <see cref="SkipWhen"/> on the same <c>[ForgeProperty]</c>.
+    /// Cannot be combined with <c>[ForgeFrom]</c> or <c>[ForgeWith]</c> on the same destination property.
+    /// Not supported on properties bound to a constructor parameter, an <c>init</c> setter, or a <c>required</c> member.
+    /// </summary>
+    public string? Condition { get; set; }
+
+    /// <summary>
+    /// Name of a predicate method on the forger class. Called with the source object;
+    /// when it returns true, the destination assignment is skipped.
+    /// Signature: <c>bool MethodName(TSource source)</c>. Static or instance, any accessibility.
+    /// Mutually exclusive with <see cref="Condition"/> on the same <c>[ForgeProperty]</c>.
+    /// Cannot be combined with <c>[ForgeFrom]</c> or <c>[ForgeWith]</c> on the same destination property.
+    /// Not supported on properties bound to a constructor parameter, an <c>init</c> setter, or a <c>required</c> member.
+    /// </summary>
+    public string? SkipWhen { get; set; }
 }
