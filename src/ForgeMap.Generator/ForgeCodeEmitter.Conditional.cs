@@ -222,12 +222,50 @@ internal sealed partial class ForgeCodeEmitter
     }
 
     /// <summary>
-    /// Builds the guard expression text used in <c>if (&lt;guard&gt;) ...</c>
-    /// for a resolved conditional. SkipWhen is negated.
-    /// </summary>
+     /// Builds the guard expression text used in <c>if (&lt;guard&gt;) ...</c>
+     /// for a resolved conditional. SkipWhen is negated.
+     /// </summary>
     private static string BuildConditionalGuardExpression(in ConditionalResolution resolution, string argExpr)
     {
         var call = $"{resolution.PredicateName}({argExpr})";
         return resolution.Kind == ConditionalKind.SkipWhen ? $"!{call}" : call;
+    }
+
+    /// <summary>
+    /// Wraps any skipNull/postConstruction entries appended to the given lists since the
+    /// recorded snapshot counts inside the conditional guard. Used by the Forge writers
+    /// when GeneratePropertyAssignment returns null (the property's emission was queued
+    /// instead of returned as a single expression) so the user's Condition/SkipWhen still
+    /// applies. Without this, conditional config is silently dropped for SkipNull /
+    /// post-construction collection / projection paths.
+    /// </summary>
+    private static void WrapQueuedEntriesWithConditionalGuard(
+        in ConditionalResolution conditional,
+        string predicateArg,
+        List<(string DestPropName, string SourceExpr, string LocalVarName, string? AssignExpr)> skipNullAssignments,
+        int skipNullSnapshot,
+        List<(string DestPropName, string Block)> postConstructionCollections,
+        int postCtorSnapshot)
+    {
+        if (!conditional.Applicable || conditional.DidFail) return;
+        var guard = BuildConditionalGuardExpression(in conditional, predicateArg);
+
+        for (int i = skipNullSnapshot; i < skipNullAssignments.Count; i++)
+        {
+            var (dest, src, localVar, assign) = skipNullAssignments[i];
+            // Convert skipNull entry into a post-construction guarded block and clear the entry.
+            var inner = $"                if ({src} is {{ }} {localVar})\n                {{\n                    result.{dest} = {assign ?? localVar};\n                }}";
+            var block = $"            if ({guard})\n            {{\n{inner}\n            }}";
+            postConstructionCollections.Add((dest, block));
+        }
+        if (skipNullAssignments.Count > skipNullSnapshot)
+            skipNullAssignments.RemoveRange(skipNullSnapshot, skipNullAssignments.Count - skipNullSnapshot);
+
+        for (int i = postCtorSnapshot; i < postConstructionCollections.Count; i++)
+        {
+            var (dest, block) = postConstructionCollections[i];
+            var indented = string.Join("\n", block.Split('\n').Select(l => l.Length == 0 ? l : "    " + l));
+            postConstructionCollections[i] = (dest, $"            if ({guard})\n            {{\n{indented}\n            }}");
+        }
     }
 }

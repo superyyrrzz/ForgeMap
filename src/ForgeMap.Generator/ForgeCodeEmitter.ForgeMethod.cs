@@ -350,35 +350,43 @@ internal sealed partial class ForgeCodeEmitter
             if (ignoredProperties.Contains(destProp.Name))
                 continue;
 
+            var skipNullSnapshot = skipNullAssignmentsForCtor.Count;
+            var postCtorSnapshot = postConstructionCollectionsForCtor.Count;
+
             var assignment = GeneratePropertyAssignment(
                destProp, sourceParam, sourceType, sourceProperties,
                propertyMappings, resolverMappings, forgeWithMappings, ignoredProperties, forger, context, method,
                nullPropertyHandlingOverrides, skipNullAssignmentsForCtor,
                 postConstructionCollectionsForCtor, preConstructionBlocksForCtor, propertyConvertWithMappings, selectPropertyMappings, conditionMappings, skipWhenMappings, isCtorBound: false);
 
+            var conditional = TryResolveConditionalSilently(
+                destProp, sourceType,
+                conditionMappings ?? new Dictionary<string, string>(StringComparer.Ordinal),
+                skipWhenMappings ?? new Dictionary<string, string>(StringComparer.Ordinal),
+                propertyMappings,
+                selectPropertyMappings ?? new Dictionary<string, string>(StringComparer.Ordinal),
+                resolverMappings, forgeWithMappings,
+                isCtorBound: false, forger);
+
+            string? predicateArg = null;
+            if (conditional.Applicable && !conditional.DidFail)
+            {
+                if (conditional.Kind == ConditionalKind.Condition)
+                {
+                    var srcPath = ResolveSourcePropertyPath(destProp, sourceType, propertyMappings);
+                    var (srcExpr, _) = GenerateSourceExpressionWithNullInfo(sourceParam, srcPath, sourceType);
+                    predicateArg = srcExpr;
+                }
+                else
+                {
+                    predicateArg = sourceParam;
+                }
+            }
+
             if (assignment != null)
             {
-                var conditional = TryResolveConditionalSilently(
-                    destProp, sourceType,
-                    conditionMappings ?? new Dictionary<string, string>(StringComparer.Ordinal),
-                    skipWhenMappings ?? new Dictionary<string, string>(StringComparer.Ordinal),
-                    propertyMappings,
-                    selectPropertyMappings ?? new Dictionary<string, string>(StringComparer.Ordinal),
-                    resolverMappings, forgeWithMappings,
-                    isCtorBound: false, forger);
-                if (conditional.Applicable && !conditional.DidFail)
+                if (predicateArg != null)
                 {
-                    string predicateArg;
-                    if (conditional.Kind == ConditionalKind.Condition)
-                    {
-                        var srcPath = ResolveSourcePropertyPath(destProp, sourceType, propertyMappings);
-                        var (srcExpr, _) = GenerateSourceExpressionWithNullInfo(sourceParam, srcPath, sourceType);
-                        predicateArg = srcExpr;
-                    }
-                    else
-                    {
-                        predicateArg = sourceParam;
-                    }
                     var guard = BuildConditionalGuardExpression(in conditional, predicateArg);
                     var block = $"            if ({guard})\n            {{\n                result.{destProp.Name} = {assignment};\n            }}";
                     postConstructionCollectionsForCtor.Add((destProp.Name, block));
@@ -387,6 +395,13 @@ internal sealed partial class ForgeCodeEmitter
                 {
                     initAssignments.Add((destProp.Name, assignment));
                 }
+            }
+            else if (predicateArg != null)
+            {
+                WrapQueuedEntriesWithConditionalGuard(
+                    in conditional, predicateArg,
+                    skipNullAssignmentsForCtor, skipNullSnapshot,
+                    postConstructionCollectionsForCtor, postCtorSnapshot);
             }
         }
 
@@ -474,35 +489,43 @@ internal sealed partial class ForgeCodeEmitter
         var afterForgeAssignments = new List<(string Name, string Expr)>();
         foreach (var destProp in destProperties.Where(p => p.SetMethod != null && p.SetMethod.DeclaredAccessibility >= Accessibility.Internal))
         {
+            var skipNullSnapshot = skipNullAssignmentsAfterForge.Count;
+            var postCtorSnapshot = postConstructionCollectionsAfterForge.Count;
+
            var assignment = GeneratePropertyAssignment(
                destProp, sourceParam, sourceType, sourceProperties,
                propertyMappings, resolverMappings, forgeWithMappings, ignoredProperties, forger, context, method,
                nullPropertyHandlingOverrides, skipNullAssignmentsAfterForge,
                 postConstructionCollectionsAfterForge, preConstructionBlocksAfterForge, propertyConvertWithMappings, selectPropertyMappings, conditionMappings, skipWhenMappings, isCtorBound: false);
 
+            var conditional = TryResolveConditionalSilently(
+                destProp, sourceType,
+                conditionMappings ?? new Dictionary<string, string>(StringComparer.Ordinal),
+                skipWhenMappings ?? new Dictionary<string, string>(StringComparer.Ordinal),
+                propertyMappings,
+                selectPropertyMappings ?? new Dictionary<string, string>(StringComparer.Ordinal),
+                resolverMappings, forgeWithMappings,
+                isCtorBound: false, forger);
+
+            string? predicateArg = null;
+            if (conditional.Applicable && !conditional.DidFail)
+            {
+                if (conditional.Kind == ConditionalKind.Condition)
+                {
+                    var srcPath = ResolveSourcePropertyPath(destProp, sourceType, propertyMappings);
+                    var (srcExpr, _) = GenerateSourceExpressionWithNullInfo(sourceParam, srcPath, sourceType);
+                    predicateArg = srcExpr;
+                }
+                else
+                {
+                    predicateArg = sourceParam;
+                }
+            }
+
             if (assignment != null)
             {
-                var conditional = TryResolveConditionalSilently(
-                    destProp, sourceType,
-                    conditionMappings ?? new Dictionary<string, string>(StringComparer.Ordinal),
-                    skipWhenMappings ?? new Dictionary<string, string>(StringComparer.Ordinal),
-                    propertyMappings,
-                    selectPropertyMappings ?? new Dictionary<string, string>(StringComparer.Ordinal),
-                    resolverMappings, forgeWithMappings,
-                    isCtorBound: false, forger);
-                if (conditional.Applicable && !conditional.DidFail)
+                if (predicateArg != null)
                 {
-                    string predicateArg;
-                    if (conditional.Kind == ConditionalKind.Condition)
-                    {
-                        var srcPath = ResolveSourcePropertyPath(destProp, sourceType, propertyMappings);
-                        var (srcExpr, _) = GenerateSourceExpressionWithNullInfo(sourceParam, srcPath, sourceType);
-                        predicateArg = srcExpr;
-                    }
-                    else
-                    {
-                        predicateArg = sourceParam;
-                    }
                     var guard = BuildConditionalGuardExpression(in conditional, predicateArg);
                     var block = $"            if ({guard})\n            {{\n                result.{destProp.Name} = {assignment};\n            }}";
                     postConstructionCollectionsAfterForge.Add((destProp.Name, block));
@@ -511,6 +534,13 @@ internal sealed partial class ForgeCodeEmitter
                 {
                     afterForgeAssignments.Add((destProp.Name, assignment));
                 }
+            }
+            else if (predicateArg != null)
+            {
+                WrapQueuedEntriesWithConditionalGuard(
+                    in conditional, predicateArg,
+                    skipNullAssignmentsAfterForge, skipNullSnapshot,
+                    postConstructionCollectionsAfterForge, postCtorSnapshot);
             }
         }
 
@@ -579,35 +609,43 @@ internal sealed partial class ForgeCodeEmitter
 
         foreach (var destProp in destProperties.Where(p => p.SetMethod != null && p.SetMethod.DeclaredAccessibility >= Accessibility.Internal))
         {
+            var skipNullSnapshot = skipNullAssignmentsPlain.Count;
+            var postCtorSnapshot = postConstructionCollectionsPlain.Count;
+
             var assignment = GeneratePropertyAssignment(
                 destProp, sourceParam, sourceType, sourceProperties,
                 propertyMappings, resolverMappings, forgeWithMappings, ignoredProperties, forger, context, method,
                 nullPropertyHandlingOverrides, skipNullAssignmentsPlain,
                 postConstructionCollectionsPlain, preConstructionBlocksPlain, propertyConvertWithMappings, selectPropertyMappings, conditionMappings, skipWhenMappings, isCtorBound: false);
 
+            var conditional = TryResolveConditionalSilently(
+                destProp, sourceType,
+                conditionMappings ?? new Dictionary<string, string>(StringComparer.Ordinal),
+                skipWhenMappings ?? new Dictionary<string, string>(StringComparer.Ordinal),
+                propertyMappings,
+                selectPropertyMappings ?? new Dictionary<string, string>(StringComparer.Ordinal),
+                resolverMappings, forgeWithMappings,
+                isCtorBound: false, forger);
+
+            string? predicateArg = null;
+            if (conditional.Applicable && !conditional.DidFail)
+            {
+                if (conditional.Kind == ConditionalKind.Condition)
+                {
+                    var srcPath = ResolveSourcePropertyPath(destProp, sourceType, propertyMappings);
+                    var (srcExpr, _) = GenerateSourceExpressionWithNullInfo(sourceParam, srcPath, sourceType);
+                    predicateArg = srcExpr;
+                }
+                else
+                {
+                    predicateArg = sourceParam;
+                }
+            }
+
             if (assignment != null)
             {
-                var conditional = TryResolveConditionalSilently(
-                    destProp, sourceType,
-                    conditionMappings ?? new Dictionary<string, string>(StringComparer.Ordinal),
-                    skipWhenMappings ?? new Dictionary<string, string>(StringComparer.Ordinal),
-                    propertyMappings,
-                    selectPropertyMappings ?? new Dictionary<string, string>(StringComparer.Ordinal),
-                    resolverMappings, forgeWithMappings,
-                    isCtorBound: false, forger);
-                if (conditional.Applicable && !conditional.DidFail)
+                if (predicateArg != null)
                 {
-                    string predicateArg;
-                    if (conditional.Kind == ConditionalKind.Condition)
-                    {
-                        var srcPath = ResolveSourcePropertyPath(destProp, sourceType, propertyMappings);
-                        var (srcExpr, _) = GenerateSourceExpressionWithNullInfo(sourceParam, srcPath, sourceType);
-                        predicateArg = srcExpr;
-                    }
-                    else
-                    {
-                        predicateArg = sourceParam;
-                    }
                     var guard = BuildConditionalGuardExpression(in conditional, predicateArg);
                     var block = $"            if ({guard})\n            {{\n                result.{destProp.Name} = {assignment};\n            }}";
                     postConstructionCollectionsPlain.Add((destProp.Name, block));
@@ -616,6 +654,13 @@ internal sealed partial class ForgeCodeEmitter
                 {
                     plainAssignments.Add((destProp.Name, assignment));
                 }
+            }
+            else if (predicateArg != null)
+            {
+                WrapQueuedEntriesWithConditionalGuard(
+                    in conditional, predicateArg,
+                    skipNullAssignmentsPlain, skipNullSnapshot,
+                    postConstructionCollectionsPlain, postCtorSnapshot);
             }
         }
 
