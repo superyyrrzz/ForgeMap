@@ -180,6 +180,22 @@ internal sealed partial class ForgeCodeEmitter
             // null means scalar or Replace collection — fall through to normal assignment
         }
 
+        // Per-property [ForgeProperty(ConvertWith = ...)] takes precedence over
+        // [ForgeFrom]/[ForgeWith] to match GeneratePropertyAssignment's order.
+        if (cfgPropertyConvertWithMappings != null
+            && cfgPropertyConvertWithMappings.TryGetValue(destProp.Name, out var convertWithInfo))
+        {
+            var convertExpr = GeneratePropertyConvertWithExpression(
+                destProp, convertWithInfo, sourceParam, sourceNamedType,
+                sourceProperties, propertyMappings, forger, context, method);
+            if (convertExpr != null)
+            {
+                workingSb.AppendLine($"            {destParam}.{destProp.Name} = {convertExpr};");
+            }
+            FlushConditionalGuard(sb, workingSb, conditional, sourceParam, destProp, propertyMappings, sourceNamedType, context, method);
+            return;
+        }
+
         // Check if this property has a resolver from [ForgeFrom]
         if (resolverMappings.TryGetValue(destProp.Name, out var resolverMethodName))
         {
@@ -328,21 +344,6 @@ internal sealed partial class ForgeCodeEmitter
                 DiagnosticDescriptors.ResolverMethodNotFound,
                 method.Locations.FirstOrDefault(),
                 forgingMethodName);
-            FlushConditionalGuard(sb, workingSb, conditional, sourceParam, destProp, propertyMappings, sourceNamedType, context, method);
-            return;
-        }
-
-        // Check for per-property [ForgeProperty(ConvertWith = ...)]
-        if (cfgPropertyConvertWithMappings != null
-            && cfgPropertyConvertWithMappings.TryGetValue(destProp.Name, out var convertWithInfo))
-        {
-            var convertExpr = GeneratePropertyConvertWithExpression(
-                destProp, convertWithInfo, sourceParam, sourceNamedType,
-                sourceProperties, propertyMappings, forger, context, method);
-            if (convertExpr != null)
-            {
-                workingSb.AppendLine($"            {destParam}.{destProp.Name} = {convertExpr};");
-            }
             FlushConditionalGuard(sb, workingSb, conditional, sourceParam, destProp, propertyMappings, sourceNamedType, context, method);
             return;
         }
