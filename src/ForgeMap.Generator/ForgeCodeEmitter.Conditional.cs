@@ -5,7 +5,6 @@ using static ForgeMap.Generator.TypeAnalysisHelper;
 
 namespace ForgeMap.Generator;
 
-// Helpers are defined here for an upcoming task; callers will be wired in later.
 internal sealed partial class ForgeCodeEmitter
 {
     /// <summary>
@@ -139,12 +138,22 @@ internal sealed partial class ForgeCodeEmitter
             return ConditionalResolution.Failed();
         }
 
-        // FM0064 — info diagnostic
+        // FM0064 is reported by callers only after they've actually emitted the
+        // guard-wrapped assignment block — predicate resolution alone doesn't
+        // guarantee emission (mapping may still fail or be skipped downstream).
+        return ConditionalResolution.FromPredicate(kind, predicate, predicateName);
+    }
+
+    /// <summary>
+    /// Reports FM0064 — call from emit sites only after the guarded assignment block
+    /// has actually been written, so the diagnostic accurately reflects emitted output.
+    /// </summary>
+    private void ReportConditionalAssignmentApplied(SourceProductionContext context, IMethodSymbol method, IPropertySymbol destProp, in ConditionalResolution resolution)
+    {
+        if (!resolution.Applicable || resolution.DidFail || resolution.PredicateName == null) return;
         ReportDiagnosticIfNotSuppressed(context,
             DiagnosticDescriptors.ConditionalAssignmentApplied,
-            location, destProp.Name, predicateName);
-
-        return ConditionalResolution.FromPredicate(kind, predicate, predicateName);
+            method.Locations.FirstOrDefault(), destProp.Name, resolution.PredicateName);
     }
 
     /// <summary>

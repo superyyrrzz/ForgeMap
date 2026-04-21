@@ -390,6 +390,7 @@ internal sealed partial class ForgeCodeEmitter
                     var guard = BuildConditionalGuardExpression(in conditional, predicateArg);
                     var block = $"            if ({guard})\n            {{\n                result.{destProp.Name} = {assignment};\n            }}";
                     postConstructionCollectionsForCtor.Add((destProp.Name, block));
+                    ReportConditionalAssignmentApplied(context, method, destProp, in conditional);
                 }
                 else
                 {
@@ -398,10 +399,14 @@ internal sealed partial class ForgeCodeEmitter
             }
             else if (predicateArg != null)
             {
+                var hadEntries = skipNullAssignmentsForCtor.Count > skipNullSnapshot
+                    || postConstructionCollectionsForCtor.Count > postCtorSnapshot;
                 WrapQueuedEntriesWithConditionalGuard(
                     in conditional, predicateArg,
                     skipNullAssignmentsForCtor, skipNullSnapshot,
                     postConstructionCollectionsForCtor, postCtorSnapshot);
+                if (hadEntries)
+                    ReportConditionalAssignmentApplied(context, method, destProp, in conditional);
             }
         }
 
@@ -529,6 +534,7 @@ internal sealed partial class ForgeCodeEmitter
                     var guard = BuildConditionalGuardExpression(in conditional, predicateArg);
                     var block = $"            if ({guard})\n            {{\n                result.{destProp.Name} = {assignment};\n            }}";
                     postConstructionCollectionsAfterForge.Add((destProp.Name, block));
+                    ReportConditionalAssignmentApplied(context, method, destProp, in conditional);
                 }
                 else
                 {
@@ -537,10 +543,14 @@ internal sealed partial class ForgeCodeEmitter
             }
             else if (predicateArg != null)
             {
+                var hadEntries = skipNullAssignmentsAfterForge.Count > skipNullSnapshot
+                    || postConstructionCollectionsAfterForge.Count > postCtorSnapshot;
                 WrapQueuedEntriesWithConditionalGuard(
                     in conditional, predicateArg,
                     skipNullAssignmentsAfterForge, skipNullSnapshot,
                     postConstructionCollectionsAfterForge, postCtorSnapshot);
+                if (hadEntries)
+                    ReportConditionalAssignmentApplied(context, method, destProp, in conditional);
             }
         }
 
@@ -649,6 +659,7 @@ internal sealed partial class ForgeCodeEmitter
                     var guard = BuildConditionalGuardExpression(in conditional, predicateArg);
                     var block = $"            if ({guard})\n            {{\n                result.{destProp.Name} = {assignment};\n            }}";
                     postConstructionCollectionsPlain.Add((destProp.Name, block));
+                    ReportConditionalAssignmentApplied(context, method, destProp, in conditional);
                 }
                 else
                 {
@@ -657,10 +668,14 @@ internal sealed partial class ForgeCodeEmitter
             }
             else if (predicateArg != null)
             {
+                var hadEntries = skipNullAssignmentsPlain.Count > skipNullSnapshot
+                    || postConstructionCollectionsPlain.Count > postCtorSnapshot;
                 WrapQueuedEntriesWithConditionalGuard(
                     in conditional, predicateArg,
                     skipNullAssignmentsPlain, skipNullSnapshot,
                     postConstructionCollectionsPlain, postCtorSnapshot);
+                if (hadEntries)
+                    ReportConditionalAssignmentApplied(context, method, destProp, in conditional);
             }
         }
 

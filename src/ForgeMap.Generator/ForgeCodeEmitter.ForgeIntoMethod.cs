@@ -172,7 +172,7 @@ internal sealed partial class ForgeCodeEmitter
             if (etBlock != null)
             {
                 workingSb.AppendLine(etBlock);
-                FlushConditionalGuard(sb, workingSb, conditional, sourceParam, destProp, propertyMappings, sourceNamedType);
+                FlushConditionalGuard(sb, workingSb, conditional, sourceParam, destProp, propertyMappings, sourceNamedType, context, method);
                 return;
             }
             // null means scalar or Replace collection — fall through to normal assignment
@@ -211,7 +211,7 @@ internal sealed partial class ForgeCodeEmitter
                     DiagnosticDescriptors.ResolverMethodNotFound,
                     method.Locations.FirstOrDefault(),
                     resolverMethodName);
-                FlushConditionalGuard(sb, workingSb, conditional, sourceParam, destProp, propertyMappings, sourceNamedType);
+                FlushConditionalGuard(sb, workingSb, conditional, sourceParam, destProp, propertyMappings, sourceNamedType, context, method);
                 return;
             }
 
@@ -251,12 +251,12 @@ internal sealed partial class ForgeCodeEmitter
                     DiagnosticDescriptors.InvalidResolverSignature,
                     method.Locations.FirstOrDefault(),
                     resolverMethodName);
-                FlushConditionalGuard(sb, workingSb, conditional, sourceParam, destProp, propertyMappings, sourceNamedType);
+                FlushConditionalGuard(sb, workingSb, conditional, sourceParam, destProp, propertyMappings, sourceNamedType, context, method);
                 return;
             }
 
             workingSb.AppendLine($"            {destParam}.{destProp.Name} = {resolverCall};");
-            FlushConditionalGuard(sb, workingSb, conditional, sourceParam, destProp, propertyMappings, sourceNamedType);
+            FlushConditionalGuard(sb, workingSb, conditional, sourceParam, destProp, propertyMappings, sourceNamedType, context, method);
             return;
         }
 
@@ -316,7 +316,7 @@ internal sealed partial class ForgeCodeEmitter
                         {
                             workingSb.AppendLine($"            {destParam}.{destProp.Name} = {nestedForgeMethod.Name}({sourceExpr});");
                         }
-                        FlushConditionalGuard(sb, workingSb, conditional, sourceParam, destProp, propertyMappings, sourceNamedType);
+                        FlushConditionalGuard(sb, workingSb, conditional, sourceParam, destProp, propertyMappings, sourceNamedType, context, method);
                         return;
                     }
                 }
@@ -326,7 +326,7 @@ internal sealed partial class ForgeCodeEmitter
                 DiagnosticDescriptors.ResolverMethodNotFound,
                 method.Locations.FirstOrDefault(),
                 forgingMethodName);
-            FlushConditionalGuard(sb, workingSb, conditional, sourceParam, destProp, propertyMappings, sourceNamedType);
+            FlushConditionalGuard(sb, workingSb, conditional, sourceParam, destProp, propertyMappings, sourceNamedType, context, method);
             return;
         }
 
@@ -341,7 +341,7 @@ internal sealed partial class ForgeCodeEmitter
             {
                 workingSb.AppendLine($"            {destParam}.{destProp.Name} = {convertExpr};");
             }
-            FlushConditionalGuard(sb, workingSb, conditional, sourceParam, destProp, propertyMappings, sourceNamedType);
+            FlushConditionalGuard(sb, workingSb, conditional, sourceParam, destProp, propertyMappings, sourceNamedType, context, method);
             return;
         }
 
@@ -359,7 +359,7 @@ internal sealed partial class ForgeCodeEmitter
                 if (enumCast != null)
                 {
                     workingSb.AppendLine($"            {destParam}.{destProp.Name} = {enumCast};");
-                    FlushConditionalGuard(sb, workingSb, conditional, sourceParam, destProp, propertyMappings, sourceNamedType);
+                    FlushConditionalGuard(sb, workingSb, conditional, sourceParam, destProp, propertyMappings, sourceNamedType, context, method);
                     return;
                 }
             }
@@ -441,7 +441,7 @@ internal sealed partial class ForgeCodeEmitter
                                 if (innerExpr != null)
                                     workingSb.AppendLine($"                {destParam}.{destProp.Name} = {innerExpr};");
                                 workingSb.AppendLine($"            }}");
-                                FlushConditionalGuard(sb, workingSb, conditional, sourceParam, destProp, propertyMappings, sourceNamedType);
+                                FlushConditionalGuard(sb, workingSb, conditional, sourceParam, destProp, propertyMappings, sourceNamedType, context, method);
                                 return;
                             }
                         }
@@ -453,7 +453,7 @@ internal sealed partial class ForgeCodeEmitter
                         if (enumConvExpr != null)
                         {
                             workingSb.AppendLine($"            {destParam}.{destProp.Name} = {enumConvExpr};");
-                            FlushConditionalGuard(sb, workingSb, conditional, sourceParam, destProp, propertyMappings, sourceNamedType);
+                            FlushConditionalGuard(sb, workingSb, conditional, sourceParam, destProp, propertyMappings, sourceNamedType, context, method);
                             return;
                         }
                     }
@@ -487,7 +487,7 @@ internal sealed partial class ForgeCodeEmitter
                         {
                             workingSb.AppendLine($"            {destParam}.{destProp.Name} = {enumStrExpr};");
                         }
-                        FlushConditionalGuard(sb, workingSb, conditional, sourceParam, destProp, propertyMappings, sourceNamedType);
+                        FlushConditionalGuard(sb, workingSb, conditional, sourceParam, destProp, propertyMappings, sourceNamedType, context, method);
                         return;
                     }
 
@@ -496,7 +496,7 @@ internal sealed partial class ForgeCodeEmitter
                     workingSb.AppendLine($"            {destParam}.{destProp.Name} = {sourceExpr2}{nullForgiving};");
                 }
             }
-            FlushConditionalGuard(sb, workingSb, conditional, sourceParam, destProp, propertyMappings, sourceNamedType);
+            FlushConditionalGuard(sb, workingSb, conditional, sourceParam, destProp, propertyMappings, sourceNamedType, context, method);
             return;
         }
 
@@ -648,7 +648,7 @@ internal sealed partial class ForgeCodeEmitter
                 }
             }
         }
-        FlushConditionalGuard(sb, workingSb, conditional, sourceParam, destProp, propertyMappings, sourceNamedType);
+        FlushConditionalGuard(sb, workingSb, conditional, sourceParam, destProp, propertyMappings, sourceNamedType, context, method);
     }
 
     /// <summary>
@@ -1104,7 +1104,9 @@ internal sealed partial class ForgeCodeEmitter
         string sourceParam,
         IPropertySymbol destProp,
         Dictionary<string, string> propertyMappings,
-        INamedTypeSymbol sourceNamedType)
+        INamedTypeSymbol sourceNamedType,
+        SourceProductionContext context,
+        IMethodSymbol method)
     {
         if (!conditional.Applicable || conditional.DidFail || ReferenceEquals(destSb, workingSb))
             return;
@@ -1134,6 +1136,7 @@ internal sealed partial class ForgeCodeEmitter
         }
         destSb.AppendLine("            }");
         workingSb.Clear();
+        ReportConditionalAssignmentApplied(context, method, destProp, in conditional);
     }
 
     /// <summary>
