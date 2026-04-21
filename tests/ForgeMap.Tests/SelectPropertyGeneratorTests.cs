@@ -463,6 +463,55 @@ public partial class TestForger
         Assert.Contains("string.IsNullOrEmpty", generated);
     }
 
+    [Fact]
+    public void Generator_SelectProperty_MultipleIncludeBaseForge_DoesNotLeakAcrossBases()
+    {
+        // Two bases (chained via inheritance so [IncludeBaseForge] is legal for both) both
+        // expose a 'Tags' destination. The first-listed base maps Tags via [ForgeProperty]
+        // (1:1, no projection). The second-listed base maps Tags via SelectProperty. First-wins
+        // must apply per-destination: the second base's projection MUST NOT attach itself to
+        // the first base's already-merged property mapping (that would project from a different
+        // source path and silently emit wrong code).
+        var source = @"
+using System.Collections.Generic;
+using ForgeMap;
+
+public class Tag { public string Name { get; set; } = string.Empty; }
+public class BaseSourceB { public List<Tag> Tags { get; set; } = new(); }
+public class BaseSourceA : BaseSourceB { public new List<string> Tags { get; set; } = new(); }
+public class DerivedSource : BaseSourceA { public int Extra { get; set; } }
+
+public class BaseDestB { public List<string> Tags { get; set; } = new(); }
+public class BaseDestA : BaseDestB { public new List<string> Tags { get; set; } = new(); }
+public class DerivedDest : BaseDestA { public int Extra { get; set; } }
+
+[ForgeMap]
+public partial class TestForger
+{
+    [ForgeProperty(nameof(BaseSourceA.Tags), nameof(BaseDestA.Tags))]
+    public partial BaseDestA ForgeBaseA(BaseSourceA source);
+
+    [ForgeProperty(nameof(BaseSourceB.Tags), nameof(BaseDestB.Tags), SelectProperty = nameof(Tag.Name))]
+    public partial BaseDestB ForgeBaseB(BaseSourceB source);
+
+    [IncludeBaseForge(typeof(BaseSourceA), typeof(BaseDestA))]
+    [IncludeBaseForge(typeof(BaseSourceB), typeof(BaseDestB))]
+    public partial DerivedDest ForgeDerived(DerivedSource source);
+}";
+
+        var (diagnostics, trees) = RunGenerator(source);
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        var generated = string.Join("\n", trees.Select(t => t.GetText().ToString()));
+        // ForgeDerived must NOT emit a projection for Tags — BaseA's plain mapping wins
+        // and BaseB's projection must be skipped because Tags was already configured by BaseA.
+        var derivedIdx = generated.IndexOf("ForgeDerived(");
+        Assert.True(derivedIdx >= 0);
+        var derivedSection = generated.Substring(derivedIdx);
+        var nextMethod = derivedSection.IndexOf("partial ", 50);
+        if (nextMethod > 0) derivedSection = derivedSection.Substring(0, nextMethod);
+        Assert.DoesNotContain(".Select(", derivedSection);
+    }
+
     private static (IReadOnlyList<Diagnostic> Diagnostics, IReadOnlyList<SyntaxTree> GeneratedTrees) RunGenerator(string source)
     {
         return TestHelper.RunGenerator(source);
