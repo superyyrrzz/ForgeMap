@@ -86,7 +86,8 @@ public sealed class ForgePropertyAttribute : Attribute
     /// or returned as <c>IEnumerable&lt;T&gt;</c> directly.
     /// Built-in element coercions (enum cast, string↔enum, enum→string, <c>DateTimeOffset</c>→<c>DateTime</c>, <c>Nullable&lt;T&gt;</c> unwrap) are composed into the lambda.
     /// Use <c>nameof()</c> for compile-time safety.
-    /// Mutually exclusive with <see cref="ConvertWith"/> and <see cref="ConvertWithType"/> on the same <c>[ForgeProperty]</c>.
+    /// Mutually exclusive with <see cref="ConvertWith"/>, <see cref="ConvertWithType"/>, <c>[ForgeFrom]</c>, and <c>[ForgeWith]</c>
+    /// on the same destination property.
     /// </summary>
     public string? SelectProperty { get; set; }
 }

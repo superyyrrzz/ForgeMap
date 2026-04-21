@@ -512,6 +512,107 @@ public partial class TestForger
         Assert.DoesNotContain(".Select(", derivedSection);
     }
 
+    [Fact]
+    public void Generator_SelectProperty_SkipNull_EmitsPostConstructionGuardedAssignment()
+    {
+        var source = @"
+using System.Collections.Generic;
+using ForgeMap;
+
+public class Tag { public string Name { get; set; } = string.Empty; }
+public class SourceType { public List<Tag>? Tags { get; set; } }
+public class DestType { public List<string> Tags { get; set; } = new(); }
+
+[ForgeMap(NullPropertyHandling = NullPropertyHandling.SkipNull)]
+public partial class TestForger
+{
+    [ForgeProperty(nameof(SourceType.Tags), nameof(DestType.Tags), SelectProperty = nameof(Tag.Name))]
+    public partial DestType Forge(SourceType source);
+}";
+
+        var (diagnostics, trees) = RunGenerator(source);
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        var generated = string.Join("\n", trees.Select(t => t.GetText().ToString()));
+        Assert.Contains("source.Tags is { } __sel_Tags", generated);
+        Assert.Contains("result.Tags = global::System.Linq.Enumerable.ToList(", generated);
+        Assert.DoesNotContain("? global::System.Linq.Enumerable.ToList", generated);
+    }
+
+    [Fact]
+    public void Generator_SelectProperty_ThrowException_EmitsArgumentNullExceptionThrow()
+    {
+        var source = @"
+using System.Collections.Generic;
+using ForgeMap;
+
+public class Tag { public string Name { get; set; } = string.Empty; }
+public class SourceType { public List<Tag>? Tags { get; set; } }
+public class DestType { public List<string> Tags { get; set; } = new(); }
+
+[ForgeMap(NullPropertyHandling = NullPropertyHandling.ThrowException)]
+public partial class TestForger
+{
+    [ForgeProperty(nameof(SourceType.Tags), nameof(DestType.Tags), SelectProperty = nameof(Tag.Name))]
+    public partial DestType Forge(SourceType source);
+}";
+
+        var (diagnostics, trees) = RunGenerator(source);
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        var generated = string.Join("\n", trees.Select(t => t.GetText().ToString()));
+        Assert.Contains("throw new global::System.ArgumentNullException(\"Tags\"", generated);
+        Assert.Contains("NullPropertyHandling = ThrowException", generated);
+    }
+
+    [Fact]
+    public void Generator_SelectProperty_CoalesceToDefault_EmitsEmptyList()
+    {
+        var source = @"
+using System.Collections.Generic;
+using ForgeMap;
+
+public class Tag { public string Name { get; set; } = string.Empty; }
+public class SourceType { public List<Tag>? Tags { get; set; } }
+public class DestType { public List<string> Tags { get; set; } = new(); }
+
+[ForgeMap(NullPropertyHandling = NullPropertyHandling.CoalesceToDefault)]
+public partial class TestForger
+{
+    [ForgeProperty(nameof(SourceType.Tags), nameof(DestType.Tags), SelectProperty = nameof(Tag.Name))]
+    public partial DestType Forge(SourceType source);
+}";
+
+        var (diagnostics, trees) = RunGenerator(source);
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        var generated = string.Join("\n", trees.Select(t => t.GetText().ToString()));
+        Assert.Contains("? global::System.Linq.Enumerable.ToList(", generated);
+        Assert.Contains(": new global::System.Collections.Generic.List<string>()", generated);
+    }
+
+    [Fact]
+    public void Generator_SelectProperty_CoalesceToNew_ArrayDestination_EmitsEmptyArray()
+    {
+        var source = @"
+using System.Collections.Generic;
+using ForgeMap;
+
+public class Tag { public int Id { get; set; } }
+public class SourceType { public List<Tag>? Tags { get; set; } }
+public class DestType { public int[] Tags { get; set; } = System.Array.Empty<int>(); }
+
+[ForgeMap(NullPropertyHandling = NullPropertyHandling.CoalesceToNew)]
+public partial class TestForger
+{
+    [ForgeProperty(nameof(SourceType.Tags), nameof(DestType.Tags), SelectProperty = nameof(Tag.Id))]
+    public partial DestType Forge(SourceType source);
+}";
+
+        var (diagnostics, trees) = RunGenerator(source);
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        var generated = string.Join("\n", trees.Select(t => t.GetText().ToString()));
+        Assert.Contains("global::System.Linq.Enumerable.ToArray(", generated);
+        Assert.Contains(": global::System.Array.Empty<int>()", generated);
+    }
+
     private static (IReadOnlyList<Diagnostic> Diagnostics, IReadOnlyList<SyntaxTree> GeneratedTrees) RunGenerator(string source)
     {
         return TestHelper.RunGenerator(source);
