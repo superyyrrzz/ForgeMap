@@ -48,6 +48,8 @@ internal sealed partial class ForgeCodeEmitter
             var location = method.Locations.FirstOrDefault();
             foreach (var destPropName in cfg.SelectPropertyMappings.Keys)
             {
+                if (ignoredProperties.Contains(destPropName))
+                    continue;
                 if (resolverMappings.ContainsKey(destPropName) || forgeWithMappings.ContainsKey(destPropName))
                 {
                     ReportDiagnosticIfNotSuppressed(context,

@@ -326,6 +326,8 @@ internal sealed partial class ForgeCodeEmitter
             {
                 if (!ctorCoveredDestProps.Contains(destProp.Name))
                     continue;
+                if (ignoredProperties.Contains(destProp.Name))
+                    continue;
                 if ((conditionMappings != null && conditionMappings.ContainsKey(destProp.Name))
                     || (skipWhenMappings != null && skipWhenMappings.ContainsKey(destProp.Name)))
                 {
