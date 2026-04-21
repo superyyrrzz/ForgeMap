@@ -223,6 +223,60 @@ internal sealed partial class ForgeCodeEmitter
     }
 
     /// <summary>
+    /// Gets per-property Condition mappings from [ForgeProperty(Condition=...)] attributes.
+    /// Returns a dictionary mapping destination property name to the predicate method name.
+    /// Predicate is invoked with the source property value.
+    /// </summary>
+    private Dictionary<string, string> GetConditionMappings(IMethodSymbol method)
+    {
+        var result = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var attr in GetMethodAttributes(method, _forgePropertyAttributeSymbol))
+        {
+            if (attr.ConstructorArguments.Length < 2)
+                continue;
+            var destinationProperty = attr.ConstructorArguments[1].Value as string;
+            if (string.IsNullOrEmpty(destinationProperty))
+                continue;
+
+            foreach (var named in attr.NamedArguments)
+            {
+                if (named.Key == "Condition" && named.Value.Value is string predicateName && !string.IsNullOrEmpty(predicateName))
+                {
+                    result[destinationProperty!] = predicateName;
+                }
+            }
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// Gets per-property SkipWhen mappings from [ForgeProperty(SkipWhen=...)] attributes.
+    /// Returns a dictionary mapping destination property name to the predicate method name.
+    /// Predicate is invoked with the source object.
+    /// </summary>
+    private Dictionary<string, string> GetSkipWhenMappings(IMethodSymbol method)
+    {
+        var result = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var attr in GetMethodAttributes(method, _forgePropertyAttributeSymbol))
+        {
+            if (attr.ConstructorArguments.Length < 2)
+                continue;
+            var destinationProperty = attr.ConstructorArguments[1].Value as string;
+            if (string.IsNullOrEmpty(destinationProperty))
+                continue;
+
+            foreach (var named in attr.NamedArguments)
+            {
+                if (named.Key == "SkipWhen" && named.Value.Value is string predicateName && !string.IsNullOrEmpty(predicateName))
+                {
+                    result[destinationProperty!] = predicateName;
+                }
+            }
+        }
+        return result;
+    }
+
+    /// <summary>
     /// Gets resolver mappings from [ForgeFrom] attributes.
     /// Returns a dictionary mapping destination property name to resolver method name.
     /// </summary>
@@ -388,6 +442,8 @@ internal sealed partial class ForgeCodeEmitter
         Dictionary<string, ExistingTargetConfig>? existingTargetProperties,
         Dictionary<string, (string? MethodName, string? ConverterTypeName, INamedTypeSymbol? ConverterTypeSymbol)> propertyConvertWithMappings,
         Dictionary<string, string> selectPropertyMappings,
+        Dictionary<string, string> conditionMappings,
+        Dictionary<string, string> skipWhenMappings,
         HashSet<string> visited)
     {
         var includeBaseForges = GetIncludeBaseForgeAttributes(method);
@@ -468,7 +524,9 @@ internal sealed partial class ForgeCodeEmitter
             var baseExistingTargetProperties = GetExistingTargetProperties(baseMethod);
             var basePropertyConvertWithMappings = GetPropertyConvertWithMappings(baseMethod);
             var baseSelectPropertyMappings = GetSelectPropertyMappings(baseMethod);
-            ResolveInheritedConfig(baseMethod, forger, context, baseIgnored, basePropertyMappings, baseResolverMappings, baseForgeWithMappings, baseNullPropertyHandlingOverrides, existingTargetProperties != null ? baseExistingTargetProperties : null, basePropertyConvertWithMappings, baseSelectPropertyMappings, visited);
+            var baseConditionMappings = GetConditionMappings(baseMethod);
+            var baseSkipWhenMappings = GetSkipWhenMappings(baseMethod);
+            ResolveInheritedConfig(baseMethod, forger, context, baseIgnored, basePropertyMappings, baseResolverMappings, baseForgeWithMappings, baseNullPropertyHandlingOverrides, existingTargetProperties != null ? baseExistingTargetProperties : null, basePropertyConvertWithMappings, baseSelectPropertyMappings, baseConditionMappings, baseSkipWhenMappings, visited);
 
             // Merge all base config into derived using first-wins semantics + FM0021 override reporting
             var diagLocation = attrData.ApplicationSyntaxReference?.GetSyntax().GetLocation() ?? method.Locations.FirstOrDefault();
@@ -580,6 +638,20 @@ internal sealed partial class ForgeCodeEmitter
                 if (!selectPropertyMappings.ContainsKey(kvp.Key))
                     selectPropertyMappings[kvp.Key] = kvp.Value;
             }
+
+            // Merge base Condition mappings using first-wins semantics
+            foreach (var kvp in baseConditionMappings)
+            {
+                if (!conditionMappings.ContainsKey(kvp.Key))
+                    conditionMappings[kvp.Key] = kvp.Value;
+            }
+
+            // Merge base SkipWhen mappings using first-wins semantics
+            foreach (var kvp in baseSkipWhenMappings)
+            {
+                if (!skipWhenMappings.ContainsKey(kvp.Key))
+                    skipWhenMappings[kvp.Key] = kvp.Value;
+            }
         }
     }
 
@@ -601,8 +673,10 @@ internal sealed partial class ForgeCodeEmitter
         var existingTargetProperties = GetExistingTargetProperties(method);
         var propertyConvertWithMappings = GetPropertyConvertWithMappings(method);
         var selectPropertyMappings = GetSelectPropertyMappings(method);
+        var conditionMappings = GetConditionMappings(method);
+        var skipWhenMappings = GetSkipWhenMappings(method);
 
-        ResolveInheritedConfig(method, forger, context, ignoredProperties, propertyMappings, resolverMappings, forgeWithMappings, nullPropertyHandlingOverrides, existingTargetProperties, propertyConvertWithMappings, selectPropertyMappings, new HashSet<string>());
+        ResolveInheritedConfig(method, forger, context, ignoredProperties, propertyMappings, resolverMappings, forgeWithMappings, nullPropertyHandlingOverrides, existingTargetProperties, propertyConvertWithMappings, selectPropertyMappings, conditionMappings, skipWhenMappings, new HashSet<string>());
 
         var beforeForgeHooks = GetBeforeForgeHooks(method)
             .Select(h => ValidateBeforeForgeHook(h, sourceType, forger, context, method))
@@ -623,7 +697,9 @@ internal sealed partial class ForgeCodeEmitter
             nullPropertyHandlingOverrides,
             existingTargetProperties,
             propertyConvertWithMappings,
-            selectPropertyMappings);
+            selectPropertyMappings,
+            conditionMappings,
+            skipWhenMappings);
     }
 
     /// <summary>

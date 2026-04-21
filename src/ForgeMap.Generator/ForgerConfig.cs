@@ -71,7 +71,9 @@ internal readonly struct ResolvedMethodConfig
         Dictionary<string, int> nullPropertyHandlingOverrides,
         Dictionary<string, ExistingTargetConfig> existingTargetProperties,
         Dictionary<string, (string? MethodName, string? ConverterTypeName, INamedTypeSymbol? ConverterTypeSymbol)>? propertyConvertWithMappings = null,
-        Dictionary<string, string>? selectPropertyMappings = null)
+        Dictionary<string, string>? selectPropertyMappings = null,
+        Dictionary<string, string>? conditionMappings = null,
+        Dictionary<string, string>? skipWhenMappings = null)
     {
         IgnoredProperties = ignoredProperties;
         PropertyMappings = propertyMappings;
@@ -83,6 +85,8 @@ internal readonly struct ResolvedMethodConfig
         ExistingTargetProperties = existingTargetProperties;
         PropertyConvertWithMappings = propertyConvertWithMappings ?? new Dictionary<string, (string? MethodName, string? ConverterTypeName, INamedTypeSymbol? ConverterTypeSymbol)>(StringComparer.Ordinal);
         SelectPropertyMappings = selectPropertyMappings ?? new Dictionary<string, string>(StringComparer.Ordinal);
+        ConditionMappings = conditionMappings ?? new Dictionary<string, string>(StringComparer.Ordinal);
+        SkipWhenMappings = skipWhenMappings ?? new Dictionary<string, string>(StringComparer.Ordinal);
     }
 
     public HashSet<string> IgnoredProperties { get; }
@@ -99,4 +103,8 @@ internal readonly struct ResolvedMethodConfig
     public Dictionary<string, (string? MethodName, string? ConverterTypeName, INamedTypeSymbol? ConverterTypeSymbol)> PropertyConvertWithMappings { get; }
     /// <summary>Per-property SelectProperty (v1.7) mappings. Key = dest property name, Value = element member name to project.</summary>
     public Dictionary<string, string> SelectPropertyMappings { get; }
+    /// <summary>Per-property Condition (v1.7) predicate mappings. Key = dest property name, Value = predicate method name (called with source-property value).</summary>
+    public Dictionary<string, string> ConditionMappings { get; }
+    /// <summary>Per-property SkipWhen (v1.7) predicate mappings. Key = dest property name, Value = predicate method name (called with source object).</summary>
+    public Dictionary<string, string> SkipWhenMappings { get; }
 }
