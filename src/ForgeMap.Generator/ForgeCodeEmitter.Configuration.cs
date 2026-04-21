@@ -639,16 +639,25 @@ internal sealed partial class ForgeCodeEmitter
                     selectPropertyMappings[kvp.Key] = kvp.Value;
             }
 
-            // Merge base Condition mappings using first-wins semantics
+            // Merge base Condition mappings using first-wins semantics. Skip when the derived
+            // method explicitly configured this dest via any other kind ([ForgeFrom]/[ForgeWith]/
+            // [Ignore]/[ForgeProperty]/SelectProperty/ConvertWith) — otherwise the inherited
+            // Condition would attach to a different mapping and trigger spurious FM0063 or apply
+            // a guard the derived author didn't ask for.
             foreach (var kvp in baseConditionMappings)
             {
+                if (IsExplicitlyConfigured(kvp.Key))
+                    continue;
                 if (!conditionMappings.ContainsKey(kvp.Key))
                     conditionMappings[kvp.Key] = kvp.Value;
             }
 
-            // Merge base SkipWhen mappings using first-wins semantics
+            // Merge base SkipWhen mappings using first-wins semantics. Same cross-kind override
+            // protection as Condition above.
             foreach (var kvp in baseSkipWhenMappings)
             {
+                if (IsExplicitlyConfigured(kvp.Key))
+                    continue;
                 if (!skipWhenMappings.ContainsKey(kvp.Key))
                     skipWhenMappings[kvp.Key] = kvp.Value;
             }

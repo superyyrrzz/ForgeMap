@@ -115,10 +115,10 @@ internal sealed partial class ForgeCodeEmitter
         ITypeSymbol expectedArgType;
         if (kind == ConditionalKind.Condition)
         {
-            string sourcePropPath = propertyMappings.TryGetValue(destProp.Name, out var mapped)
-                ? mapped
-                : destProp.Name;
-            expectedArgType = ResolvePathLeafType(sourcePropPath, (INamedTypeSymbol)sourceType) ?? sourceType;
+            string sourcePropPath = ResolveSourcePropertyPath(destProp, sourceType, propertyMappings);
+            expectedArgType = sourceType is INamedTypeSymbol named
+                ? ResolvePathLeafType(sourcePropPath, named) ?? sourceType
+                : sourceType;
         }
         else
         {
@@ -180,10 +180,10 @@ internal sealed partial class ForgeCodeEmitter
         ITypeSymbol expectedArgType;
         if (kind == ConditionalKind.Condition)
         {
-            string sourcePropPath = propertyMappings.TryGetValue(destProp.Name, out var mapped)
-                ? mapped
-                : destProp.Name;
-            expectedArgType = ResolvePathLeafType(sourcePropPath, (INamedTypeSymbol)sourceType) ?? sourceType;
+            string sourcePropPath = ResolveSourcePropertyPath(destProp, sourceType, propertyMappings);
+            expectedArgType = sourceType is INamedTypeSymbol named
+                ? ResolvePathLeafType(sourcePropPath, named) ?? sourceType
+                : sourceType;
         }
         else
         {
@@ -198,6 +198,27 @@ internal sealed partial class ForgeCodeEmitter
         return predicate == null
             ? ConditionalResolution.NotApplicable()
             : ConditionalResolution.FromPredicate(kind, predicate, predicateName);
+    }
+
+    /// <summary>
+    /// Resolves the dotted source-property path used to locate the value passed to a Condition
+    /// predicate. Honors explicit [ForgeProperty(source, dest)] mappings and falls back to
+    /// convention matching that respects PropertyMatching (case-insensitive when configured).
+    /// </summary>
+    private string ResolveSourcePropertyPath(IPropertySymbol destProp, ITypeSymbol sourceType, Dictionary<string, string> propertyMappings)
+    {
+        if (propertyMappings.TryGetValue(destProp.Name, out var mapped))
+            return mapped;
+
+        if (sourceType is INamedTypeSymbol named)
+        {
+            var matched = GetMappableProperties(named)
+                .FirstOrDefault(p => string.Equals(p.Name, destProp.Name, _config.PropertyNameComparison));
+            if (matched != null)
+                return matched.Name;
+        }
+
+        return destProp.Name;
     }
 
     /// <summary>

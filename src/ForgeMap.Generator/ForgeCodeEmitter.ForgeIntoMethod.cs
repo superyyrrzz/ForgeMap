@@ -53,6 +53,7 @@ internal sealed partial class ForgeCodeEmitter
                     ReportDiagnosticIfNotSuppressed(context,
                         DiagnosticDescriptors.SelectPropertyConflictsWithForgeFromOrWith,
                         location, destPropName);
+                    continue;
                 }
                 ReportDiagnosticIfNotSuppressed(context,
                     DiagnosticDescriptors.SelectPropertyNotSupportedOnForgeInto,
