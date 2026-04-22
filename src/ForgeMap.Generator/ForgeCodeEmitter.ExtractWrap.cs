@@ -333,11 +333,13 @@ internal sealed partial class ForgeCodeEmitter
             && unsatisfiedRequiredOnCtor.Count == 0;
 
         bool useInit;
-        // Explicit [ForgeConstructor(T1, T2, ...)] selecting a viable ctor is authoritative — it
-        // overrides ConstructorPreference and forces the ctor strategy even when init would also
-        // be viable. The empty form [ForgeConstructor()] means "parameterless ctor", which is
-        // compatible with the initializer strategy and so does NOT force ctor selection.
-        if (hasExplicitParameterizedForgeConstructor && ctorStrategyViable)
+        // Explicit [ForgeConstructor(T1, T2, ...)] selecting a parameterized ctor is authoritative —
+        // it overrides ConstructorPreference and pins the strategy to ctor. If that ctor turns out
+        // not to be viable (e.g. unsatisfied required members), we must NOT silently fall back to
+        // the initializer strategy — the user explicitly opted out. Let the FM0071/FM0068 block
+        // below surface the real failure instead. The empty form [ForgeConstructor()] means
+        // "parameterless ctor", which is compatible with the initializer strategy.
+        if (hasExplicitParameterizedForgeConstructor)
             useInit = false;
         else if (preferInit)
             useInit = initStrategyViable; // first preference; if not viable, fall through to ctor

@@ -718,4 +718,35 @@ public partial class M
         Assert.Contains("new global::Tagged(scope:", generated);
         Assert.DoesNotContain("new global::Tagged { Scope =", generated);
     }
+
+    [Fact]
+    public void Wrap_ExplicitForgeConstructor_UnsatisfiedRequired_DoesNotSilentlyFallBackToInit()
+    {
+        // [ForgeConstructor(string)] selects a parameterized ctor that does not initialize a
+        // required member 'Extra'. The initializer strategy could in principle satisfy 'Extra',
+        // but the user explicitly opted into the ctor — silently switching to init would ignore
+        // that choice. Generator must surface FM0071 (or FM0068) instead.
+        var source = @"
+using ForgeMap;
+
+public class Tagged
+{
+    public Tagged() { Scope = """"; }
+    public Tagged(string scope) { Scope = scope; }
+    public string Scope { get; set; } = """";
+    public required int Extra { get; set; }
+}
+
+[ForgeMap]
+public partial class M
+{
+    [WrapProperty(nameof(Tagged.Scope))]
+    [ForgeConstructor(typeof(string))]
+    public partial Tagged ForgeTagged(string source);
+}";
+        var (diagnostics, trees) = RunGenerator(source);
+        Assert.Contains(diagnostics, d => d.Id == "FM0071" || d.Id == "FM0068");
+        var generated = string.Join("\n", trees.Select(t => t.GetText().ToString()));
+        Assert.DoesNotContain("new global::Tagged { Scope =", generated);
+    }
 }
