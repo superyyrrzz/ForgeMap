@@ -492,10 +492,18 @@ internal sealed partial class ForgeCodeEmitter
 
     /// <summary>
     /// Yields the names of `required` members of <paramref name="destType"/> that the wrap
-    /// emit cannot satisfy. The `wrappedMemberName` is the one the [WrapProperty] attribute
-    /// names — it is satisfiable. When a constructor is supplied, parameters bound to required
-    /// members (by name match) AND any required member trusted by [SetsRequiredMembers] are
-    /// considered satisfied.
+    /// emit cannot satisfy.
+    /// <para>
+    /// Initializer path (no constructor supplied): the wrapped member is satisfied by the
+    /// emitted object initializer assignment, so it is excluded from the result.
+    /// </para>
+    /// <para>
+    /// Constructor path (constructor supplied): C# only treats `required` members as satisfied
+    /// when the constructor is annotated <c>[SetsRequiredMembers]</c> — matching a parameter
+    /// name does NOT satisfy the required-member check (CS9035 still fires). So when
+    /// <paramref name="ctorTrustsSetsRequired"/> is false we must report ALL required members,
+    /// including the wrapped one and any whose names happen to match constructor parameters.
+    /// </para>
     /// </summary>
     private static IEnumerable<string> EnumerateUnsatisfiedRequiredMembers(
         INamedTypeSymbol destType,
@@ -506,9 +514,7 @@ internal sealed partial class ForgeCodeEmitter
         if (ctorTrustsSetsRequired)
             yield break;
 
-        var ctorParamNames = ignoredRequiredMembersFromCtor != null
-            ? new HashSet<string>(ignoredRequiredMembersFromCtor.Parameters.Select(p => p.Name))
-            : new HashSet<string>();
+        var isCtorPath = ignoredRequiredMembersFromCtor != null;
 
         // Walk the inheritance chain so inherited `required` members are detected.
         // C# 11 `required` applies to both properties AND fields, so check both.
@@ -531,11 +537,10 @@ internal sealed partial class ForgeCodeEmitter
                         continue;
                 }
                 if (!seen.Add(memberName)) continue;
-                if (memberName == wrappedMemberName) continue;
-                // Match constructor parameters case-insensitively because parameter names are
-                // conventionally camelCase while members are commonly PascalCase.
-                if (ctorParamNames.Any(p => string.Equals(p, memberName, System.StringComparison.OrdinalIgnoreCase)))
-                    continue;
+                // Initializer path: the wrapped member's assignment in `new T { Wrapped = ... }`
+                // satisfies the required-member check. Ctor path: it does not — only
+                // [SetsRequiredMembers] does, and that case already short-circuited above.
+                if (!isCtorPath && memberName == wrappedMemberName) continue;
                 yield return memberName;
             }
             current = current.BaseType;

@@ -369,6 +369,33 @@ public partial class M
     }
 
     [Fact]
+    public void Wrap_RequiredMembersWithMatchingCtorButNoSetsRequired_EmitsFM0071()
+    {
+        // Regression: ctor parameter name matching a required member does NOT satisfy the
+        // C# required-member check (CS9035) — only [SetsRequiredMembers] does. The generator
+        // must surface FM0071 instead of selecting the ctor strategy and emitting code that
+        // would fail to compile.
+        var source = @"
+using ForgeMap;
+
+public class Tagged
+{
+    public Tagged(string scope) { Scope = scope; Owner = """"; }
+    public required string Scope { get; set; }
+    public required string Owner { get; set; }
+}
+
+[ForgeMap]
+public partial class M
+{
+    [WrapProperty(nameof(Tagged.Scope))]
+    public partial Tagged ForgeTagged(string source);
+}";
+        var (diagnostics, _) = RunGenerator(source);
+        Assert.Contains(diagnostics, d => d.Id == "FM0071");
+    }
+
+    [Fact]
     public void Wrap_VoidReturn_NoBodyEmitted_DefersToCS8795()
     {
         var source = @"
