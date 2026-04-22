@@ -295,8 +295,21 @@ internal sealed partial class ForgeCodeEmitter
 
         // Defer constructor selection: when initializer is the preferred-and-viable path, no ctor
         // is needed, and invoking FindWrapConstructor would incorrectly report FM0013 for ctor
-        // ambiguity that is irrelevant to the chosen path.
-        var deferCtorSelection = preferInit && initStrategyViable;
+        // ambiguity that is irrelevant to the chosen path. EXCEPTION: an explicit [ForgeConstructor]
+        // annotation on the method is authoritative and must always be honored — never deferred.
+        // [ForgeConstructor(...)] with at least one Type argument explicitly selects a
+        // parameterized ctor and must override ConstructorPreference / init-strategy deferral.
+        // [ForgeConstructor()] (empty params) means "use the parameterless ctor", which is
+        // compatible with — and effectively opts into — the initializer strategy when viable.
+        var explicitForgeCtorAttr = _forgeConstructorAttributeSymbol == null
+            ? null
+            : method.GetAttributes().FirstOrDefault(a =>
+                SymbolEqualityComparer.Default.Equals(a.AttributeClass, _forgeConstructorAttributeSymbol));
+        var hasExplicitParameterizedForgeConstructor = explicitForgeCtorAttr != null
+            && explicitForgeCtorAttr.ConstructorArguments.Length == 1
+            && !explicitForgeCtorAttr.ConstructorArguments[0].IsNull
+            && explicitForgeCtorAttr.ConstructorArguments[0].Values.Length > 0;
+        var deferCtorSelection = preferInit && initStrategyViable && !hasExplicitParameterizedForgeConstructor;
 
         // Strategy: constructor with named parameter — selection uses the wrap-specific
         // FindWrapConstructor helper, including its tie-break for single-required-param matches
@@ -320,7 +333,13 @@ internal sealed partial class ForgeCodeEmitter
             && unsatisfiedRequiredOnCtor.Count == 0;
 
         bool useInit;
-        if (preferInit)
+        // Explicit [ForgeConstructor(T1, T2, ...)] selecting a viable ctor is authoritative — it
+        // overrides ConstructorPreference and forces the ctor strategy even when init would also
+        // be viable. The empty form [ForgeConstructor()] means "parameterless ctor", which is
+        // compatible with the initializer strategy and so does NOT force ctor selection.
+        if (hasExplicitParameterizedForgeConstructor && ctorStrategyViable)
+            useInit = false;
+        else if (preferInit)
             useInit = initStrategyViable; // first preference; if not viable, fall through to ctor
         else
             useInit = false;
@@ -685,6 +704,16 @@ internal sealed partial class ForgeCodeEmitter
                         DiagnosticDescriptors.WrapPropertyTypeIncompatible,
                         method.Locations.FirstOrDefault(),
                         wrapSourceType.ToDisplayString(), matchedParam.Type.ToDisplayString(), method.Name);
+                    return (null, null, true);
+                }
+                var allOthersOptional = matchedCtor.Parameters.All(p =>
+                    ReferenceEquals(p, matchedParam) || p.HasExplicitDefaultValue || p.IsOptional);
+                if (!allOthersOptional)
+                {
+                    ReportDiagnosticIfNotSuppressed(context,
+                        DiagnosticDescriptors.WrapPropertyNotFound,
+                        method.Locations.FirstOrDefault(),
+                        namedMember, destType.ToDisplayString(), method.Name);
                     return (null, null, true);
                 }
                 return (matchedCtor, matchedParam, false);

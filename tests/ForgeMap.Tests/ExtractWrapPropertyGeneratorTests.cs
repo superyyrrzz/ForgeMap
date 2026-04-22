@@ -659,4 +659,63 @@ public partial class M
         var generated = string.Join("\n", trees.Select(t => t.GetText().ToString()));
         Assert.DoesNotContain("new global::Tagged", generated);
     }
+
+    [Fact]
+    public void Wrap_ForgeConstructorWithRequiredOtherParam_EmitsFM0068_NotUncompilableCall()
+    {
+        // [ForgeConstructor] selects a ctor where another parameter is required (no default).
+        // Emitting `new T(scope: source)` would skip `extra` and fail to compile, so the wrap
+        // path must surface FM0068 instead.
+        var source = @"
+using ForgeMap;
+
+public class Tagged
+{
+    public Tagged(string scope, int extra) { Scope = scope; Extra = extra; }
+    public string Scope { get; }
+    public int Extra { get; }
+}
+
+[ForgeMap]
+public partial class M
+{
+    [WrapProperty(nameof(Tagged.Scope))]
+    [ForgeConstructor(typeof(string), typeof(int))]
+    public partial Tagged ForgeTagged(string source);
+}";
+        var (diagnostics, trees) = RunGenerator(source);
+        Assert.Contains(diagnostics, d => d.Id == "FM0068");
+        var generated = string.Join("\n", trees.Select(t => t.GetText().ToString()));
+        Assert.DoesNotContain("new global::Tagged(scope:", generated);
+    }
+
+    [Fact]
+    public void Wrap_ExplicitForgeConstructor_OverridesInitializerPreference()
+    {
+        // When [ForgeConstructor] explicitly selects a ctor that can bind the wrap member,
+        // the generator must honor it instead of silently switching to the initializer
+        // strategy just because an init/set property of the same name also exists.
+        var source = @"
+using ForgeMap;
+
+public class Tagged
+{
+    public Tagged() { Scope = """"; }
+    public Tagged(string scope) { Scope = scope; }
+    public string Scope { get; set; } = """";
+}
+
+[ForgeMap]
+public partial class M
+{
+    [WrapProperty(nameof(Tagged.Scope))]
+    [ForgeConstructor(typeof(string))]
+    public partial Tagged ForgeTagged(string source);
+}";
+        var (diagnostics, trees) = RunGenerator(source);
+        Assert.DoesNotContain(diagnostics, d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error);
+        var generated = string.Join("\n", trees.Select(t => t.GetText().ToString()));
+        Assert.Contains("new global::Tagged(scope:", generated);
+        Assert.DoesNotContain("new global::Tagged { Scope =", generated);
+    }
 }
