@@ -164,9 +164,10 @@ internal sealed partial class ForgeCodeEmitter
     /// Decides how to express <paramref name="rawAccess"/> (an expression of <paramref name="sourcePropType"/>)
     /// as a value of <paramref name="targetType"/>. Returns true and sets <paramref name="expression"/> when
     /// a direct or built-in-coercion path exists; returns false otherwise.
-    /// Coercion ladder: direct (CanAssign) → DateTimeOffset→DateTime → string↔enum.
+    /// Coercion ladder: direct (CanAssign) → DateTimeOffset→DateTime → string↔enum (respects
+    /// <c>_config.StringToEnum</c> and handles Nullable&lt;Enum&gt;).
     /// </summary>
-    private static bool TryCoerceForExtract(
+    private bool TryCoerceForExtract(
         ITypeSymbol sourcePropType,
         ITypeSymbol targetType,
         string rawAccess,
@@ -196,18 +197,21 @@ internal sealed partial class ForgeCodeEmitter
             return true;
         }
 
-        // 3) string → enum.
-        if (sourcePropType.SpecialType == SpecialType.System_String && targetType.TypeKind == TypeKind.Enum)
+        // 3) string → enum. Routes through the shared helper so _config.StringToEnum
+        //    (Parse / TryParse / None / StrictParse) and Nullable<Enum> are honored —
+        //    matches PropertyAssignment/Projection behavior.
+        if (_config.StringToEnum != 2 && IsStringToEnumPair(sourcePropType, targetType))
         {
-            var enumFqn = targetType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-            expression = $"string.IsNullOrEmpty({rawAccess}) ? default({enumFqn}) : ({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), {rawAccess}, true)";
+            expression = GenerateStringToEnumParseExpression(sourcePropType, targetType, rawAccess, "value");
             return true;
         }
 
-        // 4) enum → string.
-        if (sourcePropType.TypeKind == TypeKind.Enum && targetType.SpecialType == SpecialType.System_String)
+        // 4) enum → string. Handle Nullable<Enum> via null-conditional ToString.
+        if (IsEnumToStringPair(sourcePropType, targetType))
         {
-            expression = $"{rawAccess}.ToString()";
+            var srcIsNullable = GetNullableUnderlyingType(sourcePropType) != null
+                || sourcePropType.NullableAnnotation == NullableAnnotation.Annotated;
+            expression = srcIsNullable ? $"{rawAccess}?.ToString()" : $"{rawAccess}.ToString()";
             return true;
         }
 
@@ -273,6 +277,12 @@ internal sealed partial class ForgeCodeEmitter
         // Strategy: constructor with named parameter — selection delegated to existing pipeline,
         // with the wrap-specific tie-break for single-required-param matches.
         var ctorChoice = FindWrapConstructor(destNamedType, propertyName!, sourceType, context, method);
+
+        // Ambiguity (FM0013) was already reported by FindWrapConstructor — short-circuit so we
+        // don't pile FM0068/FM0071 on top of the same root cause.
+        if (ctorChoice.AmbiguityReported)
+            return string.Empty;
+
         var unsatisfiedRequiredOnCtor = ctorChoice.Constructor != null
             ? EnumerateUnsatisfiedRequiredMembers(destNamedType, propertyName!,
                 ignoredRequiredMembersFromCtor: ctorChoice.Constructor,
@@ -378,9 +388,10 @@ internal sealed partial class ForgeCodeEmitter
     /// <summary>
     /// Decides how to express <paramref name="rawAccess"/> (an expression of <paramref name="sourceParamType"/>)
     /// as a value of <paramref name="sinkType"/>. Mirrors <see cref="TryCoerceForExtract"/> in reverse —
-    /// supports DateTime → DateTimeOffset (via DateTimeOffset constructor), string↔enum, and direct.
+    /// supports DateTime → DateTimeOffset (via DateTimeOffset constructor), string↔enum (respects
+    /// <c>_config.StringToEnum</c> and Nullable&lt;Enum&gt;), and direct.
     /// </summary>
-    private static bool TryCoerceForWrap(
+    private bool TryCoerceForWrap(
         ITypeSymbol sourceParamType,
         ITypeSymbol sinkType,
         string rawAccess,
@@ -410,18 +421,20 @@ internal sealed partial class ForgeCodeEmitter
             return true;
         }
 
-        // string → enum
-        if (sourceParamType.SpecialType == SpecialType.System_String && sinkType.TypeKind == TypeKind.Enum)
+        // string → enum. Routes through the shared helper so _config.StringToEnum
+        // (Parse / TryParse / None / StrictParse) and Nullable<Enum> are honored.
+        if (_config.StringToEnum != 2 && IsStringToEnumPair(sourceParamType, sinkType))
         {
-            var enumFqn = sinkType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-            expression = $"string.IsNullOrEmpty({rawAccess}) ? default({enumFqn}) : ({enumFqn})global::System.Enum.Parse(typeof({enumFqn}), {rawAccess}, true)";
+            expression = GenerateStringToEnumParseExpression(sourceParamType, sinkType, rawAccess, "value");
             return true;
         }
 
-        // enum → string
-        if (sourceParamType.TypeKind == TypeKind.Enum && sinkType.SpecialType == SpecialType.System_String)
+        // enum → string. Handle Nullable<Enum> via null-conditional ToString.
+        if (IsEnumToStringPair(sourceParamType, sinkType))
         {
-            expression = $"{rawAccess}.ToString()";
+            var srcIsNullable = GetNullableUnderlyingType(sourceParamType) != null
+                || sourceParamType.NullableAnnotation == NullableAnnotation.Annotated;
+            expression = srcIsNullable ? $"{rawAccess}?.ToString()" : $"{rawAccess}.ToString()";
             return true;
         }
 
@@ -539,7 +552,7 @@ internal sealed partial class ForgeCodeEmitter
     ///    If multiple exist, defer to the established FM0013 ambiguity behavior (this method emits FM0013).
     /// 3. If none exist, return Empty (no diagnostic — caller decides FM0068 vs FM0071).
     /// </summary>
-    private (IMethodSymbol? Constructor, IParameterSymbol? MatchedParameter) FindWrapConstructor(
+    private (IMethodSymbol? Constructor, IParameterSymbol? MatchedParameter, bool AmbiguityReported) FindWrapConstructor(
         INamedTypeSymbol destType,
         string namedMember,
         ITypeSymbol wrapSourceType,
@@ -566,7 +579,7 @@ internal sealed partial class ForgeCodeEmitter
         }
 
         if (singleValueCandidates.Count == 1)
-            return (singleValueCandidates[0].Ctor, singleValueCandidates[0].Param);
+            return (singleValueCandidates[0].Ctor, singleValueCandidates[0].Param, false);
 
         // General path: any public ctor with a named parameter, all others optional/defaulted.
         var generalCandidates = new List<(IMethodSymbol Ctor, IParameterSymbol Param)>();
@@ -585,18 +598,19 @@ internal sealed partial class ForgeCodeEmitter
         }
 
         if (generalCandidates.Count == 1)
-            return (generalCandidates[0].Ctor, generalCandidates[0].Param);
+            return (generalCandidates[0].Ctor, generalCandidates[0].Param, false);
 
         if (generalCandidates.Count > 1)
         {
-            // Defer to established FM0013 ambiguity behavior.
+            // Defer to established FM0013 ambiguity behavior. Caller short-circuits on
+            // AmbiguityReported so FM0068/FM0071 don't pile on the same root cause.
             ReportDiagnosticIfNotSuppressed(context,
                 DiagnosticDescriptors.AmbiguousConstructor,
                 method.Locations.FirstOrDefault(),
                 destType.ToDisplayString());
-            return (null, null);
+            return (null, null, true);
         }
 
-        return (null, null);
+        return (null, null, false);
     }
 }
