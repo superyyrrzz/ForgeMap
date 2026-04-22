@@ -283,10 +283,10 @@ internal sealed partial class ForgeCodeEmitter
             return string.Empty;
         }
 
-        // Abstract destinations cannot be instantiated via `new T(...)` or `new T { ... }`,
+        // Abstract or interface destinations cannot be instantiated via `new T(...)` or `new T { ... }`,
         // so neither wrap strategy can produce compilable code. Surface as FM0068 rather than
-        // emitting an uncompilable `new AbstractType(...)`.
-        if (destNamedType.IsAbstract)
+        // emitting an uncompilable `new AbstractType(...)` / `new IInterface(...)`.
+        if (destNamedType.IsAbstract || destNamedType.TypeKind == TypeKind.Interface)
         {
             ReportDiagnosticIfNotSuppressed(context,
                 DiagnosticDescriptors.WrapPropertyNotFound,

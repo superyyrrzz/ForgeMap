@@ -1016,4 +1016,24 @@ public partial class M
         var (diagnostics, _) = RunGenerator(source);
         Assert.Contains(diagnostics, d => d.Id == "FM0007");
     }
+
+    [Fact]
+    public void Wrap_InterfaceReturnType_EmitsFM0068()
+    {
+        // Interfaces can't be instantiated via `new I(...)` or `new I { ... }`, so wrap can't
+        // produce compilable code. Surface as FM0068 like other non-instantiable destinations.
+        var source = @"
+using ForgeMap;
+
+public interface ITagged { int Scope { get; set; } }
+
+[ForgeMap]
+public partial class M
+{
+    [WrapProperty(""Scope"")]
+    public partial ITagged ForgeTagged(int source);
+}";
+        var (diagnostics, _) = RunGenerator(source);
+        Assert.Contains(diagnostics, d => d.Id == "FM0068");
+    }
 }
