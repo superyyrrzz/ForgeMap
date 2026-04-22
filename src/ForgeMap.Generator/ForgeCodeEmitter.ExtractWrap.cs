@@ -336,9 +336,35 @@ internal sealed partial class ForgeCodeEmitter
             }
             else
             {
-                ReportDiagnosticIfNotSuppressed(context,
-                    DiagnosticDescriptors.WrapPropertyNotFound,
-                    location, propertyName!, destNamedType.ToDisplayString(), method.Name);
+                // FM0069 vs FM0068: if some ctor has a parameter matching the named member but
+                // its type is incompatible with the wrap source, the user's real problem is
+                // type incompatibility — emit FM0069 with the specific types instead of the
+                // less informative FM0068 ("not found").
+                IParameterSymbol? typeMismatchParam = null;
+                foreach (var ctor in destNamedType.InstanceConstructors
+                    .Where(c => c.DeclaredAccessibility == Accessibility.Public))
+                {
+                    var match = ctor.Parameters.FirstOrDefault(p =>
+                        string.Equals(p.Name, propertyName!, System.StringComparison.OrdinalIgnoreCase));
+                    if (match != null && !TryCoerceForWrap(sourceType, match.Type, "_", out _))
+                    {
+                        typeMismatchParam = match;
+                        break;
+                    }
+                }
+                if (typeMismatchParam != null)
+                {
+                    ReportDiagnosticIfNotSuppressed(context,
+                        DiagnosticDescriptors.WrapPropertyTypeIncompatible,
+                        location, sourceType.ToDisplayString(),
+                        typeMismatchParam.Type.ToDisplayString(), method.Name);
+                }
+                else
+                {
+                    ReportDiagnosticIfNotSuppressed(context,
+                        DiagnosticDescriptors.WrapPropertyNotFound,
+                        location, propertyName!, destNamedType.ToDisplayString(), method.Name);
+                }
             }
             return string.Empty;
         }

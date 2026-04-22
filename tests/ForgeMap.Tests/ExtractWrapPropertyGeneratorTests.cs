@@ -608,4 +608,29 @@ public partial class M
         Assert.Contains("new global::Tagged", generated);
         Assert.Contains("Scope = source", generated);
     }
+
+    [Fact]
+    public void Wrap_CtorParamExistsButTypeIncompatible_EmitsFM0069_NotFM0068()
+    {
+        // Destination has a ctor with a parameter matching the wrapped name, but its type cannot
+        // accept the wrap source. The diagnostic should be FM0069 (type incompatible), not the
+        // less informative FM0068 (not found) — the parameter IS there, just wrong type.
+        var source = @"
+using ForgeMap;
+
+public class Tagged
+{
+    public Tagged(int scope) { }
+}
+
+[ForgeMap]
+public partial class M
+{
+    [WrapProperty(""scope"")]
+    public partial Tagged ForgeTagged(System.Guid source);
+}";
+        var (diagnostics, _) = RunGenerator(source);
+        Assert.Contains(diagnostics, d => d.Id == "FM0069");
+        Assert.DoesNotContain(diagnostics, d => d.Id == "FM0068");
+    }
 }
