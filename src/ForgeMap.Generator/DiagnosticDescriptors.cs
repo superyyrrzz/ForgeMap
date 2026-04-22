@@ -531,8 +531,8 @@ internal static class DiagnosticDescriptors
 
     public static readonly DiagnosticDescriptor WrapPropertyNotFound = new(
         id: "FM0068",
-        title: "[WrapProperty] target not found on destination type",
-        messageFormat: "[WrapProperty(\"{0}\")] not found as settable/init property or constructor parameter on destination type '{1}' for method '{2}'",
+        title: "[WrapProperty] no viable target on destination type",
+        messageFormat: "[WrapProperty(\"{0}\")] on destination type '{1}' for method '{2}' has no viable wrap strategy: it must be either a public settable/init property on a type with a public parameterless constructor, or a constructor parameter",
         category: Category,
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true);
