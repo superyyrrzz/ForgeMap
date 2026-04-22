@@ -233,17 +233,11 @@ internal sealed partial class ForgeCodeEmitter
         // Inventory the destination type:
         //   - settable/init property of the named member (initializer path)
         //   - public constructor with a parameter of the named member (ctor path)
-        // The setter (set or init) itself must be public — `public string Name { get; private set; }`
-        // would otherwise be treated as writable and produce uncompilable initializer code.
         var namedSettable = destNamedType.GetMembers(propertyName!).OfType<IPropertySymbol>()
             .FirstOrDefault(p => !p.IsStatic
                 && p.SetMethod != null
                 && p.DeclaredAccessibility == Accessibility.Public
                 && p.SetMethod.DeclaredAccessibility == Accessibility.Public);
-        var namedReadable = destNamedType.GetMembers(propertyName!).OfType<IPropertySymbol>()
-            .FirstOrDefault(p => !p.IsStatic
-                && p.GetMethod != null
-                && p.DeclaredAccessibility == Accessibility.Public);
 
         // Strategy: object initializer
         var hasParameterlessCtor = destNamedType.InstanceConstructors.Any(c =>
@@ -379,11 +373,11 @@ internal sealed partial class ForgeCodeEmitter
         // DateTime → DateTimeOffset (mirror of TryCoerceForExtract's DateTimeOffset → DateTime,
         // which normalizes via .UtcDateTime). Treat the input DateTime as UTC so the round-trip
         // is offset-invariant — `new DateTimeOffset(dt)` would interpret Unspecified/Local Kind
-        // as local time and silently shift the instant.
-        if (sourceParamType.SpecialType == SpecialType.System_DateTime
-            && sinkType.ToDisplayString() == "System.DateTimeOffset")
+        // as local time and silently shift the instant. Handles all four nullable combinations.
+        var dto = TryGenerateDateTimeToDateTimeOffsetCoercion(sourceParamType, sinkType, rawAccess);
+        if (dto != null)
         {
-            expression = $"new global::System.DateTimeOffset(global::System.DateTime.SpecifyKind({rawAccess}, global::System.DateTimeKind.Utc))";
+            expression = dto;
             return true;
         }
 
@@ -404,6 +398,43 @@ internal sealed partial class ForgeCodeEmitter
 
         expression = string.Empty;
         return false;
+    }
+
+    /// <summary>
+    /// Mirror of <c>TryGenerateDateTimeOffsetToDateTimeCoercion</c>. Handles all four nullable
+    /// combinations of <c>DateTime → DateTimeOffset</c>. The input DateTime is normalized to
+    /// <c>DateTimeKind.Utc</c> before construction so the resulting offset is always zero —
+    /// otherwise <c>DateTimeKind.Unspecified</c> would be interpreted as local time.
+    /// </summary>
+    private static string? TryGenerateDateTimeToDateTimeOffsetCoercion(
+        ITypeSymbol sourceType, ITypeSymbol destType, string sourceExpr)
+    {
+        var srcUnderlying = GetNullableUnderlyingType(sourceType);
+        var dstUnderlying = GetNullableUnderlyingType(destType);
+        var srcCore = srcUnderlying ?? sourceType;
+        var dstCore = dstUnderlying ?? destType;
+
+        if (srcCore.SpecialType != SpecialType.System_DateTime
+            || dstCore.ToDisplayString() != "System.DateTimeOffset")
+            return null;
+
+        var srcIsNullable = srcUnderlying != null;
+        var dstIsNullable = dstUnderlying != null;
+
+        const string utcKind = "global::System.DateTimeKind.Utc";
+        const string ctor = "global::System.DateTimeOffset";
+        const string specifyKind = "global::System.DateTime.SpecifyKind";
+
+        if (!srcIsNullable && !dstIsNullable)
+            return $"new {ctor}({specifyKind}({sourceExpr}, {utcKind}))";
+
+        if (srcIsNullable && dstIsNullable)
+            return $"{sourceExpr}.HasValue ? new {ctor}({specifyKind}({sourceExpr}.Value, {utcKind})) : ({ctor}?)null";
+
+        if (srcIsNullable && !dstIsNullable)
+            return $"new {ctor}({specifyKind}({sourceExpr}!.Value, {utcKind}))";
+
+        return $"({ctor}?)new {ctor}({specifyKind}({sourceExpr}, {utcKind}))";
     }
 
     /// <summary>
