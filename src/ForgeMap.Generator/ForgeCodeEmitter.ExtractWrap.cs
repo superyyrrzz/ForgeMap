@@ -126,6 +126,19 @@ internal sealed partial class ForgeCodeEmitter
             return string.Empty;
         }
 
+        // FM0007: warn when extracting a Nullable<T> property into a non-nullable return type.
+        // TryCoerceForExtract emits .GetValueOrDefault() to keep the generated code compiling,
+        // but null silently becomes default(T) — surface that to the user the same way
+        // PropertyAssignment does for nullable-to-non-nullable property mappings.
+        if (GetNullableUnderlyingType(srcProp.Type) != null
+            && GetNullableUnderlyingType(returnType) == null
+            && !returnType.IsReferenceType)
+        {
+            ReportFM0007(context, method,
+                sourceType.Name, srcProp.Name,
+                method.ContainingType.Name, method.Name);
+        }
+
         // FM0074: value-type return under ReturnNull collapses null sources to default.
         // Only emit when source can be null (reference type or Nullable<T>).
         var sourceCanBeNull = sourceType.IsReferenceType

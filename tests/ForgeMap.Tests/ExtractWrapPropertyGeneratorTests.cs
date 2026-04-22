@@ -810,4 +810,25 @@ public partial class M
         Assert.Contains("new global::Tagged", generated);
         Assert.Contains("Scope = source", generated);
     }
+
+    [Fact]
+    public void Extract_NullablePropertyToNonNullableReturn_EmitsFM0007()
+    {
+        // Extracting a Nullable<T> property into a non-nullable return type silently turns
+        // null into default(T) via .GetValueOrDefault(). Surface that as FM0007 so users
+        // are warned about the data loss, mirroring PropertyAssignment behavior.
+        var source = @"
+using ForgeMap;
+
+public class Holder { public int? Value { get; set; } }
+
+[ForgeMap]
+public partial class M
+{
+    [ExtractProperty(nameof(Holder.Value))]
+    public partial int ExtractValue(Holder source);
+}";
+        var (diagnostics, _) = RunGenerator(source);
+        Assert.Contains(diagnostics, d => d.Id == "FM0007");
+    }
 }
