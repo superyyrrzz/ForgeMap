@@ -280,7 +280,17 @@ internal sealed partial class ForgeCodeEmitter
         var hasParameterlessCtor = destNamedType.InstanceConstructors.Any(c =>
             c.Parameters.Length == 0 && c.DeclaredAccessibility == Accessibility.Public);
 
-        var unsatisfiedRequiredOnInit = EnumerateUnsatisfiedRequiredMembers(destNamedType, propertyName!).ToList();
+        // Init path: if the public parameterless ctor itself is annotated [SetsRequiredMembers],
+        // it has already initialized every required member, so `new T { Scope = source }` is
+        // allowed regardless of which other required members exist. Trust it the same way the
+        // ctor path trusts ctors with [SetsRequiredMembers].
+        var parameterlessCtor = destNamedType.InstanceConstructors.FirstOrDefault(c =>
+            c.Parameters.Length == 0 && c.DeclaredAccessibility == Accessibility.Public);
+        var initCtorTrustsSetsRequired = parameterlessCtor != null && HasSetsRequiredMembers(parameterlessCtor);
+        var unsatisfiedRequiredOnInit = EnumerateUnsatisfiedRequiredMembers(
+            destNamedType, propertyName!,
+            ignoredRequiredMembersFromCtor: null,
+            ctorTrustsSetsRequired: initCtorTrustsSetsRequired).ToList();
         // Init strategy must also be type-compatible with the wrap source. If the named property's
         // type cannot accept the source (e.g. property is `Guid`, source is `string`), the
         // initializer strategy is NOT viable — we must let the ctor path try its own match instead

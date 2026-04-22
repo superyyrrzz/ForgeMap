@@ -779,4 +779,35 @@ public partial class M
         Assert.Contains("new global::Tagged(scope:", generated);
         Assert.DoesNotContain("Scope = source", generated);
     }
+
+    [Fact]
+    public void Wrap_ParameterlessCtorWithSetsRequiredMembers_InitStrategyViable()
+    {
+        // The public parameterless ctor is annotated [SetsRequiredMembers], so it has already
+        // initialized every required member. The init strategy must be viable for any settable
+        // named property — `new T { Scope = source }` is allowed even though `Owner` is required.
+        var source = @"
+using ForgeMap;
+using System.Diagnostics.CodeAnalysis;
+
+public class Tagged
+{
+    [SetsRequiredMembers]
+    public Tagged() { Owner = """"; Scope = """"; }
+    public required string Owner { get; set; }
+    public required string Scope { get; set; }
+}
+
+[ForgeMap]
+public partial class M
+{
+    [WrapProperty(nameof(Tagged.Scope))]
+    public partial Tagged ForgeTagged(string source);
+}";
+        var (diagnostics, trees) = RunGenerator(source);
+        Assert.DoesNotContain(diagnostics, d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error);
+        var generated = string.Join("\n", trees.Select(t => t.GetText().ToString()));
+        Assert.Contains("new global::Tagged", generated);
+        Assert.Contains("Scope = source", generated);
+    }
 }
