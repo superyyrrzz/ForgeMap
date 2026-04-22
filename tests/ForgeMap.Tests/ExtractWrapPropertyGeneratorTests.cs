@@ -749,4 +749,34 @@ public partial class M
         var generated = string.Join("\n", trees.Select(t => t.GetText().ToString()));
         Assert.DoesNotContain("new global::Tagged { Scope =", generated);
     }
+
+    [Fact]
+    public void Wrap_InitTypeIncompatible_FallsBackToCompatibleCtorParam()
+    {
+        // The named property is settable but its type cannot accept the wrap source.
+        // A constructor of the same name with a coercible type exists. The init strategy
+        // must NOT be picked just because the property exists — the generator should fall
+        // back to the ctor strategy and emit a successful wrap.
+        var source = @"
+using ForgeMap;
+
+public class Tagged
+{
+    public Tagged() { Scope = 0; }
+    public Tagged(string scope) { Scope = scope.Length; }
+    public int Scope { get; set; }
+}
+
+[ForgeMap]
+public partial class M
+{
+    [WrapProperty(""Scope"")]
+    public partial Tagged ForgeTagged(string source);
+}";
+        var (diagnostics, trees) = RunGenerator(source);
+        Assert.DoesNotContain(diagnostics, d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error);
+        var generated = string.Join("\n", trees.Select(t => t.GetText().ToString()));
+        Assert.Contains("new global::Tagged(scope:", generated);
+        Assert.DoesNotContain("Scope = source", generated);
+    }
 }

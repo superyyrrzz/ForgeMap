@@ -281,9 +281,15 @@ internal sealed partial class ForgeCodeEmitter
             c.Parameters.Length == 0 && c.DeclaredAccessibility == Accessibility.Public);
 
         var unsatisfiedRequiredOnInit = EnumerateUnsatisfiedRequiredMembers(destNamedType, propertyName!).ToList();
+        // Init strategy must also be type-compatible with the wrap source. If the named property's
+        // type cannot accept the source (e.g. property is `Guid`, source is `string`), the
+        // initializer strategy is NOT viable — we must let the ctor path try its own match instead
+        // of committing to init and emitting FM0069. Without this guard, a ctor with a same-named
+        // parameter of a coercible type would be silently bypassed.
         var initStrategyViable = hasParameterlessCtor
             && namedSettable != null
-            && unsatisfiedRequiredOnInit.Count == 0;
+            && unsatisfiedRequiredOnInit.Count == 0
+            && TryCoerceForWrap(sourceType, namedSettable.Type, "_", out _);
 
         // Pick strategy per ConstructorPreference and the named-member shape.
         // 0 = Auto, 1 = PreferParameterless (see ConstructorPreference.cs).
@@ -371,7 +377,8 @@ internal sealed partial class ForgeCodeEmitter
                 // FM0069 vs FM0068: if some ctor has a parameter matching the named member but
                 // its type is incompatible with the wrap source, the user's real problem is
                 // type incompatibility — emit FM0069 with the specific types instead of the
-                // less informative FM0068 ("not found").
+                // less informative FM0068 ("not found"). Same applies if the init property
+                // matches by name but its type cannot accept the source.
                 IParameterSymbol? typeMismatchParam = null;
                 foreach (var ctor in destNamedType.InstanceConstructors
                     .Where(c => c.DeclaredAccessibility == Accessibility.Public))
@@ -384,12 +391,27 @@ internal sealed partial class ForgeCodeEmitter
                         break;
                     }
                 }
+                ITypeSymbol? typeMismatchInitType = null;
+                if (typeMismatchParam == null
+                    && namedSettable != null
+                    && hasParameterlessCtor
+                    && !TryCoerceForWrap(sourceType, namedSettable.Type, "_", out _))
+                {
+                    typeMismatchInitType = namedSettable.Type;
+                }
                 if (typeMismatchParam != null)
                 {
                     ReportDiagnosticIfNotSuppressed(context,
                         DiagnosticDescriptors.WrapPropertyTypeIncompatible,
                         location, sourceType.ToDisplayString(),
                         typeMismatchParam.Type.ToDisplayString(), method.Name);
+                }
+                else if (typeMismatchInitType != null)
+                {
+                    ReportDiagnosticIfNotSuppressed(context,
+                        DiagnosticDescriptors.WrapPropertyTypeIncompatible,
+                        location, sourceType.ToDisplayString(),
+                        typeMismatchInitType.ToDisplayString(), method.Name);
                 }
                 else
                 {
