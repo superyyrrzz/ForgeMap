@@ -851,4 +851,88 @@ public partial class M
         var (diagnostics, _) = RunGenerator(source);
         Assert.DoesNotContain(diagnostics, d => d.Id == "FM0074");
     }
+
+    [Fact]
+    public void Wrap_SetOnlyProperty_InitStrategySucceeds()
+    {
+        // Set-only public properties (no getter) are valid wrap initializer targets:
+        // `new T { Prop = src }` compiles fine. The init lookup must accept them.
+        var source = @"
+using ForgeMap;
+
+public class Tagged
+{
+    private string _scope = string.Empty;
+    public string Scope { set { _scope = value; } }
+    public string Read() => _scope;
+}
+
+[ForgeMap]
+public partial class M
+{
+    [WrapProperty(nameof(Tagged.Scope))]
+    public partial Tagged ForgeTagged(string source);
+}";
+        var (diagnostics, trees) = RunGenerator(source);
+        Assert.DoesNotContain(diagnostics, d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error);
+        var generated = string.Join("\n", trees.Select(t => t.GetText().ToString()));
+        Assert.Contains("new global::Tagged", generated);
+        Assert.Contains("Scope = source", generated);
+    }
+
+    [Fact]
+    public void Wrap_ExplicitForgeConstructorEmpty_UnsatisfiedRequired_EmitsFM0071_NotFM0068()
+    {
+        // [ForgeConstructor()] (empty types) opts into the parameterless ctor / init strategy.
+        // When required members block the init, the diagnostic must reflect the real cause
+        // (FM0071 unsatisfied required) rather than fall through to FM0068 ""not found"".
+        var source = @"
+using ForgeMap;
+
+public class Tagged
+{
+    public Tagged() { }
+    public required string Scope { get; set; }
+    public required string Other { get; set; }
+}
+
+[ForgeMap]
+public partial class M
+{
+    [WrapProperty(nameof(Tagged.Scope))]
+    [ForgeConstructor()]
+    public partial Tagged ForgeTagged(string source);
+}";
+        var (diagnostics, _) = RunGenerator(source);
+        Assert.Contains(diagnostics, d => d.Id == "FM0071");
+        Assert.DoesNotContain(diagnostics, d => d.Id == "FM0068");
+    }
+
+    [Fact]
+    public void Wrap_ExplicitForgeConstructorEmpty_TypeIncompatibleInit_EmitsFM0069_NotFM0068()
+    {
+        // [ForgeConstructor()] selects the parameterless ctor and defers to init. When the
+        // named init property's type cannot accept the wrap source, the right diagnostic is
+        // FM0069 (type incompatible), not FM0068 (not found).
+        var source = @"
+using ForgeMap;
+using System;
+
+public class Tagged
+{
+    public Tagged() { }
+    public Guid Scope { get; set; }
+}
+
+[ForgeMap]
+public partial class M
+{
+    [WrapProperty(nameof(Tagged.Scope))]
+    [ForgeConstructor()]
+    public partial Tagged ForgeTagged(int source);
+}";
+        var (diagnostics, _) = RunGenerator(source);
+        Assert.Contains(diagnostics, d => d.Id == "FM0069");
+        Assert.DoesNotContain(diagnostics, d => d.Id == "FM0068");
+    }
 }

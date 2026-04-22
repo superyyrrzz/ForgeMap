@@ -289,12 +289,21 @@ internal sealed partial class ForgeCodeEmitter
         // Inventory the destination type (walk inheritance chain so base-class properties are visible):
         //   - settable/init property of the named member (initializer path)
         //   - public constructor with a parameter of the named member (ctor path)
-        var namedSettable = GetMappableProperties(destNamedType)
-            .Where(p => p.Name == propertyName)
-            .FirstOrDefault(p => !p.IsStatic
-                && p.SetMethod != null
-                && p.DeclaredAccessibility == Accessibility.Public
-                && p.SetMethod.DeclaredAccessibility == Accessibility.Public);
+        // For the wrap initializer strategy, accept set-only properties too: `new T { Prop = src }`
+        // compiles even when Prop has no public getter, so GetMappableProperties' getter filter is
+        // wrong here. Walk the inheritance chain manually and stop at the first match.
+        IPropertySymbol? namedSettable = null;
+        for (var t = destNamedType; t != null && t.SpecialType != SpecialType.System_Object; t = t.BaseType)
+        {
+            namedSettable = t.GetMembers(propertyName!)
+                .OfType<IPropertySymbol>()
+                .FirstOrDefault(p => !p.IsStatic
+                    && !p.IsIndexer
+                    && p.SetMethod != null
+                    && p.DeclaredAccessibility == Accessibility.Public
+                    && p.SetMethod.DeclaredAccessibility == Accessibility.Public);
+            if (namedSettable != null) break;
+        }
 
         // Strategy: object initializer
         var hasParameterlessCtor = destNamedType.InstanceConstructors.Any(c =>
@@ -710,6 +719,26 @@ internal sealed partial class ForgeCodeEmitter
 
             if (specifiedTypes != null)
             {
+                // [ForgeConstructor()] (empty types) explicitly opts into the parameterless ctor,
+                // i.e. the initializer strategy. Verify a parameterless public ctor exists (else
+                // FM0047), then defer to the caller's init-vs-fallback precedence so it can emit
+                // FM0071 / FM0069 / FM0068 with the correct specificity. Returning a null
+                // Constructor with AmbiguityReported=false tells the caller "no ctor pick — use
+                // init path".
+                if (specifiedTypes.Count == 0)
+                {
+                    var hasPublicParameterless = publicCtors.Any(c => c.Parameters.Length == 0);
+                    if (!hasPublicParameterless)
+                    {
+                        ReportDiagnosticIfNotSuppressed(context,
+                            DiagnosticDescriptors.SpecifiedConstructorNotFound,
+                            method.Locations.FirstOrDefault(),
+                            destType.Name);
+                        return (null, null, true);
+                    }
+                    return (null, null, false);
+                }
+
                 IMethodSymbol? matchedCtor = null;
                 foreach (var ctor in publicCtors)
                 {
