@@ -83,8 +83,11 @@ internal sealed partial class ForgeCodeEmitter
 
         // FM0066: find a public, readable instance property (the getter itself must be public,
         // not just the property — `public string Name { private get; set; }` would otherwise slip through).
-        var srcProp = sourceType.GetMembers(propertyName!)
-            .OfType<IPropertySymbol>()
+        // Walk the inheritance chain so base-class properties are visible.
+        var srcProp = (sourceType is INamedTypeSymbol srcNamed
+                ? GetMappableProperties(srcNamed)
+                : sourceType.GetMembers().OfType<IPropertySymbol>())
+            .Where(p => p.Name == propertyName)
             .FirstOrDefault(p => !p.IsStatic
                 && p.GetMethod != null
                 && p.DeclaredAccessibility == Accessibility.Public
@@ -230,10 +233,11 @@ internal sealed partial class ForgeCodeEmitter
             return string.Empty;
         }
 
-        // Inventory the destination type:
+        // Inventory the destination type (walk inheritance chain so base-class properties are visible):
         //   - settable/init property of the named member (initializer path)
         //   - public constructor with a parameter of the named member (ctor path)
-        var namedSettable = destNamedType.GetMembers(propertyName!).OfType<IPropertySymbol>()
+        var namedSettable = GetMappableProperties(destNamedType)
+            .Where(p => p.Name == propertyName)
             .FirstOrDefault(p => !p.IsStatic
                 && p.SetMethod != null
                 && p.DeclaredAccessibility == Accessibility.Public
@@ -468,15 +472,23 @@ internal sealed partial class ForgeCodeEmitter
             ? new HashSet<string>(ignoredRequiredMembersFromCtor.Parameters.Select(p => p.Name))
             : new HashSet<string>();
 
-        foreach (var member in destType.GetMembers().OfType<IPropertySymbol>())
+        // Walk the inheritance chain so inherited `required` members are detected.
+        var seen = new HashSet<string>(System.StringComparer.Ordinal);
+        var current = destType;
+        while (current != null && current.SpecialType != SpecialType.System_Object)
         {
-            if (!member.IsRequired) continue;
-            if (member.Name == wrappedMemberName) continue;
-            // Match constructor parameters case-insensitively because parameter names are
-            // conventionally camelCase while properties are PascalCase.
-            if (ctorParamNames.Any(p => string.Equals(p, member.Name, System.StringComparison.OrdinalIgnoreCase)))
-                continue;
-            yield return member.Name;
+            foreach (var member in current.GetMembers().OfType<IPropertySymbol>())
+            {
+                if (!member.IsRequired) continue;
+                if (!seen.Add(member.Name)) continue;
+                if (member.Name == wrappedMemberName) continue;
+                // Match constructor parameters case-insensitively because parameter names are
+                // conventionally camelCase while properties are PascalCase.
+                if (ctorParamNames.Any(p => string.Equals(p, member.Name, System.StringComparison.OrdinalIgnoreCase)))
+                    continue;
+                yield return member.Name;
+            }
+            current = current.BaseType;
         }
     }
 
