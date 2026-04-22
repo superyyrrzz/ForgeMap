@@ -354,6 +354,14 @@ internal sealed partial class ForgeCodeEmitter
             && explicitForgeCtorAttr.ConstructorArguments.Length == 1
             && !explicitForgeCtorAttr.ConstructorArguments[0].IsNull
             && explicitForgeCtorAttr.ConstructorArguments[0].Values.Length > 0;
+        // [ForgeConstructor()] (empty types) means "use parameterless ctor / init strategy" —
+        // unrelated parameterized ctors are out of scope. The FM0069 fallback below must NOT
+        // scan them, otherwise a same-named-but-incompatible param on an unrelated ctor would
+        // emit a bogus FM0069 instead of the real init-path failure.
+        var hasExplicitEmptyForgeConstructor = explicitForgeCtorAttr != null
+            && explicitForgeCtorAttr.ConstructorArguments.Length == 1
+            && !explicitForgeCtorAttr.ConstructorArguments[0].IsNull
+            && explicitForgeCtorAttr.ConstructorArguments[0].Values.Length == 0;
         var deferCtorSelection = preferInit && initStrategyViable && !hasExplicitParameterizedForgeConstructor;
 
         // Strategy: constructor with named parameter — selection uses the wrap-specific
@@ -419,15 +427,18 @@ internal sealed partial class ForgeCodeEmitter
                 // less informative FM0068 ("not found"). Same applies if the init property
                 // matches by name but its type cannot accept the source.
                 IParameterSymbol? typeMismatchParam = null;
-                foreach (var ctor in destNamedType.InstanceConstructors
-                    .Where(c => c.DeclaredAccessibility == Accessibility.Public))
+                if (!hasExplicitEmptyForgeConstructor)
                 {
-                    var match = ctor.Parameters.FirstOrDefault(p =>
-                        string.Equals(p.Name, propertyName!, System.StringComparison.OrdinalIgnoreCase));
-                    if (match != null && !TryCoerceForWrap(sourceType, match.Type, "_", out _))
+                    foreach (var ctor in destNamedType.InstanceConstructors
+                        .Where(c => c.DeclaredAccessibility == Accessibility.Public))
                     {
-                        typeMismatchParam = match;
-                        break;
+                        var match = ctor.Parameters.FirstOrDefault(p =>
+                            string.Equals(p.Name, propertyName!, System.StringComparison.OrdinalIgnoreCase));
+                        if (match != null && !TryCoerceForWrap(sourceType, match.Type, "_", out _))
+                        {
+                            typeMismatchParam = match;
+                            break;
+                        }
                     }
                 }
                 ITypeSymbol? typeMismatchInitType = null;

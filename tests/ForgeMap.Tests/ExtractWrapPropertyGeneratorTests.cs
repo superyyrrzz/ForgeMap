@@ -935,4 +935,36 @@ public partial class M
         Assert.Contains(diagnostics, d => d.Id == "FM0069");
         Assert.DoesNotContain(diagnostics, d => d.Id == "FM0068");
     }
+
+    [Fact]
+    public void Wrap_ExplicitForgeConstructorEmpty_UnrelatedCtorWithSameNameMismatch_DoesNotEmitFM0069()
+    {
+        // [ForgeConstructor()] explicitly opts into the parameterless ctor / init strategy.
+        // An unrelated parameterized ctor with a same-named-but-incompatible parameter must
+        // NOT trigger a bogus FM0069 — that ctor is out of scope for this method.
+        var source = @"
+using ForgeMap;
+using System;
+
+public class Tagged
+{
+    public Tagged() { }
+    public Tagged(Guid scope) { Scope = scope.ToString(); }
+    public string Scope { get; set; } = string.Empty;
+}
+
+[ForgeMap]
+public partial class M
+{
+    [WrapProperty(nameof(Tagged.Scope))]
+    [ForgeConstructor()]
+    public partial Tagged ForgeTagged(string source);
+}";
+        var (diagnostics, trees) = RunGenerator(source);
+        Assert.DoesNotContain(diagnostics, d => d.Id == "FM0069");
+        Assert.DoesNotContain(diagnostics, d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error);
+        var generated = string.Join("\n", trees.Select(t => t.GetText().ToString()));
+        Assert.Contains("new global::Tagged", generated);
+        Assert.Contains("Scope = source", generated);
+    }
 }
