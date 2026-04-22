@@ -74,12 +74,23 @@ internal sealed partial class ForgeCodeEmitter
         SourceProductionContext context)
     {
         var propertyName = GetExtractPropertyName(method);
-        if (string.IsNullOrEmpty(propertyName))
-            return string.Empty;
-
         var sourceParam = method.Parameters[0];
         var sourceType = sourceParam.Type;
         var returnType = method.ReturnType;
+
+        if (string.IsNullOrEmpty(propertyName))
+        {
+            // [ExtractProperty(null)] / [ExtractProperty("")] compiles but leaves the partial
+            // method unimplemented if we silently bail. Surface as FM0066 with a placeholder
+            // name so the user sees an actionable generator error instead of just CS8795.
+            ReportDiagnosticIfNotSuppressed(context,
+                DiagnosticDescriptors.ExtractPropertyNotFound,
+                method.Locations.FirstOrDefault(),
+                propertyName is null ? "<null>" : "<empty>",
+                sourceType.ToDisplayString(),
+                method.Name);
+            return string.Empty;
+        }
 
         // For member lookup, unwrap Nullable<T> — the underlying struct's properties live on T,
         // not Nullable<T>. The null guard below ensures we only access .Value when non-null.
@@ -265,13 +276,24 @@ internal sealed partial class ForgeCodeEmitter
         SourceProductionContext context)
     {
         var propertyName = GetWrapPropertyName(method);
-        if (string.IsNullOrEmpty(propertyName))
-            return string.Empty;
-
         var sourceParam = method.Parameters[0];
         var sourceType = sourceParam.Type;
         var returnType = method.ReturnType;
         var location = method.Locations.FirstOrDefault();
+
+        if (string.IsNullOrEmpty(propertyName))
+        {
+            // [WrapProperty(null)] / [WrapProperty("")] compiles but leaves the partial method
+            // unimplemented if we silently bail. Surface as FM0068 with a placeholder name so
+            // the user sees an actionable generator error instead of just CS8795.
+            ReportDiagnosticIfNotSuppressed(context,
+                DiagnosticDescriptors.WrapPropertyNotFound,
+                location,
+                propertyName is null ? "<null>" : "<empty>",
+                returnType.ToDisplayString(),
+                method.Name);
+            return string.Empty;
+        }
 
         if (returnType is not INamedTypeSymbol destNamedType)
         {

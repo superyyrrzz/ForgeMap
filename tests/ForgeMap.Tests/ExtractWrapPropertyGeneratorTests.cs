@@ -1036,4 +1036,78 @@ public partial class M
         var (diagnostics, _) = RunGenerator(source);
         Assert.Contains(diagnostics, d => d.Id == "FM0068");
     }
+
+    [Fact]
+    public void Extract_NullPropertyName_EmitsFM0066()
+    {
+        // [ExtractProperty(null)] silently bailed out, leaving the partial unimplemented
+        // (CS8795). Surface FM0066 with a <null> placeholder so the real config error is visible.
+        var source = @"
+using ForgeMap;
+
+public class Holder { public string Name { get; set; } = string.Empty; }
+
+[ForgeMap]
+public partial class M
+{
+    [ExtractProperty(null!)]
+    public partial string ExtractName(Holder source);
+}";
+        var (diagnostics, _) = RunGenerator(source);
+        Assert.Contains(diagnostics, d => d.Id == "FM0066");
+    }
+
+    [Fact]
+    public void Extract_EmptyPropertyName_EmitsFM0066()
+    {
+        var source = @"
+using ForgeMap;
+
+public class Holder { public string Name { get; set; } = string.Empty; }
+
+[ForgeMap]
+public partial class M
+{
+    [ExtractProperty("""")]
+    public partial string ExtractName(Holder source);
+}";
+        var (diagnostics, _) = RunGenerator(source);
+        Assert.Contains(diagnostics, d => d.Id == "FM0066");
+    }
+
+    [Fact]
+    public void Wrap_NullPropertyName_EmitsFM0068()
+    {
+        var source = @"
+using ForgeMap;
+
+public class Tagged { public int Scope { get; set; } }
+
+[ForgeMap]
+public partial class M
+{
+    [WrapProperty(null!)]
+    public partial Tagged ForgeTagged(int source);
+}";
+        var (diagnostics, _) = RunGenerator(source);
+        Assert.Contains(diagnostics, d => d.Id == "FM0068");
+    }
+
+    [Fact]
+    public void Wrap_EmptyPropertyName_EmitsFM0068()
+    {
+        var source = @"
+using ForgeMap;
+
+public class Tagged { public int Scope { get; set; } }
+
+[ForgeMap]
+public partial class M
+{
+    [WrapProperty("""")]
+    public partial Tagged ForgeTagged(int source);
+}";
+        var (diagnostics, _) = RunGenerator(source);
+        Assert.Contains(diagnostics, d => d.Id == "FM0068");
+    }
 }
