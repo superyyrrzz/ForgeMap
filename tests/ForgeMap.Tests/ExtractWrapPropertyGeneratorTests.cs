@@ -831,4 +831,24 @@ public partial class M
         var (diagnostics, _) = RunGenerator(source);
         Assert.Contains(diagnostics, d => d.Id == "FM0007");
     }
+
+    [Fact]
+    public void Extract_NullableValueTypeReturn_DoesNotEmitFM0074()
+    {
+        // Returning Nullable<T> can hold null fine — there's no "null collapses to default"
+        // problem. FM0074 must NOT fire just because T is a value type.
+        var source = @"
+using ForgeMap;
+
+public class Holder { public int Id { get; set; } }
+
+[ForgeMap(NullHandling = NullHandling.ReturnNull)]
+public partial class M
+{
+    [ExtractProperty(nameof(Holder.Id))]
+    public partial int? ExtractId(Holder source);
+}";
+        var (diagnostics, _) = RunGenerator(source);
+        Assert.DoesNotContain(diagnostics, d => d.Id == "FM0074");
+    }
 }

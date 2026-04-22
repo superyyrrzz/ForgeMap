@@ -134,16 +134,23 @@ internal sealed partial class ForgeCodeEmitter
             && GetNullableUnderlyingType(returnType) == null
             && !returnType.IsReferenceType)
         {
+            // The destination is the method's return value, not a property — use the return
+            // type's name as the destination "type" and the method name as the destination
+            // "member" so the rendered message ("'<src>.<prop>' mapped to '<retType>.<method>'")
+            // makes the locus of the data loss obvious.
             ReportFM0007(context, method,
                 sourceType.Name, srcProp.Name,
-                method.ContainingType.Name, method.Name);
+                returnType.Name, method.Name);
         }
 
         // FM0074: value-type return under ReturnNull collapses null sources to default.
-        // Only emit when source can be null (reference type or Nullable<T>).
+        // Only emit when source can be null (reference type or Nullable<T>) AND the return is a
+        // non-nullable value type. Nullable<T> returns hold null fine — no collapse, no audit.
         var sourceCanBeNull = sourceType.IsReferenceType
             || sourceType.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T;
-        if (sourceCanBeNull && returnType.IsValueType && _config.NullHandling == 0)
+        var returnIsNonNullableValueType = returnType.IsValueType
+            && GetNullableUnderlyingType(returnType) == null;
+        if (sourceCanBeNull && returnIsNonNullableValueType && _config.NullHandling == 0)
         {
             ReportDiagnosticIfNotSuppressed(context,
                 DiagnosticDescriptors.ExtractWrapValueTypeReturnUnderReturnNull,
@@ -456,10 +463,12 @@ internal sealed partial class ForgeCodeEmitter
             return string.Empty;
         }
 
-        // FM0074: return-type collapse audit.
+        // FM0074: return-type collapse audit. Skip Nullable<T> returns — they hold null fine.
         var sourceCanBeNull = sourceType.IsReferenceType
             || sourceType.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T;
-        if (sourceCanBeNull && returnType.IsValueType && _config.NullHandling == 0)
+        var returnIsNonNullableValueType = returnType.IsValueType
+            && GetNullableUnderlyingType(returnType) == null;
+        if (sourceCanBeNull && returnIsNonNullableValueType && _config.NullHandling == 0)
         {
             ReportDiagnosticIfNotSuppressed(context,
                 DiagnosticDescriptors.ExtractWrapValueTypeReturnUnderReturnNull,
