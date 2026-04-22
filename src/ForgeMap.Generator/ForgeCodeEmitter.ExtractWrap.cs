@@ -274,10 +274,25 @@ internal sealed partial class ForgeCodeEmitter
             && namedSettable != null
             && unsatisfiedRequiredOnInit.Count == 0;
 
+        // Pick strategy per ConstructorPreference and the named-member shape.
+        // 0 = Auto, 1 = PreferParameterless (see ConstructorPreference.cs).
+        bool preferInit;
+        if (_config.ConstructorPreference == 1) // PreferParameterless
+            preferInit = true;
+        else // Auto
+            preferInit = namedSettable != null;
+
+        // Defer constructor selection: when initializer is the preferred-and-viable path, no ctor
+        // is needed, and invoking FindWrapConstructor would incorrectly report FM0013 for ctor
+        // ambiguity that is irrelevant to the chosen path.
+        var deferCtorSelection = preferInit && initStrategyViable;
+
         // Strategy: constructor with named parameter — selection uses the wrap-specific
         // FindWrapConstructor helper, including its tie-break for single-required-param matches
         // and [ForgeConstructor] honoring (FM0047) for explicit ctor picks.
-        var ctorChoice = FindWrapConstructor(destNamedType, propertyName!, sourceType, context, method);
+        var ctorChoice = deferCtorSelection
+            ? default
+            : FindWrapConstructor(destNamedType, propertyName!, sourceType, context, method);
 
         // Ambiguity (FM0013) was already reported by FindWrapConstructor — short-circuit so we
         // don't pile FM0068/FM0071 on top of the same root cause.
@@ -292,14 +307,6 @@ internal sealed partial class ForgeCodeEmitter
         var ctorStrategyViable = ctorChoice.Constructor != null
             && ctorChoice.MatchedParameter != null
             && unsatisfiedRequiredOnCtor.Count == 0;
-
-        // Pick strategy per ConstructorPreference and the named-member shape.
-        // 0 = Auto, 1 = PreferParameterless (see ConstructorPreference.cs).
-        bool preferInit;
-        if (_config.ConstructorPreference == 1) // PreferParameterless
-            preferInit = true;
-        else // Auto
-            preferInit = namedSettable != null;
 
         bool useInit;
         if (preferInit)

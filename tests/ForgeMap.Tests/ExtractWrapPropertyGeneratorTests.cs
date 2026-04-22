@@ -544,4 +544,35 @@ public partial class M
         Assert.Contains("partial string ForgeName(global::Tag source)", generated);
         Assert.DoesNotContain("partial global::Tag ForgeName(string", generated);
     }
+
+    [Fact]
+    public void Wrap_InitializerViable_DoesNotReportFM0013_DespiteCtorAmbiguity()
+    {
+        // Destination has parameterless ctor + settable named property (initializer path viable)
+        // AND multiple ctors with the named param (ctor path ambiguous). The initializer strategy
+        // must be chosen and FM0013 must NOT be reported because no ctor is needed.
+        var source = @"
+using ForgeMap;
+
+public class Tagged
+{
+    public Tagged() { }
+    public Tagged(string scope) { Scope = scope; }
+    public Tagged(string scope, int unused = 0) { Scope = scope; }
+    public string Scope { get; set; } = """";
+}
+
+[ForgeMap]
+public partial class M
+{
+    [WrapProperty(nameof(Tagged.Scope))]
+    public partial Tagged ForgeTagged(string source);
+}";
+        var (diagnostics, trees) = RunGenerator(source);
+        Assert.DoesNotContain(diagnostics, d => d.Id == "FM0013");
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        var generated = string.Join("\n", trees.Select(t => t.GetText().ToString()));
+        Assert.Contains("new global::Tagged", generated);
+        Assert.Contains("Scope = source", generated);
+    }
 }
