@@ -255,6 +255,17 @@ internal sealed partial class ForgeCodeEmitter
             return string.Empty;
         }
 
+        // Abstract destinations cannot be instantiated via `new T(...)` or `new T { ... }`,
+        // so neither wrap strategy can produce compilable code. Surface as FM0068 rather than
+        // emitting an uncompilable `new AbstractType(...)`.
+        if (destNamedType.IsAbstract)
+        {
+            ReportDiagnosticIfNotSuppressed(context,
+                DiagnosticDescriptors.WrapPropertyNotFound,
+                location, propertyName!, destNamedType.ToDisplayString(), method.Name);
+            return string.Empty;
+        }
+
         // Inventory the destination type (walk inheritance chain so base-class properties are visible):
         //   - settable/init property of the named member (initializer path)
         //   - public constructor with a parameter of the named member (ctor path)

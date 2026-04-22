@@ -633,4 +633,30 @@ public partial class M
         Assert.Contains(diagnostics, d => d.Id == "FM0069");
         Assert.DoesNotContain(diagnostics, d => d.Id == "FM0068");
     }
+
+    [Fact]
+    public void Wrap_AbstractDestination_EmitsFM0068_NotUncompilableCode()
+    {
+        // Abstract types cannot be instantiated via `new T(...)` or `new T { ... }`.
+        // The wrap path must surface FM0068 instead of emitting uncompilable code.
+        var source = @"
+using ForgeMap;
+
+public abstract class Tagged
+{
+    public Tagged(string scope) { Scope = scope; }
+    public string Scope { get; set; } = """";
+}
+
+[ForgeMap]
+public partial class M
+{
+    [WrapProperty(nameof(Tagged.Scope))]
+    public partial Tagged ForgeTagged(string source);
+}";
+        var (diagnostics, trees) = RunGenerator(source);
+        Assert.Contains(diagnostics, d => d.Id == "FM0068");
+        var generated = string.Join("\n", trees.Select(t => t.GetText().ToString()));
+        Assert.DoesNotContain("new global::Tagged", generated);
+    }
 }
