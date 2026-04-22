@@ -426,6 +426,11 @@ internal sealed partial class ForgeCodeEmitter
                 // type incompatibility — emit FM0069 with the specific types instead of the
                 // less informative FM0068 ("not found"). Same applies if the init property
                 // matches by name but its type cannot accept the source.
+                // Only consider ctors that would otherwise be viable single-arg-wrap candidates
+                // (all other params optional/defaulted). A ctor with extra REQUIRED parameters
+                // is not a wrap candidate at all, so a same-named-but-incompatible param on
+                // such a ctor is irrelevant — citing it would send users chasing a phantom
+                // "type incompatible" error when the real issue is elsewhere.
                 IParameterSymbol? typeMismatchParam = null;
                 if (!hasExplicitEmptyForgeConstructor)
                 {
@@ -434,7 +439,11 @@ internal sealed partial class ForgeCodeEmitter
                     {
                         var match = ctor.Parameters.FirstOrDefault(p =>
                             string.Equals(p.Name, propertyName!, System.StringComparison.OrdinalIgnoreCase));
-                        if (match != null && !TryCoerceForWrap(sourceType, match.Type, "_", out _))
+                        if (match == null) continue;
+                        var allOthersOptional = ctor.Parameters.All(p =>
+                            ReferenceEquals(p, match) || p.HasExplicitDefaultValue || p.IsOptional);
+                        if (!allOthersOptional) continue;
+                        if (!TryCoerceForWrap(sourceType, match.Type, "_", out _))
                         {
                             typeMismatchParam = match;
                             break;

@@ -967,4 +967,31 @@ public partial class M
         Assert.Contains("new global::Tagged", generated);
         Assert.Contains("Scope = source", generated);
     }
+
+    [Fact]
+    public void Wrap_NonViableCtorWithSameNameMismatch_DoesNotEmitFM0069_EmitsFM0068()
+    {
+        // A ctor that has a same-named-but-incompatible parameter is irrelevant when it ALSO
+        // has other REQUIRED parameters (so it could never be a single-arg wrap candidate).
+        // Reporting FM0069 against such a ctor would mislead users — emit FM0068 instead.
+        var source = @"
+using ForgeMap;
+
+public class Tagged
+{
+    public Tagged(int scope, string other) { Scope = scope; Other = other; }
+    public int Scope { get; }
+    public string Other { get; }
+}
+
+[ForgeMap]
+public partial class M
+{
+    [WrapProperty(nameof(Tagged.Scope))]
+    public partial Tagged ForgeTagged(string source);
+}";
+        var (diagnostics, _) = RunGenerator(source);
+        Assert.DoesNotContain(diagnostics, d => d.Id == "FM0069");
+        Assert.Contains(diagnostics, d => d.Id == "FM0068");
+    }
 }
