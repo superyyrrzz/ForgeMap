@@ -81,12 +81,14 @@ internal sealed partial class ForgeCodeEmitter
         var sourceType = sourceParam.Type;
         var returnType = method.ReturnType;
 
-        // FM0066: find a public, readable instance property
+        // FM0066: find a public, readable instance property (the getter itself must be public,
+        // not just the property — `public string Name { private get; set; }` would otherwise slip through).
         var srcProp = sourceType.GetMembers(propertyName!)
             .OfType<IPropertySymbol>()
             .FirstOrDefault(p => !p.IsStatic
                 && p.GetMethod != null
-                && p.DeclaredAccessibility == Accessibility.Public);
+                && p.DeclaredAccessibility == Accessibility.Public
+                && p.GetMethod.DeclaredAccessibility == Accessibility.Public);
 
         if (srcProp == null)
         {
@@ -231,10 +233,13 @@ internal sealed partial class ForgeCodeEmitter
         // Inventory the destination type:
         //   - settable/init property of the named member (initializer path)
         //   - public constructor with a parameter of the named member (ctor path)
+        // The setter (set or init) itself must be public — `public string Name { get; private set; }`
+        // would otherwise be treated as writable and produce uncompilable initializer code.
         var namedSettable = destNamedType.GetMembers(propertyName!).OfType<IPropertySymbol>()
             .FirstOrDefault(p => !p.IsStatic
                 && p.SetMethod != null
-                && p.DeclaredAccessibility == Accessibility.Public);
+                && p.DeclaredAccessibility == Accessibility.Public
+                && p.SetMethod.DeclaredAccessibility == Accessibility.Public);
         var namedReadable = destNamedType.GetMembers(propertyName!).OfType<IPropertySymbol>()
             .FirstOrDefault(p => !p.IsStatic
                 && p.GetMethod != null
@@ -368,6 +373,14 @@ internal sealed partial class ForgeCodeEmitter
         if (CanAssign(sourceParamType, sinkType))
         {
             expression = rawAccess;
+            return true;
+        }
+
+        // DateTime → DateTimeOffset (mirror of TryCoerceForExtract's DateTimeOffset → DateTime).
+        if (sourceParamType.SpecialType == SpecialType.System_DateTime
+            && sinkType.ToDisplayString() == "System.DateTimeOffset")
+        {
+            expression = $"new global::System.DateTimeOffset({rawAccess})";
             return true;
         }
 
