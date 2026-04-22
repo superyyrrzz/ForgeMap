@@ -274,8 +274,9 @@ internal sealed partial class ForgeCodeEmitter
             && namedSettable != null
             && unsatisfiedRequiredOnInit.Count == 0;
 
-        // Strategy: constructor with named parameter — selection delegated to existing pipeline,
-        // with the wrap-specific tie-break for single-required-param matches.
+        // Strategy: constructor with named parameter — selection uses the wrap-specific
+        // FindWrapConstructor helper, including its tie-break for single-required-param matches
+        // and [ForgeConstructor] honoring (FM0047) for explicit ctor picks.
         var ctorChoice = FindWrapConstructor(destNamedType, propertyName!, sourceType, context, method);
 
         // Ambiguity (FM0013) was already reported by FindWrapConstructor — short-circuit so we
@@ -549,9 +550,15 @@ internal sealed partial class ForgeCodeEmitter
 
     /// <summary>
     /// Wrap-specific constructor selection.
-    /// 1. If a public constructor exists whose only required parameter (or only parameter) matches
-    ///    <paramref name="namedMember"/> case-insensitively AND can accept the wrap source type
-    ///    via TryCoerceForWrap, prefer it (this is the wrap-specific FM0013 tie-break, spec line 511).
+    /// 0. If the method carries [ForgeConstructor], honor it: locate the ctor matching the
+    ///    declared parameter types (FM0047 if not found). The matched ctor must still contain
+    ///    a parameter named <paramref name="namedMember"/> (case-insensitive); if not, return
+    ///    Empty so the caller can emit FM0068. This mirrors the v1.6 ResolveConstructor path
+    ///    so [ForgeConstructor] / FM0047 behavior is consistent across the generator.
+    /// 1. Otherwise, if a public constructor exists whose only required parameter (or only
+    ///    parameter) matches <paramref name="namedMember"/> case-insensitively AND can accept
+    ///    the wrap source type via TryCoerceForWrap, prefer it (wrap-specific FM0013 tie-break,
+    ///    spec line 511).
     /// 2. Otherwise, scan public constructors that have a parameter named <paramref name="namedMember"/>
     ///    where every other parameter has a default. If exactly one such constructor exists, return it.
     ///    If multiple exist, defer to the established FM0013 ambiguity behavior (this method emits FM0013).
@@ -567,6 +574,64 @@ internal sealed partial class ForgeCodeEmitter
         var publicCtors = destType.InstanceConstructors
             .Where(c => c.DeclaredAccessibility == Accessibility.Public)
             .ToList();
+
+        // Step 0: honor [ForgeConstructor] if present (mirrors ResolveConstructor's contract
+        // for FM0047 / explicit ctor pick — keeps WrapProperty consistent with the rest of
+        // the generator per spec line 511).
+        var forgeConstructorAttr = _forgeConstructorAttributeSymbol != null
+            ? method.GetAttributes().FirstOrDefault(a =>
+                SymbolEqualityComparer.Default.Equals(a.AttributeClass, _forgeConstructorAttributeSymbol))
+            : null;
+        if (forgeConstructorAttr != null)
+        {
+            IReadOnlyList<TypedConstant>? specifiedTypes = null;
+            var ctorArgs = forgeConstructorAttr.ConstructorArguments;
+            if (ctorArgs.Length > 0 && ctorArgs[0].Kind == TypedConstantKind.Array)
+                specifiedTypes = ctorArgs[0].Values;
+
+            if (specifiedTypes != null)
+            {
+                IMethodSymbol? matchedCtor = null;
+                foreach (var ctor in publicCtors)
+                {
+                    if (ctor.Parameters.Length != specifiedTypes.Count) continue;
+                    var match = true;
+                    for (int i = 0; i < ctor.Parameters.Length; i++)
+                    {
+                        var specType = specifiedTypes[i].Value as ITypeSymbol;
+                        if (specType == null
+                            || !SymbolEqualityComparer.Default.Equals(ctor.Parameters[i].Type, specType))
+                        {
+                            match = false;
+                            break;
+                        }
+                    }
+                    if (match) { matchedCtor = ctor; break; }
+                }
+
+                if (matchedCtor == null)
+                {
+                    ReportDiagnosticIfNotSuppressed(context,
+                        DiagnosticDescriptors.SpecifiedConstructorNotFound,
+                        method.Locations.FirstOrDefault(),
+                        destType.Name);
+                    // AmbiguityReported=true so caller short-circuits — FM0047 already
+                    // explains the failure; piling FM0068/FM0071 on top adds noise.
+                    return (null, null, true);
+                }
+
+                // Selected ctor must still expose a parameter for the wrapped member, otherwise
+                // there is no place to bind `source`. Caller emits FM0068 in that case.
+                var matchedParam = matchedCtor.Parameters.FirstOrDefault(p =>
+                    string.Equals(p.Name, namedMember, System.StringComparison.OrdinalIgnoreCase));
+                if (matchedParam == null
+                    || !TryCoerceForWrap(wrapSourceType, matchedParam.Type, "_", out _))
+                {
+                    return (null, null, false);
+                }
+                return (matchedCtor, matchedParam, false);
+            }
+        }
 
         // Tie-break: prefer the unique single-value-wrap ctor.
         var singleValueCandidates = new List<(IMethodSymbol Ctor, IParameterSymbol Param)>();
