@@ -81,12 +81,17 @@ internal sealed partial class ForgeCodeEmitter
         var sourceType = sourceParam.Type;
         var returnType = method.ReturnType;
 
+        // For member lookup, unwrap Nullable<T> — the underlying struct's properties live on T,
+        // not Nullable<T>. The null guard below ensures we only access .Value when non-null.
+        var sourceUnderlying = GetNullableUnderlyingType(sourceType);
+        var memberLookupType = sourceUnderlying ?? sourceType;
+
         // FM0066: find a public, readable instance property (the getter itself must be public,
         // not just the property — `public string Name { private get; set; }` would otherwise slip through).
         // Walk the inheritance chain so base-class properties are visible.
-        var srcProp = (sourceType is INamedTypeSymbol srcNamed
+        var srcProp = (memberLookupType is INamedTypeSymbol srcNamed
                 ? GetMappableProperties(srcNamed)
-                : sourceType.GetMembers().OfType<IPropertySymbol>())
+                : memberLookupType.GetMembers().OfType<IPropertySymbol>())
             .Where(p => p.Name == propertyName)
             .FirstOrDefault(p => !p.IsStatic
                 && p.GetMethod != null
@@ -105,7 +110,11 @@ internal sealed partial class ForgeCodeEmitter
         }
 
         // FM0067: type compatibility — direct, then built-in coercions.
-        var rawAccess = $"{sourceParam.Name}.{srcProp.Name}";
+        // For Nullable<T> source, dereference via .Value (safe after the null guard).
+        var accessRoot = sourceUnderlying != null
+            ? $"{sourceParam.Name}!.Value"
+            : sourceParam.Name;
+        var rawAccess = $"{accessRoot}.{srcProp.Name}";
         if (!TryCoerceForExtract(srcProp.Type, returnType, rawAccess, out var returnExpression))
         {
             ReportDiagnosticIfNotSuppressed(context,
@@ -166,6 +175,15 @@ internal sealed partial class ForgeCodeEmitter
         // 1) Direct assignability (covers nullability widening/narrowing and Nullable<T> ↔ T).
         if (CanAssign(sourcePropType, targetType))
         {
+            // Special-case Nullable<T> → T: emitting raw access would fail to compile.
+            // Use .GetValueOrDefault() so the lifted access is well-formed; callers that
+            // need exception semantics can layer their own null check upstream.
+            var srcUnderlying = GetNullableUnderlyingType(sourcePropType);
+            if (srcUnderlying != null && GetNullableUnderlyingType(targetType) == null)
+            {
+                expression = $"{rawAccess}.GetValueOrDefault()";
+                return true;
+            }
             expression = rawAccess;
             return true;
         }
@@ -370,6 +388,13 @@ internal sealed partial class ForgeCodeEmitter
     {
         if (CanAssign(sourceParamType, sinkType))
         {
+            // Nullable<T> → T: raw access doesn't compile.
+            var srcUnderlying = GetNullableUnderlyingType(sourceParamType);
+            if (srcUnderlying != null && GetNullableUnderlyingType(sinkType) == null)
+            {
+                expression = $"{rawAccess}.GetValueOrDefault()";
+                return true;
+            }
             expression = rawAccess;
             return true;
         }
@@ -473,20 +498,32 @@ internal sealed partial class ForgeCodeEmitter
             : new HashSet<string>();
 
         // Walk the inheritance chain so inherited `required` members are detected.
+        // C# 11 `required` applies to both properties AND fields, so check both.
         var seen = new HashSet<string>(System.StringComparer.Ordinal);
         var current = destType;
         while (current != null && current.SpecialType != SpecialType.System_Object)
         {
-            foreach (var member in current.GetMembers().OfType<IPropertySymbol>())
+            foreach (var member in current.GetMembers())
             {
-                if (!member.IsRequired) continue;
-                if (!seen.Add(member.Name)) continue;
-                if (member.Name == wrappedMemberName) continue;
+                string memberName;
+                switch (member)
+                {
+                    case IPropertySymbol p when p.IsRequired:
+                        memberName = p.Name;
+                        break;
+                    case IFieldSymbol f when f.IsRequired:
+                        memberName = f.Name;
+                        break;
+                    default:
+                        continue;
+                }
+                if (!seen.Add(memberName)) continue;
+                if (memberName == wrappedMemberName) continue;
                 // Match constructor parameters case-insensitively because parameter names are
-                // conventionally camelCase while properties are PascalCase.
-                if (ctorParamNames.Any(p => string.Equals(p, member.Name, System.StringComparison.OrdinalIgnoreCase)))
+                // conventionally camelCase while members are commonly PascalCase.
+                if (ctorParamNames.Any(p => string.Equals(p, memberName, System.StringComparison.OrdinalIgnoreCase)))
                     continue;
-                yield return member.Name;
+                yield return memberName;
             }
             current = current.BaseType;
         }

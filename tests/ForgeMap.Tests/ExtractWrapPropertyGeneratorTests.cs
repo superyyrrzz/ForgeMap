@@ -155,7 +155,7 @@ public partial class M
     }
 
     [Fact]
-    public void Extract_VoidReturn_EmitsFM0070()
+    public void Extract_VoidReturn_NoBodyEmitted_DefersToCS8795()
     {
         var source = @"
 using ForgeMap;
@@ -369,7 +369,7 @@ public partial class M
     }
 
     [Fact]
-    public void Wrap_VoidReturn_EmitsFM0070()
+    public void Wrap_VoidReturn_NoBodyEmitted_DefersToCS8795()
     {
         var source = @"
 using ForgeMap;
