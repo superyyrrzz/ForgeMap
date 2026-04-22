@@ -126,13 +126,21 @@ internal sealed partial class ForgeCodeEmitter
             return string.Empty;
         }
 
-        // FM0007: warn when extracting a Nullable<T> property into a non-nullable return type.
-        // TryCoerceForExtract emits .GetValueOrDefault() to keep the generated code compiling,
-        // but null silently becomes default(T) — surface that to the user the same way
-        // PropertyAssignment does for nullable-to-non-nullable property mappings.
-        if (GetNullableUnderlyingType(srcProp.Type) != null
-            && GetNullableUnderlyingType(returnType) == null
-            && !returnType.IsReferenceType)
+        // FM0007: warn when extracting a nullable source into a non-nullable destination.
+        // Two shapes:
+        //   * Nullable<T> property → non-nullable T return (TryCoerceForExtract emits
+        //     .GetValueOrDefault(), so null silently becomes default(T)).
+        //   * Nullable reference (string?) property → non-nullable reference (string) return
+        //     (the raw access compiles but the user's generated code triggers CS8603).
+        // Mirror PropertyAssignment's behavior so users get the same warning either way.
+        var srcIsNullableValue = GetNullableUnderlyingType(srcProp.Type) != null;
+        var dstIsNonNullableValue = GetNullableUnderlyingType(returnType) == null && !returnType.IsReferenceType;
+        var srcIsNullableRef = srcProp.Type.IsReferenceType
+            && srcProp.Type.NullableAnnotation == NullableAnnotation.Annotated;
+        var dstIsNonNullableRef = returnType.IsReferenceType
+            && returnType.NullableAnnotation == NullableAnnotation.NotAnnotated;
+        if ((srcIsNullableValue && dstIsNonNullableValue)
+            || (srcIsNullableRef && dstIsNonNullableRef))
         {
             // The destination is the method's return value, not a property — use the return
             // type's name as the destination "type" and the method name as the destination

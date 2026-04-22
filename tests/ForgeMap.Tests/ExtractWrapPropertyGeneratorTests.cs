@@ -994,4 +994,26 @@ public partial class M
         Assert.DoesNotContain(diagnostics, d => d.Id == "FM0069");
         Assert.Contains(diagnostics, d => d.Id == "FM0068");
     }
+
+    [Fact]
+    public void Extract_NullableReferencePropertyToNonNullableReturn_EmitsFM0007()
+    {
+        // Extracting a nullable-reference property (string?) into a non-nullable reference
+        // return (string) compiles but generates CS8603 in the user's code. Surface that as
+        // FM0007 so the data-loss is visible, mirroring the Nullable<T>→T behavior.
+        var source = @"
+#nullable enable
+using ForgeMap;
+
+public class Holder { public string? Name { get; set; } }
+
+[ForgeMap]
+public partial class M
+{
+    [ExtractProperty(nameof(Holder.Name))]
+    public partial string ExtractName(Holder source);
+}";
+        var (diagnostics, _) = RunGenerator(source);
+        Assert.Contains(diagnostics, d => d.Id == "FM0007");
+    }
 }
