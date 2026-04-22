@@ -376,11 +376,14 @@ internal sealed partial class ForgeCodeEmitter
             return true;
         }
 
-        // DateTime → DateTimeOffset (mirror of TryCoerceForExtract's DateTimeOffset → DateTime).
+        // DateTime → DateTimeOffset (mirror of TryCoerceForExtract's DateTimeOffset → DateTime,
+        // which normalizes via .UtcDateTime). Treat the input DateTime as UTC so the round-trip
+        // is offset-invariant — `new DateTimeOffset(dt)` would interpret Unspecified/Local Kind
+        // as local time and silently shift the instant.
         if (sourceParamType.SpecialType == SpecialType.System_DateTime
             && sinkType.ToDisplayString() == "System.DateTimeOffset")
         {
-            expression = $"new global::System.DateTimeOffset({rawAccess})";
+            expression = $"new global::System.DateTimeOffset(global::System.DateTime.SpecifyKind({rawAccess}, global::System.DateTimeKind.Utc))";
             return true;
         }
 
