@@ -507,8 +507,8 @@ internal static class DiagnosticDescriptors
 
     public static readonly DiagnosticDescriptor ExtractWrapConflictsWithMethodAttributes = new(
         id: "FM0065",
-        title: "[ExtractProperty]/[WrapProperty] cannot combine with [ConvertWith], [ForgeFrom], [ForgeWith], or [ForgeProperty]",
-        messageFormat: "Method '{0}' has conflicting attributes: [ExtractProperty]/[WrapProperty] cannot combine with [ConvertWith], [ForgeFrom], [ForgeWith], or [ForgeProperty]",
+        title: "[ExtractProperty] and [WrapProperty] are mutually exclusive and cannot combine with [ConvertWith], [ForgeFrom], [ForgeWith], or [ForgeProperty]",
+        messageFormat: "Method '{0}' has conflicting attributes: [ExtractProperty] and [WrapProperty] are mutually exclusive on the same method, and neither can combine with [ConvertWith], [ForgeFrom], [ForgeWith], or [ForgeProperty]",
         category: Category,
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true);

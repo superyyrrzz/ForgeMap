@@ -620,14 +620,16 @@ internal sealed partial class ForgeCodeEmitter
                     return (null, null, true);
                 }
 
-                // Selected ctor must still expose a parameter for the wrapped member, otherwise
-                // there is no place to bind `source`. Caller emits FM0068 in that case.
+                // Explicit [ForgeConstructor] selection must fully govern wrap resolution: if the
+                // chosen ctor cannot bind the wrapped member or accept the wrap source type, hard-fail
+                // (AmbiguityReported=true) so the caller does not silently fall back to a different
+                // ctor or the initializer strategy. FM0047 already explained the explicit pick.
                 var matchedParam = matchedCtor.Parameters.FirstOrDefault(p =>
                     string.Equals(p.Name, namedMember, System.StringComparison.OrdinalIgnoreCase));
                 if (matchedParam == null
                     || !TryCoerceForWrap(wrapSourceType, matchedParam.Type, "_", out _))
                 {
-                    return (null, null, false);
+                    return (null, null, true);
                 }
                 return (matchedCtor, matchedParam, false);
             }
