@@ -575,4 +575,37 @@ public partial class M
         Assert.Contains("new global::Tagged", generated);
         Assert.Contains("Scope = source", generated);
     }
+
+    [Fact]
+    public void Wrap_ForgeConstructorParameterless_WithViableInit_UsesInitializer()
+    {
+        // [ForgeConstructor()] explicitly selects the parameterless ctor (per attribute docs:
+        // "Pass an empty array to explicitly select the parameterless constructor"). When the
+        // initializer strategy is viable (settable named property + parameterless ctor),
+        // FindWrapConstructor must not be invoked at all (deferral), so no FM0068 is reported
+        // and the initializer body is emitted.
+        var source = @"
+using ForgeMap;
+
+public class Tagged
+{
+    public Tagged() { }
+    public Tagged(string scope, int extra) { Scope = scope; }
+    public string Scope { get; set; } = """";
+}
+
+[ForgeMap]
+public partial class M
+{
+    [WrapProperty(nameof(Tagged.Scope))]
+    [ForgeConstructor()]
+    public partial Tagged ForgeTagged(string source);
+}";
+        var (diagnostics, trees) = RunGenerator(source);
+        Assert.DoesNotContain(diagnostics, d => d.Id == "FM0068");
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        var generated = string.Join("\n", trees.Select(t => t.GetText().ToString()));
+        Assert.Contains("new global::Tagged", generated);
+        Assert.Contains("Scope = source", generated);
+    }
 }
