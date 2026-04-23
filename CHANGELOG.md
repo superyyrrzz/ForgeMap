@@ -1,5 +1,43 @@
 # Changelog
 
+## v1.7.0
+
+Closes three AutoMapper-parity gaps surfaced by the Duende.IdentityServer.Admin migration analysis (#125, #126, #127).
+
+### New Features
+
+- **Per-property LINQ projection (`SelectProperty`)** (#136) — New `ForgePropertyAttribute.SelectProperty` named property emits `source.Src?.Select(x => x.<member>).To<TDest>()` for the targeted property, eliminating the `[ForgeFrom]` boilerplate previously required for join-table-entity → primitive-collection mappings (e.g., `List<ApiResourceClaim>` → `List<string>`). Composes with v1.5 collection coercion and v1.6 string↔enum / built-in coercions on the projected element. Mutually exclusive with `ConvertWith`/`ConvertWithType` and `[ForgeFrom]`/`[ForgeWith]`. Adds FM0055–FM0059, FM0072, FM0073, and FM0075.
+
+- **Conditional property assignment (`Condition` / `SkipWhen`)** (#137) — `ForgePropertyAttribute.Condition` and `SkipWhen` accept a predicate method name (`bool Predicate(TSource)` or `bool Predicate(TSource, TDestination)`) that gates whether the destination property is assigned. `SkipWhen` is the inverse of `Condition`; the two are mutually exclusive. Emits an `if` guard around the assignment so the destination retains its existing value when the predicate fails — ideal for nullable update DTOs that should not overwrite populated fields. Not supported on init-only or constructor-bound members. Adds FM0060–FM0064.
+
+- **Entity↔primitive mapping (`[ExtractProperty]` / `[WrapProperty]`)** (#138) — Two new method-level attributes generate single-element projections between entity types and their primitive payloads. `[ExtractProperty(nameof(Source.Member))]` emits `source?.Member` (or value-type equivalent under the active `NullPropertyHandling`); `[WrapProperty(nameof(Dest.Member))]` wraps the source into `TDest` using either an object-initializer form (e.g. `new TDest { Member = source }`) or a constructor-based form, depending on destination member shape and constructor selection (`ConstructorPreference`/`[ForgeConstructor]`), with required-members validation. Complements `SelectProperty` for the single-element case. Mutually exclusive with `[ForgeFrom]`/`[ForgeWith]`/`[ConvertWith]` on the same method. Adds FM0065–FM0071 and FM0074.
+
+### New Diagnostics
+
+| Rule ID | Severity | Description |
+|---------|----------|-------------|
+| FM0055 | Error | `SelectProperty` source is not enumerable |
+| FM0056 | Error | `SelectProperty` member not found on source element type |
+| FM0057 | Error | `SelectProperty` element type incompatible with destination element type |
+| FM0058 | Error | `SelectProperty` conflicts with `ConvertWith`/`ConvertWithType` |
+| FM0059 | Disabled | `SelectProperty` projection applied |
+| FM0060 | Error | `Condition` and `SkipWhen` cannot both be set |
+| FM0061 | Error | Conditional predicate method invalid (not found / wrong signature / not bool-returning) |
+| FM0062 | Error | Conditional assignment not supported on init-only or constructor-bound members |
+| FM0063 | Error | Conditional assignment conflicts with `[ForgeFrom]`/`[ForgeWith]` |
+| FM0064 | Disabled | Conditional assignment applied |
+| FM0065 | Error | `[ExtractProperty]`/`[WrapProperty]` conflicts with `[ForgeFrom]`/`[ForgeWith]`/`[ConvertWith]` |
+| FM0066 | Error | `[ExtractProperty]` member not found on source |
+| FM0067 | Error | `[ExtractProperty]` member type incompatible with method return type |
+| FM0068 | Error | `[WrapProperty]` member not found on destination |
+| FM0069 | Error | `[WrapProperty]` member type incompatible with method parameter type |
+| FM0070 | Error | `[ExtractProperty]`/`[WrapProperty]` invalid method signature |
+| FM0071 | Error | `[WrapProperty]` destination has unsatisfied required members |
+| FM0072 | Error | `SelectProperty` conflicts with `[ForgeFrom]`/`[ForgeWith]` |
+| FM0073 | Error | `SelectProperty` destination is not enumerable |
+| FM0074 | Disabled | `[ExtractProperty]`/`[WrapProperty]` value-type return under `ReturnNull` |
+| FM0075 | Warning | `SelectProperty` not supported on `ForgeInto` methods |
+
 ## v1.6.0
 
 ### New Features
