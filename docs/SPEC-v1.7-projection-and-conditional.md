@@ -6,9 +6,9 @@ v1.7 closes three AutoMapper-parity gaps surfaced by the [Duende.IdentityServer.
 
 | # | Feature | Issue | Effort | Status |
 |---|---------|-------|--------|--------|
-| 1 | Per-property LINQ projection (`SelectProperty`) | [#125](https://github.com/superyyrrzz/ForgeMap/issues/125) | Low | Planned |
+| 1 | Per-property LINQ projection (`SelectProperty`) | [#125](https://github.com/superyyrrzz/ForgeMap/issues/125) | Low | Implemented |
 | 2 | Conditional property assignment (`Condition`, `SkipWhen`) | [#126](https://github.com/superyyrrzz/ForgeMap/issues/126) | Medium | Implemented |
-| 3 | Entity↔primitive mapping (`[ExtractProperty]`, `[WrapProperty]`) | [#127](https://github.com/superyyrrzz/ForgeMap/issues/127) | Medium | Planned |
+| 3 | Entity↔primitive mapping (`[ExtractProperty]`, `[WrapProperty]`) | [#127](https://github.com/superyyrrzz/ForgeMap/issues/127) | Medium | Implemented |
 
 Features 1 and 3 compose naturally: `SelectProperty` extracts a primitive from each element in a collection, while `[ExtractProperty]` / `[WrapProperty]` handle the single-element case. Both target the same join-table-entity pattern from opposite ends.
 

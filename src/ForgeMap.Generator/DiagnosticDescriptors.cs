@@ -505,6 +505,70 @@ internal static class DiagnosticDescriptors
         defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
 
+    public static readonly DiagnosticDescriptor ExtractWrapConflictsWithMethodAttributes = new(
+        id: "FM0065",
+        title: "[ExtractProperty] and [WrapProperty] are mutually exclusive and cannot combine with [ConvertWith], [ForgeFrom], [ForgeWith], or [ForgeProperty]",
+        messageFormat: "Method '{0}' has conflicting attributes: [ExtractProperty] and [WrapProperty] are mutually exclusive on the same method, and neither can combine with [ConvertWith], [ForgeFrom], [ForgeWith], or [ForgeProperty]",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor ExtractPropertyNotFound = new(
+        id: "FM0066",
+        title: "[ExtractProperty] target property not found on source type",
+        messageFormat: "[ExtractProperty(\"{0}\")] not found on source type '{1}' for method '{2}', or not a public readable instance property",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor ExtractPropertyTypeIncompatible = new(
+        id: "FM0067",
+        title: "[ExtractProperty] source property type incompatible with method return type",
+        messageFormat: "[ExtractProperty] source property type '{0}' is incompatible with method return type '{1}' for method '{2}', and no supported coercion applies",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor WrapPropertyNotFound = new(
+        id: "FM0068",
+        title: "[WrapProperty] no viable target on destination type",
+        messageFormat: "[WrapProperty(\"{0}\")] on destination type '{1}' for method '{2}' has no viable wrap strategy: it must be either a public settable/init property on a type with a public parameterless constructor, or a constructor parameter",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor WrapPropertyTypeIncompatible = new(
+        id: "FM0069",
+        title: "[WrapProperty] source parameter type incompatible with destination property/parameter type",
+        messageFormat: "[WrapProperty] source parameter type '{0}' is incompatible with destination property/parameter type '{1}' for method '{2}', and no supported coercion applies",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor ExtractWrapInvalidSignature = new(
+        id: "FM0070",
+        title: "[ExtractProperty]/[WrapProperty] partial method has invalid signature",
+        messageFormat: "[ExtractProperty]/[WrapProperty] partial method '{0}' has invalid signature — must have exactly one parameter and a non-void return type",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor WrapPropertyRequiredMembersUnsatisfied = new(
+        id: "FM0071",
+        title: "[WrapProperty] cannot satisfy required members of destination type",
+        messageFormat: "[WrapProperty] cannot construct '{0}' because these required members are unsatisfied: {1}. Add a constructor that accepts these members, mark them init without required, or write the partial body manually.",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor ExtractWrapValueTypeReturnUnderReturnNull = new(
+        id: "FM0074",
+        title: "[ExtractProperty]/[WrapProperty] value-type return under NullHandling.ReturnNull collapses null source to default",
+        messageFormat: "[ExtractProperty]/[WrapProperty] method '{0}' returns value type '{1}' under NullHandling.ReturnNull; null sources will collapse to default({1}). Audit and consider NullHandling.ThrowException or a nullable return type if the distinction matters.",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Info,
+        isEnabledByDefault: false);
+
     public static readonly DiagnosticDescriptor ConditionAndSkipWhenBothSet = new(
         id: "FM0060",
         title: "Condition and SkipWhen are mutually exclusive",

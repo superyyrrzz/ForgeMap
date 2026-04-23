@@ -24,6 +24,8 @@ internal sealed partial class ForgeCodeEmitter
     private readonly INamedTypeSymbol? _convertWithAttributeSymbol;
     private readonly INamedTypeSymbol? _useExistingValueAttributeSymbol;
     private readonly INamedTypeSymbol? _forgeConstructorAttributeSymbol;
+    private readonly INamedTypeSymbol? _extractPropertyAttributeSymbol;
+    private readonly INamedTypeSymbol? _wrapPropertyAttributeSymbol;
     private readonly INamedTypeSymbol? _iTypeConverterOpenSymbol;
     private readonly INamedTypeSymbol? _iServiceProviderSymbol;
     private readonly INamedTypeSymbol? _iServiceScopeFactorySymbol;
@@ -88,6 +90,8 @@ internal sealed partial class ForgeCodeEmitter
         _convertWithAttributeSymbol = compilation.GetTypeByMetadataName("ForgeMap.ConvertWithAttribute");
         _useExistingValueAttributeSymbol = compilation.GetTypeByMetadataName("ForgeMap.UseExistingValueAttribute");
         _forgeConstructorAttributeSymbol = compilation.GetTypeByMetadataName("ForgeMap.ForgeConstructorAttribute");
+        _extractPropertyAttributeSymbol = compilation.GetTypeByMetadataName("ForgeMap.ExtractPropertyAttribute");
+        _wrapPropertyAttributeSymbol = compilation.GetTypeByMetadataName("ForgeMap.WrapPropertyAttribute");
         _iTypeConverterOpenSymbol = compilation.GetTypeByMetadataName("ForgeMap.ITypeConverter`2");
         _iServiceProviderSymbol = compilation.GetTypeByMetadataName("System.IServiceProvider");
         _iServiceScopeFactorySymbol = compilation.GetTypeByMetadataName("Microsoft.Extensions.DependencyInjection.IServiceScopeFactory");
@@ -264,6 +268,11 @@ internal sealed partial class ForgeCodeEmitter
             if (HasConvertWithAttribute(method))
                 continue;
 
+            // [ExtractProperty] / [WrapProperty] — reverse not auto-generated, per spec.
+            // The reverse direction needs the *opposite* attribute, which the user must declare.
+            if (HasExtractPropertyAttribute(method) || HasWrapPropertyAttribute(method))
+                continue;
+
             // Guard: [ReverseForge] requires exactly one source parameter and a non-void return type
             if (method.Parameters.Length != 1 || method.ReturnsVoid)
                 continue;
@@ -321,6 +330,14 @@ internal sealed partial class ForgeCodeEmitter
 
             destinationType = useExistingParam.Type;
             return GenerateForgeIntoMethod(method, sourceType, destinationType as INamedTypeSymbol, forger, context);
+        }
+
+        // v1.7 [ExtractProperty] / [WrapProperty] — generator emits a one-liner body.
+        // Inserted before [ConvertWith] / enum / collection branches so we never misclassify
+        // a single-property forge as one of those shapes.
+        if (HasExtractPropertyAttribute(method) || HasWrapPropertyAttribute(method))
+        {
+            return GenerateExtractWrapMethod(method, forger, context);
         }
 
         // [ConvertWith] — converter takes full control of method body
